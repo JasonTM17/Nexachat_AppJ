@@ -44,9 +44,12 @@ public final class TokenAuthenticator implements Authenticator {
         }
 
         String failedAccessToken = bearerToken(failedRequest);
+        SessionBoundRequest bound = failedRequest.tag(SessionBoundRequest.class);
 
         try {
-            String accessToken = tokenRefresher.refreshIfNeededBlocking(failedAccessToken);
+            String accessToken = bound == null
+                    ? tokenRefresher.refreshIfNeededBlocking(failedAccessToken)
+                    : tokenRefresher.refreshIfNeededBlocking(bound.epoch(), failedAccessToken);
             if (accessToken == null) {
                 return null;
             }

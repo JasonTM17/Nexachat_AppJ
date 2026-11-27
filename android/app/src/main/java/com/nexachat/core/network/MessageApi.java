@@ -20,6 +20,7 @@ import retrofit2.http.PATCH;
 import retrofit2.http.POST;
 import retrofit2.http.PUT;
 import retrofit2.http.Path;
+import retrofit2.http.Tag;
 import retrofit2.http.Query;
 
 /** Message endpoints under {@code /api/v1/conversations}. */
@@ -65,6 +66,13 @@ public interface MessageApi {
     Call<MessageDto> sendMessage(
             @Path("id") String conversationId,
             @Body SendMessageRequest body
+    );
+
+    @POST("api/v1/conversations/{id}/messages")
+    Call<MessageDto> sendMessage(
+            @Path("id") String conversationId,
+            @Body SendMessageRequest body,
+            @Tag SessionBoundRequest session
     );
 
     @POST("api/v1/conversations/{id}/read")

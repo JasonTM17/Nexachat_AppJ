@@ -303,9 +303,18 @@ public final class SyncEngine {
         return applyServerHistoryOrEvent(dto, conversation, countUnread, false);
     }
 
+    Completable applyServerMessage(MessageDto dto, String conversation, long expectedEpoch) {
+        return applyServerHistoryOrEvent(dto, conversation, false, false, expectedEpoch);
+    }
+
     Completable applyServerHistoryOrEvent(MessageDto dto, String conversation, boolean countUnread,
             boolean historyReactions) {
-        long epoch = tokenRefresher.sessionEpoch();
+        return applyServerHistoryOrEvent(dto, conversation, countUnread, historyReactions,
+                tokenRefresher.sessionEpoch());
+    }
+
+    private Completable applyServerHistoryOrEvent(MessageDto dto, String conversation,
+            boolean countUnread, boolean historyReactions, long epoch) {
         return loadCursorState(epoch).flatMapCompletable(cursor -> Completable.fromAction(() -> {
             if (cursor.userId != null && appDatabase.syncCursorDao() != null) {
                 pageStore.lifecycle(cursor.userId, epoch, dto, conversation, countUnread, historyReactions);

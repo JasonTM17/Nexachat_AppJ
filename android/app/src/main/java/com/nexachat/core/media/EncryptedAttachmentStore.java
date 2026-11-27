@@ -4,6 +4,7 @@ import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -87,6 +88,21 @@ public final class EncryptedAttachmentStore {
         }
     }
 
+    /** Reads staged upload data without creating a plaintext file. */
+    public byte[] readEncrypted(@NonNull File encrypted, long maxBytes) throws IOException {
+        long size = encrypted.length() - IV_LENGTH - GCM_TAG_BITS / Byte.SIZE;
+        if (size < 0L || size > maxBytes || size > Integer.MAX_VALUE) {
+            throw new IOException("invalid staged attachment size");
+        }
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream((int) size);
+        try {
+            decryptTo(secretKey(), encrypted, bytes, maxBytes);
+        } catch (GeneralSecurityException exception) {
+            throw new IOException("attachment decrypt failed", exception);
+        }
+        return bytes.toByteArray();
+    }
+
     public static void writeEncrypted(
             @NonNull SecretKey key,
             @NonNull File target,
@@ -128,6 +144,21 @@ public final class EncryptedAttachmentStore {
 
     public static void decryptTo(@NonNull SecretKey key, @NonNull File encrypted, @NonNull File target)
             throws IOException {
+        try (OutputStream out = new FileOutputStream(target)) {
+            decryptTo(key, encrypted, out, Long.MAX_VALUE);
+        } catch (GeneralSecurityException exception) {
+            //noinspection ResultOfMethodCallIgnored
+            target.delete();
+            throw new IOException("attachment decrypt failed", exception);
+        } catch (IOException | RuntimeException exception) {
+            //noinspection ResultOfMethodCallIgnored
+            target.delete();
+            throw exception;
+        }
+    }
+
+    private static void decryptTo(SecretKey key, File encrypted, OutputStream out, long maxBytes)
+            throws IOException, GeneralSecurityException {
         try (InputStream raw = new FileInputStream(encrypted)) {
             byte[] iv = new byte[IV_LENGTH];
             int filled = 0;
@@ -140,24 +171,16 @@ public final class EncryptedAttachmentStore {
             }
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
-            try (CipherInputStream in = new CipherInputStream(raw, cipher);
-                    OutputStream out = new FileOutputStream(target)) {
+            try (CipherInputStream in = new CipherInputStream(raw, cipher)) {
                 byte[] chunk = new byte[READ_BUFFER];
+                long total = 0L;
                 int read;
                 while ((read = in.read(chunk)) >= 0) {
+                    total += read;
+                    if (total > maxBytes) throw new OversizeException();
                     out.write(chunk, 0, read);
                 }
             }
-        } catch (GeneralSecurityException exception) {
-            // AEADBadTagException and friends are GeneralSecurityExceptions, not
-            // IOExceptions; surface them as IOException so callers need one catch.
-            //noinspection ResultOfMethodCallIgnored
-            target.delete();
-            throw new IOException("attachment decrypt failed", exception);
-        } catch (IOException | RuntimeException exception) {
-            //noinspection ResultOfMethodCallIgnored
-            target.delete();
-            throw exception;
         }
     }
 

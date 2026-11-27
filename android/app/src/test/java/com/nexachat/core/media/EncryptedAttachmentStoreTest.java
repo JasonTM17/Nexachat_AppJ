@@ -54,6 +54,22 @@ public final class EncryptedAttachmentStoreTest {
     }
 
     @Test
+    public void readsStagedBytesWithCeilingAndNoPlaintextFile() throws Exception {
+        byte[] plaintext = {1, 2, 3, 4};
+        File encrypted = temp.newFile("queued.enc");
+        EncryptedAttachmentStore store = EncryptedAttachmentStore.withSecretKey(key);
+        store.writeEncrypted(encrypted, new ByteArrayInputStream(plaintext), plaintext.length);
+
+        assertArrayEquals(plaintext, store.readEncrypted(encrypted, 4));
+        assertThrows(IOException.class, () -> store.readEncrypted(encrypted, 3));
+        byte[] corrupted = Files.readAllBytes(encrypted.toPath());
+        corrupted[corrupted.length - 1] ^= 1;
+        Files.write(encrypted.toPath(), corrupted);
+        assertThrows(IOException.class, () -> store.readEncrypted(encrypted, 4));
+        assertEquals(1, temp.getRoot().list().length);
+    }
+
+    @Test
     public void ciphertextIsFramedAsIvPlusTaggedCiphertextAndDiffersFromPlaintext() throws Exception {
         byte[] plaintext = "hello attachment".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         File encrypted = temp.newFile("b.enc");

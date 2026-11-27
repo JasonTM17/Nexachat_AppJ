@@ -20,13 +20,12 @@ import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AttachmentRepository;
-import com.nexachat.data.AttachmentUploadEvent;
 import com.nexachat.data.ComposerDraftRepository;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationRepository;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
-import com.nexachat.data.LocalAttachment;
+import com.nexachat.data.AttachmentSendTicket;
 import com.nexachat.data.MessageJump;
 import com.nexachat.data.MessageRepository;
 import com.nexachat.data.GroupDetail;
@@ -173,7 +172,7 @@ public final class ChatViewModel extends ViewModel {
     private boolean initialHistoryReloadInFlight;
     private final Map<String, CompositeDisposable> uploadDisposables = new LinkedHashMap<>();
     /** Reply id captured when an upload batch starts, keyed by that batch's local ids. */
-    private final Map<String, String> attachmentReplyIds = new HashMap<>();
+    private final Map<String, AttachmentSelection> attachmentSelections = new HashMap<>();
     private final AtomicLong searchGeneration = new AtomicLong();
 
     private final Map<String, Disposable> typingTtlDisposables = new LinkedHashMap<>();
@@ -656,8 +655,15 @@ public final class ChatViewModel extends ViewModel {
     private record KeysetVerdict(KeysetTrust trust, boolean invalidMarked) { }
 
     private void updateConnectivityState() {
+        UiState before = currentUiState();
         boolean connected = webSocketOpen || restReachable;
         updateUiState(state -> state.withConnected(connected));
+        ChatError error = before.getChatError();
+        if (connected && !before.isConnected() && !before.isLoading()
+                && error != null && error.getOperation() == ErrorOperation.INITIAL_HISTORY
+                && error.getError() instanceof ApiError.Network) {
+            beginInitialHistoryReload();
+        }
     }
 
     private void initializeConversation() {
@@ -1444,7 +1450,6 @@ public final class ChatViewModel extends ViewModel {
                 : messageRepository.send(conversationId, text, replyToId, MessageDto.TYPE_TEXT,
                         List.of(), draft.getMentions(), draft.isMentionAll());
         disposables.add(send
-                .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(() -> clearUiError(ErrorOperation.SEND, null, null),
                         error -> updateUiState(current -> current.withSendError(toApiError(error), null))));
@@ -1490,7 +1495,6 @@ public final class ChatViewModel extends ViewModel {
                 MessageDto.TYPE_TEXT,
                 List.of());
         disposables.add(send
-                .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(() -> clearUiError(ErrorOperation.SEND, null, null),
                         error -> updateUiState(current -> current.withSendError(toApiError(error), null))));
@@ -1817,7 +1821,6 @@ public final class ChatViewModel extends ViewModel {
         }
         disposables.add(messageRepository.send(
                         targetConversationId, content, null, MessageDto.TYPE_TEXT, List.of())
-                .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(() -> actionEvents.emit(
                                 new ChatActionEvent.MessageForwarded(targetConversationId)),
@@ -1989,91 +1992,44 @@ public final class ChatViewModel extends ViewModel {
         for (int index = 0; index < uris.size(); index++) {
             Uri uri = uris.get(index);
             Long attachmentDurationMs = index == 0 ? durationMs : null;
-            String localId = UUID.randomUUID().toString();
-            if (batchReplyId != null) {
-                attachmentReplyIds.put(localId, batchReplyId);
-            }
-            CompositeDisposable uploadTask = new CompositeDisposable();
-            uploadDisposables.put(localId, uploadTask);
-            disposables.add(uploadTask);
-            Disposable describe = attachmentRepository.describe(uri)
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(local -> startUpload(
-                                    localId, uri, local, attachmentDurationMs, uploadTask),
-                            error -> {
-                                attachmentReplyIds.remove(localId);
-                                uploadDisposables.remove(localId);
-                            });
-            // CompositeDisposable preserves both handles when the description
-            // completes synchronously before its subscription is returned.
-            uploadTask.add(describe);
+            startUpload(uri, uri.getLastPathSegment(), attachmentDurationMs, batchReplyId);
         }
     }
 
     private void startUpload(
-            String localId,
             Uri uri,
-            LocalAttachment local,
+            @Nullable String displayName,
             @Nullable Long durationMs,
-            CompositeDisposable uploadTask) {
+            @Nullable String replyToId) {
+        AttachmentSendTicket ticket = new AttachmentSendTicket();
+        String localId = ticket.id();
+        attachmentSelections.put(localId, new AttachmentSelection(ticket, durationMs, replyToId));
+        CompositeDisposable uploadTask = new CompositeDisposable();
+        uploadDisposables.put(localId, uploadTask);
+        disposables.add(uploadTask);
         updatePending(rows -> {
             List<PendingAttachment> next = new ArrayList<>(rows);
             next.add(new PendingAttachment(
                     localId,
                     uri,
-                    local.getDisplayName(),
-                    local.getMimeType(),
-                    local.getType(),
+                    displayName,
+                    null,
+                    MessageDto.TYPE_FILE,
                     0f,
                     PendingAttachment.PendingState.UPLOADING));
             return next;
         });
-        Flowable<AttachmentUploadEvent> uploads = durationMs == null
-                ? attachmentRepository.upload(uri, local.getMimeType())
-                : attachmentRepository.upload(uri, local.getMimeType(), durationMs);
-        uploadTask.add(uploads.subscribeOn(Schedulers.io())
+        uploadTask.add(messageRepository.queueAttachment(conversationId, uri, durationMs, replyToId, ticket)
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(event -> onUploadEvent(localId, local, event),
+                .doFinally(() -> messageRepository.finishAttachmentStaging(ticket))
+                .subscribe(() -> {
+                    attachmentSelections.remove(localId);
+                    updatePending(rows -> filterPending(rows, localId));
+                    uploadDisposables.remove(localId);
+                    consumeReplyTarget(replyToId);
+                },
                         error -> markUploadFailed(localId,
                                 new ApiError.Network(error.getMessage()))));
-    }
-
-    private void onUploadEvent(String localId, LocalAttachment local, AttachmentUploadEvent event) {
-        if (event instanceof AttachmentUploadEvent.Progress progress) {
-            updatePending(rows -> mapPending(rows, localId,
-                    row -> row.withProgress(progress.getFraction())));
-        } else if (event instanceof AttachmentUploadEvent.Uploaded uploaded) {
-            AttachmentDto attachment = uploaded.getAttachment();
-            String replyToId = attachmentReplyIds.remove(localId);
-            updatePending(rows -> filterPending(rows, localId));
-            uploadDisposables.remove(localId);
-            consumeReplyTarget(replyToId);
-            String content = local.getDisplayName();
-            if (content == null || content.isBlank()) {
-                content = attachment.getOriginalName();
-            }
-            if (content == null || content.isBlank()) {
-                content = local.getType();
-            }
-            String mime = attachment.getMimeType();
-            if (mime == null || mime.isBlank()) {
-                mime = local.getMimeType();
-            }
-            String finalContent = content;
-            String finalType = AttachmentDto.messageTypeForMime(mime);
-            disposables.add(messageRepository.send(
-                            conversationId,
-                            finalContent,
-                            replyToId,
-                            finalType,
-                            List.of(attachment))
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(() -> { }, this::surfaceStreamFailure));
-        } else if (event instanceof AttachmentUploadEvent.Failed failed) {
-            markUploadFailed(localId, failed.getError());
-        }
     }
 
     private void consumeReplyTarget(@Nullable String replyToId) {
@@ -2090,14 +2046,26 @@ public final class ChatViewModel extends ViewModel {
     }
 
     private void markUploadFailed(String localId, @Nullable ApiError error) {
-        attachmentReplyIds.remove(localId);
         updatePending(rows -> mapPending(rows, localId, row -> row.withError(
                 PendingAttachment.PendingState.FAILED, error)));
         uploadDisposables.remove(localId);
     }
 
     public void removePendingAttachment(String localId) {
-        attachmentReplyIds.remove(localId);
+        AttachmentSelection selection = attachmentSelections.get(localId);
+        if (selection == null) {
+            dismissPendingAttachment(localId);
+            return;
+        }
+        disposables.add(messageRepository.cancelAttachmentStaging(selection.ticket())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(cancelled -> {
+                    if (cancelled) dismissPendingAttachment(localId);
+                }, this::surfaceStreamFailure));
+    }
+
+    private void dismissPendingAttachment(String localId) {
+        attachmentSelections.remove(localId);
         CompositeDisposable task = uploadDisposables.remove(localId);
         if (task != null) {
             task.dispose();
@@ -2117,17 +2085,14 @@ public final class ChatViewModel extends ViewModel {
         if (row == null || row.getState() != PendingAttachment.PendingState.FAILED) {
             return;
         }
-        CompositeDisposable uploadTask = new CompositeDisposable();
-        CompositeDisposable previous = uploadDisposables.put(localId, uploadTask);
-        if (previous != null) {
-            previous.dispose();
-        }
-        disposables.add(uploadTask);
+        AttachmentSelection selection = attachmentSelections.remove(localId);
         updatePending(rows -> filterPending(rows, localId));
-        LocalAttachment local = new LocalAttachment(
-                row.getUri(), row.getDisplayName(), row.getMimeType(), -1L, row.getType());
-        startUpload(localId, row.getUri(), local, null, uploadTask);
+        startUpload(row.getUri(), row.getDisplayName(), selection == null ? null : selection.durationMs(),
+                selection == null ? null : selection.replyToId());
     }
+
+    private record AttachmentSelection(AttachmentSendTicket ticket, @Nullable Long durationMs,
+                                       @Nullable String replyToId) {}
 
     private static List<PendingAttachment> filterPending(
             List<PendingAttachment> rows, String localId) {
@@ -2304,7 +2269,7 @@ public final class ChatViewModel extends ViewModel {
         draftWrites.onComplete();
         disposables.clear();
         uploadDisposables.clear();
-        attachmentReplyIds.clear();
+        attachmentSelections.clear();
         clearTypingIndicator();
         if (ephemeralRouter != null) {
             clearOwnTypingSignal();

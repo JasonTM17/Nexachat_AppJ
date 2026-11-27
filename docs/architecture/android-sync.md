@@ -52,6 +52,26 @@ The client processes at most 100 conversations per request and 60 pages per batc
 work for the next sync; no-progress pages fail. Concurrent FCM/reconnect callers
 share one session flight; disposing one subscriber leaves the shared drain alive.
 
+## Outgoing attachment recovery
+
+Android copies a selected file into encrypted app-private storage and publishes
+its outbox row under the sender's account. The composer accepts writes in order
+within each conversation. The worker checks current membership and encryption
+policy before uploading. After upload returns, one Room update records the
+attachment metadata and preserves the original client message ID. The worker
+uses that ID for message retry. Deferred requests and their 401 retries use
+credentials from the originating session epoch, and Room applies the
+acknowledgement under the same epoch.
+
+Ordinary sign-out keeps the account's queued sends. Logout-all, account removal
+and newly observed loss of membership remove the affected queue rows and collect
+unreferenced files. Room remains at version 23. An older Android build leaves
+the new upload states pending for the next upgrade.
+
+The upload API retries the whole file when the response is lost before its
+metadata is saved. The server's existing unbound attachment sweep removes
+orphaned objects. Message delivery deduplicates on the original message ID.
+
 Verification uses fixture JSON and the existing JUnit/Mockito/Room migration
 libraries. `RoomV14MigrationInstrumentedTest` covers populated 13→14, outboxes,
 cache invalidation and transaction fault/reopen behavior; it is an instrumented

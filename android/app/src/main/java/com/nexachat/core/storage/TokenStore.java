@@ -466,6 +466,17 @@ public final class TokenStore {
                 Maybe.fromCallable(() -> toTokens(preferences)));
     }
 
+    /** Reads credentials and the active epoch from the same durable snapshot. */
+    @NonNull
+    public Maybe<Tokens> readTokensForSession(long expectedEpoch) {
+        return dataStore.data().firstElement().flatMap(preferences ->
+                Maybe.fromCallable(() -> {
+                    SessionSnapshot session = snapshotFrom(preferences);
+                    return session.admitsRefresh() && session.getEpoch() == expectedEpoch
+                            ? toTokens(preferences) : null;
+                }));
+    }
+
     /**
      * Emits the user id that most recently claimed the on-disk inbox cache, or
      * empty when no claim exists yet. The inbox consults this during a cold

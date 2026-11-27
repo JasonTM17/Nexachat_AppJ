@@ -85,6 +85,37 @@ public final class TokenAuthenticatorTest {
     }
 
     @Test
+    public void deferredRequestFromAnOlderEpochCannotRetryAsTheCurrentSession() throws Exception {
+        TokenStore store = store(new Tokens(NEW, Long.MAX_VALUE, "rt-current"));
+        AuthApi api = mock(AuthApi.class);
+        Request oldUpload = unauthorized(OLD).request().newBuilder()
+                .tag(SessionBoundRequest.class, new SessionBoundRequest(0L)).build();
+
+        Request retry = authenticator(store, api, new SessionEvents())
+                .authenticate(null, response(oldUpload, null));
+
+        assertNull(retry);
+        verify(api, never()).refresh(anyString(), any(RefreshRequest.class));
+    }
+
+    @Test
+    public void deferredRequestCanRetryWithRefreshedCredentialsFromTheSameEpoch() throws Exception {
+        TokenStore store = store(new Tokens(NEW, Long.MAX_VALUE, "rt-current"));
+        when(store.readTokensForSession(1L))
+                .thenReturn(Maybe.just(new Tokens(NEW, Long.MAX_VALUE, "rt-current")));
+        AuthApi api = mock(AuthApi.class);
+        Request upload = unauthorized(OLD).request().newBuilder()
+                .tag(SessionBoundRequest.class, new SessionBoundRequest(1L)).build();
+
+        Request retry = authenticator(store, api, new SessionEvents())
+                .authenticate(null, response(upload, null));
+
+        assertEquals("Bearer " + NEW, retry.header(AuthInterceptor.HEADER_AUTHORIZATION));
+        assertEquals(new SessionBoundRequest(1L), retry.tag(SessionBoundRequest.class));
+        verify(api, never()).refresh(anyString(), any(RefreshRequest.class));
+    }
+
+    @Test
     public void terminalRecoveryEmitsReauthenticationAndPreservesTokens() throws Exception {
         TokenStore store = store(new Tokens(OLD, 0, "rt-stale"));
         AuthApi api = mock(AuthApi.class);

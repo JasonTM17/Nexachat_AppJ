@@ -29,19 +29,24 @@ public final class AuthInterceptor implements Interceptor {
         if (AuthApi.isPublicAuthPath(request.url().encodedPath())) {
             return chain.proceed(request);
         }
-        if (request.header(HEADER_AUTHORIZATION) != null) {
+        SessionBoundRequest bound = request.tag(SessionBoundRequest.class);
+        if (bound == null && request.header(HEADER_AUTHORIZATION) != null) {
             return chain.proceed(request);
         }
 
         final Tokens tokens;
         try {
-            tokens = tokenStore.readTokens().blockingGet();
+            tokens = (bound == null ? tokenStore.readTokens()
+                    : tokenStore.readTokensForSession(bound.epoch())).blockingGet();
         } catch (RuntimeException ex) {
             if (ex.getCause() instanceof InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new IOException("token read interrupted", interrupted);
             }
             throw ex;
+        }
+        if (bound != null && tokens == null) {
+            throw new IOException("The originating session is no longer active");
         }
         String accessToken = tokens == null ? null : tokens.getAccessToken();
         Request authenticated = accessToken == null

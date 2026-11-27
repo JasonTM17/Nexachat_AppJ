@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.database.OutboxDao;
 import com.nexachat.core.media.AttachmentBlurHashRegistry;
 import com.nexachat.core.media.EncryptedAttachmentStore;
 import com.nexachat.core.media.ImageCompressor;
@@ -16,8 +17,10 @@ import com.nexachat.core.media.MediaCacheConfig;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AttachmentApi;
 import com.nexachat.core.network.ProgressRequestBody;
+import com.nexachat.core.network.SessionBoundRequest;
 import com.nexachat.core.network.dto.AttachmentDto;
 import dagger.hilt.android.qualifiers.ApplicationContext;
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.BackpressureStrategy;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.FlowableEmitter;
@@ -25,10 +28,17 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -103,6 +113,8 @@ public final class AttachmentRepository {
     private final Context context;
     private final ImageCompressor imageCompressor;
     private final EncryptedAttachmentStore attachmentStore;
+    private final Object stagedUploadsLock = new Object();
+    private final Set<File> activeUploadCopies = new HashSet<>();
 
     @Inject
     public AttachmentRepository(
@@ -152,17 +164,132 @@ public final class AttachmentRepository {
             @NonNull Uri uri,
             @Nullable String mimeHint,
             @Nullable Long durationMs) {
+        return upload(() -> {
+            LocalAttachment metadata = describeOnIo(uri);
+            return new UploadData(metadata.getDisplayName(), metadata.getMimeType(),
+                    readBounded(uri, metadata.getSizeBytes()));
+        }, mimeHint, durationMs, null);
+    }
+
+    /** Copies the selected bytes while the original picker or recording URI is readable. */
+    Completable stageUpload(Uri uri, String ownerUserId, String clientMessageId,
+            Consumer<LocalAttachment> persistOutbox) {
+        return Completable.fromAction(() -> {
+            LocalAttachment metadata = describeOnIo(uri);
+            if (metadata.getSizeBytes() > MAX_UPLOAD_BYTES) throw new OversizeException();
+            File target = stagedFile(ownerUserId, clientMessageId);
+            File partial;
+            synchronized (stagedUploadsLock) {
+                Files.createDirectories(target.getParentFile().toPath());
+                partial = File.createTempFile("upload-", ".partial", target.getParentFile());
+                activeUploadCopies.add(partial);
+            }
+            try {
+                try (InputStream stream = context.getContentResolver().openInputStream(uri)) {
+                    if (stream == null) throw new IOException("cannot open selected attachment");
+                    attachmentStore.writeEncrypted(partial, stream, MAX_UPLOAD_BYTES);
+                }
+                try (FileOutputStream output = new FileOutputStream(partial, true)) {
+                    output.getFD().sync();
+                }
+                synchronized (stagedUploadsLock) {
+                    Files.move(partial.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+                    try {
+                        persistOutbox.accept(metadata);
+                    } catch (RuntimeException error) {
+                        Files.deleteIfExists(target.toPath());
+                        throw error;
+                    }
+                }
+            } finally {
+                synchronized (stagedUploadsLock) {
+                    activeUploadCopies.remove(partial);
+                    Files.deleteIfExists(partial.toPath());
+                }
+            }
+        }).subscribeOn(Schedulers.io());
+    }
+
+    Flowable<AttachmentUploadEvent> uploadStaged(String ownerUserId, String clientMessageId,
+            @Nullable String displayName, @Nullable String mime, @Nullable Long durationMs,
+            SessionBoundRequest session) {
+        return upload(() -> {
+            try {
+                return new UploadData(displayName, mime,
+                        attachmentStore.readEncrypted(stagedFile(ownerUserId, clientMessageId),
+                                MAX_UPLOAD_BYTES));
+            } catch (IOException unreadable) {
+                throw new UnreadableStagedUploadException(unreadable);
+            }
+        }, null, durationMs, session);
+    }
+
+    void discardStagedUpload(String ownerUserId, String clientMessageId) throws IOException {
+        Files.deleteIfExists(stagedFile(ownerUserId, clientMessageId).toPath());
+    }
+
+    /** Called after a Room deletion or from the worker. Staging locks file and row publication together. */
+    void pruneStagedUploads(OutboxDao outboxDao) {
+        synchronized (stagedUploadsLock) {
+            File[] owners = stagedRoot().listFiles(File::isDirectory);
+            if (owners == null) return;
+            Set<File> referenced = new HashSet<>();
+            for (OutboxDao.StagedUploadRef ref : outboxDao.stagedUploadRefs()) {
+                referenced.add(stagedFile(ref.ownerUserId(), ref.clientMessageId()));
+            }
+            for (File owner : owners) {
+                File[] copies = owner.listFiles(file -> file.getName().endsWith(".partial")
+                        || file.getName().endsWith(".encrypted"));
+                if (copies == null) continue;
+                for (File copy : copies) {
+                    if (!referenced.contains(copy) && !activeUploadCopies.contains(copy)) {
+                        try {
+                            Files.deleteIfExists(copy.toPath());
+                        } catch (IOException failure) {
+                            LOGGER.warning("Could not delete unreferenced staged attachment");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private File stagedFile(String ownerUserId, String clientMessageId) {
+        File owner = new File(stagedRoot(), UUID.fromString(ownerUserId).toString());
+        return new File(owner, UUID.fromString(clientMessageId) + ".encrypted");
+    }
+
+    private File stagedRoot() {
+        return new File(Objects.requireNonNull(context.getNoBackupFilesDir()), "pending-uploads");
+    }
+
+    private static final class UnreadableStagedUploadException extends IOException {
+        UnreadableStagedUploadException(IOException cause) {
+            super(cause);
+        }
+    }
+
+    @FunctionalInterface
+    private interface UploadSource {
+        UploadData read() throws IOException;
+    }
+
+    private record UploadData(@Nullable String displayName, @Nullable String mime, byte[] bytes) {}
+
+    private Flowable<AttachmentUploadEvent> upload(UploadSource source, @Nullable String mimeHint,
+            @Nullable Long durationMs, @Nullable SessionBoundRequest session) {
         return Flowable.<AttachmentUploadEvent>create(rawEmitter -> {
             FlowableEmitter<AttachmentUploadEvent> emitter = rawEmitter.serialize();
             emitter.onNext(new AttachmentUploadEvent.Progress(0f));
 
-            final LocalAttachment metadata;
-            final byte[] bytes;
+            final UploadData data;
             try {
-                metadata = describeOnIo(uri);
-                bytes = readBounded(uri, metadata.getSizeBytes());
-            } catch (OversizeException exception) {
+                data = source.read();
+            } catch (OversizeException | EncryptedAttachmentStore.OversizeException exception) {
                 emitFailure(emitter, new ApiError.Unknown(ERROR_TOO_LARGE));
+                return;
+            } catch (UnreadableStagedUploadException exception) {
+                emitFailure(emitter, new ApiError.Unknown(ERROR_UNREADABLE));
                 return;
             } catch (IOException exception) {
                 emitFailure(emitter, new ApiError.Network(exception.getMessage()));
@@ -173,10 +300,11 @@ public final class AttachmentRepository {
                 return;
             }
 
-            String mime = resolveMime(metadata.getMimeType(), mimeHint);
+            byte[] bytes = data.bytes();
+            String mime = resolveMime(data.mime(), mimeHint);
             ImageCompressor.Result optimized = null;
             try {
-                optimized = imageCompressor.compress(bytes, mime, metadata.getDisplayName());
+                optimized = imageCompressor.compress(bytes, mime, data.displayName());
             } catch (ImageCompressor.PrivacyException exception) {
                 LOGGER.warning("Image location metadata could not be removed; upload stopped");
                 emitFailure(emitter, new ApiError.Unknown(ERROR_UNREADABLE));
@@ -188,7 +316,7 @@ public final class AttachmentRepository {
 
             String uploadMime = optimized == null ? mime : optimized.mimeType();
             String uploadName = optimized == null
-                    ? metadata.getDisplayName()
+                    ? data.displayName()
                     : optimized.fileName();
             MediaType mediaType = MediaType.parse(uploadMime);
             File temporaryUpload = optimized == null ? null : optimized.file();
@@ -226,7 +354,9 @@ public final class AttachmentRepository {
                     requestBody);
 
             DisposableCall.subscribe(
-                    ApiResult.safeApiCall(attachmentApi.upload(part, durationPart, blurHashPart))
+                    ApiResult.safeApiCall(session == null
+                            ? attachmentApi.upload(part, durationPart, blurHashPart)
+                            : attachmentApi.upload(part, durationPart, blurHashPart, session))
                             .subscribeOn(Schedulers.io()),
                     emitter,
                     temporaryUpload,
