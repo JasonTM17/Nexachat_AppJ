@@ -11,6 +11,7 @@ import com.nexachat.core.crypto.KeysetTrustStore;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
+import com.nexachat.core.network.dto.TranslateResponseDto;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
@@ -27,6 +28,7 @@ import com.nexachat.data.MessageJump;
 import com.nexachat.data.MessageRepository;
 import com.nexachat.data.MessageSearchResult;
 import com.nexachat.data.PeerPresence;
+import com.nexachat.data.TranslationRepository;
 import com.nexachat.data.TypingEvent;
 import com.nexachat.feature.media.PendingAttachment;
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
@@ -202,6 +204,50 @@ public final class ChatViewModelTest {
                 session, tokenStore, trustStore);
         viewModelStore.put("chat-" + (++viewModelCount), created);
         return created;
+    }
+
+    private ChatViewModel newTranslationViewModel(TranslationRepository repository) {
+        ChatViewModel created = new ChatViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)),
+                messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, null, null, null, null, repository, null);
+        viewModelStore.put("chat-" + (++viewModelCount), created);
+        return created;
+    }
+
+    @Test
+    public void manualTranslationTimeoutCanBeRetried() {
+        TranslationRepository repository = Mockito.mock(TranslationRepository.class);
+        when(repository.translate(eq("m-1"), anyString())).thenReturn(
+                Single.just(Result.failure(ApiError.Timeout.INSTANCE)),
+                Single.just(new Result.Success<>(new TranslateResponseDto("xin chào", "en", "vi", false))));
+        ChatViewModel vm = newTranslationViewModel(repository);
+        ChatMessage message = message("m-1", 1, false);
+
+        vm.translateMessage(message);
+        TranslationUiState timeout = vm.getTranslations().getValue().get("m-1");
+        assertEquals(TranslationUiState.Status.ERROR, timeout.getStatus());
+        assertEquals("TIMEOUT", timeout.getErrorCode());
+        vm.retryTranslation(message);
+        assertEquals("xin chào", vm.getTranslations().getValue().get("m-1").getText());
+    }
+
+    @Test
+    public void dismissedInFlightTranslationCannotReplaceTheNextRequest() {
+        TranslationRepository repository = Mockito.mock(TranslationRepository.class);
+        SingleSubject<Result<TranslateResponseDto>> first = SingleSubject.create();
+        SingleSubject<Result<TranslateResponseDto>> second = SingleSubject.create();
+        when(repository.translate(eq("m-1"), anyString())).thenReturn(first, second);
+        ChatViewModel vm = newTranslationViewModel(repository);
+        ChatMessage message = message("m-1", 1, false);
+
+        vm.translateMessage(message);
+        vm.showOriginal(message);
+        vm.translateMessage(message);
+        first.onSuccess(new Result.Success<>(new TranslateResponseDto("old response", "vi", "en", false)));
+        assertEquals(TranslationUiState.Status.LOADING, vm.getTranslations().getValue().get("m-1").getStatus());
+        second.onSuccess(new Result.Success<>(new TranslateResponseDto("new response", "vi", "en", false)));
+        assertEquals("new response", vm.getTranslations().getValue().get("m-1").getText());
     }
 
     private static KeysetTrustStore.Record trustRecord(

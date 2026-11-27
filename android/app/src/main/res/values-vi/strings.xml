@@ -815,7 +815,8 @@
     <string name="translation_failed">Dịch thất bại</string>
     <string name="translation_failed_retry_cd">Dịch thất bại. Chạm để thử lại.</string>
     <string name="translation_error_generic">Không thể dịch. Thử lại.</string>
-    <string name="translation_error_offline">Bạn đang ngoại tuyến. Kiểm tra kết nối.</string>
+    <string name="translation_error_offline">Không kết nối được để dịch. Kiểm tra kết nối rồi thử lại.</string>
+    <string name="translation_error_timeout">Dịch mất quá nhiều thời gian. Thử lại.</string>
     <string name="translation_error_rate_limited">Quá nhiều lượt dịch. Thử lại sau.</string>
     <string name="translate_auto_title">Tự động dịch</string>
     <string name="translate_target_language_title">Dịch sang</string>

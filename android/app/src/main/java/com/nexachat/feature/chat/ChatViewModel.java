@@ -855,13 +855,27 @@ public final class ChatViewModel extends ViewModel {
             return;
         }
         String target = effectiveTargetLang();
-        putTranslation(message.getId(), TranslationUiState.loading(target));
-        disposables.add(translationRepository.translate(message.getId(), target)
+        String messageId = message.getId();
+        TranslationUiState request = TranslationUiState.loading(target);
+        putTranslation(messageId, request);
+        disposables.add(translationRepository.translate(messageId, target)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
-                        result -> applyTranslationResult(message.getId(), target, result),
-                        error -> putTranslation(message.getId(),
-                                TranslationUiState.error(target, "NETWORK"))));
+                        result -> {
+                            if (isCurrentTranslationRequest(messageId, request)) {
+                                applyTranslationResult(messageId, target, result);
+                            }
+                        },
+                        error -> {
+                            if (isCurrentTranslationRequest(messageId, request)) {
+                                putTranslation(messageId, TranslationUiState.error(target, "UNAVAILABLE"));
+                            }
+                        }));
+    }
+
+    private boolean isCurrentTranslationRequest(String messageId, TranslationUiState request) {
+        Map<String, TranslationUiState> states = translationStates.getValue();
+        return states != null && states.get(messageId) == request;
     }
 
     /** Show-original toggles the translation block back off for one message. */
@@ -1146,6 +1160,7 @@ public final class ChatViewModel extends ViewModel {
     private String errorCodeOf(@NonNull ApiError error) {
         if (error instanceof ApiError.RateLimited) return "RATE_LIMITED";
         if (error instanceof ApiError.Network) return "NETWORK";
+        if (error instanceof ApiError.Timeout) return "TIMEOUT";
         return "UNAVAILABLE";
     }
 
