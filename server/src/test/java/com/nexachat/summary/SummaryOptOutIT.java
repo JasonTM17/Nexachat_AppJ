@@ -255,6 +255,46 @@ class SummaryOptOutIT {
     }
 
     @Test
+    void explicitLocalKeepsConsentAndNeverCallsOrReplaysTheLlm() throws Exception {
+        addMessage(peer.getId(), "The team agreed on the plan.");
+        addMessage(caller.getId(), "The release notes are ready.");
+        addMessage(caller.getId(), "The demo is scheduled.");
+        addMessage(caller.getId(), "The review is complete.");
+        addMessage(caller.getId(), "The next step is the rollout.");
+        int requestsBefore = LLM.requestCount();
+
+        postSummaryRefresh(true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedBy").value("LLM"));
+        assertThat(LLM.requestCount()).isEqualTo(requestsBefore + 1);
+
+        postSummary(caller, "/local", false)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedBy").value("LOCAL"))
+                .andExpect(jsonPath("$.cached").value(false));
+        postSummary(caller, "/local", false)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedBy").value("LOCAL"))
+                .andExpect(jsonPath("$.cached").value(true));
+        postSummary(caller, "/local", true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedBy").value("LOCAL"))
+                .andExpect(jsonPath("$.cached").value(false));
+        postSummary(outsider, "/local", true)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_MEMBER"));
+
+        assertThat(LLM.requestCount()).isEqualTo(requestsBefore + 1);
+        assertThat(jdbcTemplate.queryForObject("SELECT ai_summary_consent FROM users WHERE id = ?",
+                Boolean.class, caller.getId())).isTrue();
+        postSummaryRefresh(false)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedBy").value("LLM"))
+                .andExpect(jsonPath("$.cached").value(true));
+        assertThat(LLM.requestCount()).isEqualTo(requestsBefore + 1);
+    }
+
+    @Test
     void revokedConsentKeepsTheSummaryLocalAndMakesNoExternalCall() throws Exception {
         addMessage(peer.getId(), "The team agreed on the plan.");
         addMessage(caller.getId(), "The release notes are ready.");
@@ -327,10 +367,15 @@ class SummaryOptOutIT {
     }
 
     private org.springframework.test.web.servlet.ResultActions postSummaryRefresh(boolean refresh) throws Exception {
+        return postSummary(caller, "", refresh);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postSummary(User user, String routeSuffix,
+            boolean refresh) throws Exception {
         String body = objectMapper.writeValueAsString(java.util.Map.of(
                 "scope", "UNREAD", "language", "EN", "refresh", refresh));
-        return mockMvc.perform(post("/api/v1/conversations/" + conversationId + "/summary")
-                .header("Authorization", bearer(caller))
+        return mockMvc.perform(post("/api/v1/conversations/" + conversationId + "/summary" + routeSuffix)
+                .header("Authorization", bearer(user))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
     }

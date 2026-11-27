@@ -35,6 +35,7 @@ import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryTextFormatter;
 import com.nexachat.summary.SummaryUiState;
 import com.nexachat.summary.SummaryViewModel;
+import com.nexachat.summary.SummaryViewModel.Mode;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.HashMap;
 import java.util.Locale;
@@ -69,8 +70,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     private final Map<String, Long> messageSeqMap = new HashMap<>();
     private final Map<String, String> messageSenderMap = new HashMap<>();
     private final Map<String, Long> messageTimeMap = new HashMap<>();
-    private boolean preferAiMode;
-    private boolean userOverrodeMode;
+    private boolean awaitingAiConsent;
     private boolean consentSavePending;
     private int selectedLimit = SummaryViewModel.DEFAULT_LAST_N;
 
@@ -122,10 +122,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         setupActions();
         applyFooterInsets();
         consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), consent -> {
-            if (!userOverrodeMode && Boolean.TRUE.equals(consent)) {
-                preferAiMode = true;
-            }
-            if (preferAiMode && Boolean.TRUE.equals(consent)) {
+            if (Boolean.TRUE.equals(consent)) {
                 updateConsentCard(false);
             }
             updateModeSelection();
@@ -253,54 +250,60 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         if (binding == null) {
             return;
         }
-        binding.summaryModeLocal.setOnClickListener(v -> selectMode(false));
-        binding.summaryModeAi.setOnClickListener(v -> selectMode(true));
+        binding.summaryModeLocal.setOnClickListener(v -> selectMode(Mode.LOCAL));
+        binding.summaryModeAi.setOnClickListener(v -> selectMode(Mode.AI));
         binding.summaryConsentConfirm.setOnClickListener(v -> {
             updateConsentCard(false);
             consentSavePending = true;
             consentRepository.setConsent(true, () -> {
                 consentSavePending = false;
-                if (viewModel != null) {
-                    viewModel.refresh();
+                if (binding != null && awaitingAiConsent) {
+                    applyMode(Mode.AI);
                 }
             });
         });
         binding.summaryConsentDismiss.setOnClickListener(v -> {
-            preferAiMode = false;
+            awaitingAiConsent = false;
             updateModeSelection();
             updateConsentCard(false);
         });
     }
 
-    private void selectMode(boolean aiMode) {
-        userOverrodeMode = true;
-        preferAiMode = aiMode;
-        updateModeSelection();
-        if (aiMode) {
-            Boolean consent = consentRepository.aiSummaryConsent().getValue();
-            if (!Boolean.TRUE.equals(consent)) {
-                updateConsentCard(true);
-                return;
-            }
-            viewModel.refresh();
-        } else {
-            updateConsentCard(false);
-            // The Local chip is a per-sheet engine preference, never an account-wide
-            // consent revocation: writing consent false here silently flipped the
-            // account-level setting and dropped the whole summary cache. The server
-            // still derives the engine from account consent and window complexity
-            // (local-first routing), so with consent granted a complex window may
-            // remain AI-generated; the result header badge always names what ran.
-            viewModel.refresh();
+    private void selectMode(Mode mode) {
+        if (mode == Mode.AI && !Boolean.TRUE.equals(consentRepository.aiSummaryConsent().getValue())) {
+            awaitingAiConsent = true;
+            updateModeSelection();
+            updateConsentCard(true);
+            return;
         }
+        applyMode(mode);
+    }
+
+    private void applyMode(Mode mode) {
+        awaitingAiConsent = false;
+        updateConsentCard(false);
+        if (mode == Mode.LOCAL && viewModel.mode() != Mode.LOCAL) {
+            // Hide the prior result immediately, before the posted loading state is rendered.
+            binding.summaryContent.setVisibility(View.GONE);
+            binding.summaryResultHeader.setVisibility(View.GONE);
+            binding.summaryCopy.setEnabled(false);
+            binding.summaryShare.setEnabled(false);
+        }
+        viewModel.refreshWithMode(mode);
+        updateModeSelection();
     }
 
     private void updateModeSelection() {
         if (binding == null) {
             return;
         }
-        binding.summaryModeLocal.setChecked(!preferAiMode);
-        binding.summaryModeAi.setChecked(preferAiMode);
+        if (awaitingAiConsent || viewModel.mode() == Mode.AI) {
+            binding.summaryModeChips.check(R.id.summaryModeAi);
+        } else if (viewModel.mode() == Mode.LOCAL) {
+            binding.summaryModeChips.check(R.id.summaryModeLocal);
+        } else {
+            binding.summaryModeChips.clearCheck();
+        }
     }
 
     private void updateConsentCard(boolean visible) {
@@ -323,7 +326,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         if (binding == null) {
             return;
         }
-        updateConsentCard(true);
+        updateConsentCard(awaitingAiConsent);
         Snackbar.make(binding.getRoot(), R.string.settings_consent_update_failed,
                 Snackbar.LENGTH_LONG).show();
     }
@@ -385,14 +388,11 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         }
         binding.summaryClose.setOnClickListener(v -> dismissSheet());
         binding.summaryRegenerate.setOnClickListener(v -> {
-            if (preferAiMode) {
-                Boolean consent = consentRepository.aiSummaryConsent().getValue();
-                if (!Boolean.TRUE.equals(consent)) {
-                    updateConsentCard(true);
-                    return;
-                }
+            if (viewModel.mode() == Mode.AI) {
+                selectMode(Mode.AI);
+            } else {
+                viewModel.refresh();
             }
-            viewModel.refresh();
         });
         binding.summaryCopy.setOnClickListener(v -> {
             SummaryUiState state = viewModel.state().getValue();
@@ -427,7 +427,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             return;
         }
         updateScopeSelection(state.getScope(), state.getLimit());
-        syncModeFromResponse(state.getSummary());
+        updateModeSelection();
         boolean loading = state.getStatus() == SummaryUiState.Status.LOADING
                 || (state.getStatus() == SummaryUiState.Status.IDLE
                 && !SummaryUiRules.restoredSummaryMissing(state.getStatus(), state.getLastSummaryId()));
@@ -532,15 +532,6 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         }
     }
 
-    private void syncModeFromResponse(@Nullable SummaryResponse summary) {
-        if (binding == null || summary == null || userOverrodeMode
-                || !SummaryUiRules.shouldShowEngineBadge(summary.getGeneratedBy())) {
-            return;
-        }
-        preferAiMode = SummaryUiRules.isLlmGenerated(summary.getGeneratedBy());
-        updateModeSelection();
-    }
-
     private void updateScopeSelection(@NonNull SummaryScope selected, @Nullable Integer limit) {
         if (binding == null) {
             return;
@@ -606,6 +597,8 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        awaitingAiConsent = false;
+        consentSavePending = false;
         binding = null;
     }
 

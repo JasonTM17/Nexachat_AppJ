@@ -23,7 +23,8 @@ import retrofit2.Response;
 /**
  * Summary API boundary with typed errors and a process-local five-minute cache.
  *
- * <p>The cache key names the conversation, the scope, the LAST_N count, the language, the device zone and,
+ * <p>The cache key names the conversation, the engine selection, the scope, the LAST_N count,
+ * the language, the device zone and,
  * for TODAY, the local date the result belongs to. A summary is therefore never replayed for a
  * different scope, day or zone. Membership/consent changes and session boundaries invalidate
  * cached and pending work. The repository monitor also orders cache clears with UI publication.
@@ -80,11 +81,20 @@ public final class SummaryRepository {
             String conversationId,
             SummaryRequest request,
             Callback callback) {
+        return request(conversationId, request, false, callback);
+    }
+
+    Cancellable requestLocally(String conversationId, SummaryRequest request, Callback callback) {
+        return request(conversationId, request, true, callback);
+    }
+
+    private Cancellable request(String conversationId, SummaryRequest request, boolean localOnly,
+            Callback callback) {
         Objects.requireNonNull(conversationId, "conversationId");
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(callback, "callback");
 
-        CacheKey key = keyFor(conversationId, request);
+        CacheKey key = keyFor(conversationId, request, localOnly);
         final RequestHandle handle;
         synchronized (this) {
             if (!sessionOpen) {
@@ -104,7 +114,8 @@ public final class SummaryRepository {
 
         final Call<SummaryResponse> call;
         try {
-            call = Objects.requireNonNull(api.summarize(conversationId, request), "summary call");
+            call = Objects.requireNonNull(localOnly ? api.summarizeLocally(conversationId, request)
+                    : api.summarize(conversationId, request), "summary call");
         } catch (RuntimeException failure) {
             handle.finishError(SummaryErrorMapper.fromFailure(failure), callback);
             return handle;
@@ -116,11 +127,16 @@ public final class SummaryRepository {
                 @Override
                 public void onResponse(Call<SummaryResponse> ignored, Response<SummaryResponse> response) {
                     if (response.isSuccessful() && response.body() != null) {
-                        handle.finishSuccess(response.body(), callback);
+                        SummaryResponse summary = response.body();
+                        if (localOnly && !"LOCAL".equals(summary.getGeneratedBy())) {
+                            handle.finishError(SummaryError.LOCAL_MODE_UNAVAILABLE, callback);
+                        } else {
+                            handle.finishSuccess(summary, callback);
+                        }
                         return;
                     }
-                    SummaryError error = SummaryErrorMapper.fromHttp(
-                            response.code(), readBody(response.errorBody()));
+                    String errorBody = readBody(response.errorBody());
+                    SummaryError error = SummaryErrorMapper.fromHttp(response.code(), errorBody, localOnly);
                     handle.finishError(error, callback);
                 }
 
@@ -140,10 +156,20 @@ public final class SummaryRepository {
             String conversationId,
             SummaryRequest request,
             String summaryId) {
+        return findCachedById(conversationId, request, summaryId, false);
+    }
+
+    Optional<SummaryResponse> findCachedLocalById(String conversationId, SummaryRequest request,
+            String summaryId) {
+        return findCachedById(conversationId, request, summaryId, true);
+    }
+
+    private Optional<SummaryResponse> findCachedById(String conversationId, SummaryRequest request,
+            String summaryId, boolean localOnly) {
         if (conversationId == null || request == null || summaryId == null) {
             return Optional.empty();
         }
-        SummaryResponse response = findCached(keyFor(conversationId, request));
+        SummaryResponse response = findCached(keyFor(conversationId, request, localOnly));
         if (response == null || !summaryId.equals(response.getSummaryId())) {
             return Optional.empty();
         }
@@ -176,11 +202,11 @@ public final class SummaryRepository {
         return () -> invalidationListeners.remove(listener);
     }
 
-    private CacheKey keyFor(String conversationId, SummaryRequest request) {
+    private CacheKey keyFor(String conversationId, SummaryRequest request, boolean localOnly) {
         String zone = request.getTimeZone();
         String localDate = request.getScope() == SummaryScope.TODAY ? localDate(zone) : null;
         return new CacheKey(conversationId, request.getScope(), request.getLimit(),
-                request.getLanguage(), zone, localDate);
+                request.getLanguage(), zone, localDate, localOnly);
     }
 
     private String localDate(String zone) {
@@ -316,6 +342,7 @@ public final class SummaryRepository {
         private final SummaryLanguage language;
         private final String timeZone;
         private final String localDate;
+        private final boolean localOnly;
 
         private CacheKey(
                 String conversationId,
@@ -323,13 +350,15 @@ public final class SummaryRepository {
                 Integer limit,
                 SummaryLanguage language,
                 String timeZone,
-                String localDate) {
+                String localDate,
+                boolean localOnly) {
             this.conversationId = conversationId;
             this.scope = scope;
             this.limit = limit;
             this.language = language;
             this.timeZone = timeZone;
             this.localDate = localDate;
+            this.localOnly = localOnly;
         }
 
         @Override
@@ -342,6 +371,7 @@ public final class SummaryRepository {
             }
             CacheKey that = (CacheKey) other;
             return conversationId.equals(that.conversationId)
+                    && localOnly == that.localOnly
                     && scope == that.scope
                     && Objects.equals(limit, that.limit)
                     && language == that.language
@@ -351,7 +381,7 @@ public final class SummaryRepository {
 
         @Override
         public int hashCode() {
-            return Objects.hash(conversationId, scope, limit, language, timeZone, localDate);
+            return Objects.hash(conversationId, scope, limit, language, timeZone, localDate, localOnly);
         }
     }
 

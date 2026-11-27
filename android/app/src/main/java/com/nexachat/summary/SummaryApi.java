@@ -11,4 +11,9 @@ public interface SummaryApi {
     Call<SummaryResponse> summarize(
             @Path("id") String conversationId,
             @Body SummaryRequest request);
+
+    @POST("api/v1/conversations/{id}/summary/local")
+    Call<SummaryResponse> summarizeLocally(
+            @Path("id") String conversationId,
+            @Body SummaryRequest request);
 }
