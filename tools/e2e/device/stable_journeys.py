@@ -5306,13 +5306,9 @@ def _import_reminder_clock() -> Any:
 def _reminder_clock(context: dict[str, Any]) -> Any:
     """The DB fixture for the stack under test.
 
-    The device-E2E jar serves its own database on the shared postgres
-    container — which is not necessarily the default `nexachat` schema, so the
-    caller overrides it via context["reminder_db"] or the
-    NEXACHAT_E2E_REMINDER_DB env var. reminder_clock's target validation keeps
-    the name inside the local nexa* family. An unusable target (bad env var,
-    missing helper module) is a harness/environment failure, never a product
-    verdict."""
+    The device fixture can run in a dedicated PostgreSQL container. Set
+    NEXACHAT_E2E_DB_CONTAINER for the container and NEXACHAT_E2E_REMINDER_DB
+    for the database. The clock validates both before querying the fixture."""
     override = context.get("reminder_clock")
     if override is not None:
         return override
@@ -5321,11 +5317,12 @@ def _reminder_clock(context: dict[str, Any]) -> Any:
         db_name = (context.get("reminder_db")
                    or os.environ.get("NEXACHAT_E2E_REMINDER_DB")
                    or module.DEFAULT_DB_NAME)
-        return module.ReminderClock(db_name=db_name)
+        container = os.environ.get("NEXACHAT_E2E_DB_CONTAINER") or module.DEFAULT_CONTAINER
+        return module.ReminderClock(db_name=db_name, container=container)
     except Exception as error:
         raise EnvironmentFailure(
             "the reminder_clock DB fixture is not usable (set "
-            "NEXACHAT_E2E_REMINDER_DB to the stack's database): "
+            "NEXACHAT_E2E_REMINDER_DB and NEXACHAT_E2E_DB_CONTAINER for the fixture): "
             f"{type(error).__name__}: {error}") from error
 
 
