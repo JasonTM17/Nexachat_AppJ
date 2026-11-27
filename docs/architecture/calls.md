@@ -201,6 +201,9 @@ negotiated by the Android client; signaling does not carry audio bytes.
   initiates an ICE restart when its signaling connection reopens.
   Losing validated connectivity cancels the old STOMP socket, and the call
   buffers candidates while signaling reconnects.
+- Android allows up to 30 seconds after signaling drops on an active call and
+  15 seconds during initial setup. The server independently allows 15 seconds
+  after it sees the user's last signaling session disconnect by default.
 - Once media connects, Android allows up to 30 seconds from the first ICE
   disruption for it to recover. A native `FAILED` or `CHECKING` state during
   renegotiation keeps the same deadline. Successful ICE recovery cancels it.
