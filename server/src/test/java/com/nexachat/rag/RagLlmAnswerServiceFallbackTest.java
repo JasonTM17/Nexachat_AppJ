@@ -86,6 +86,25 @@ class RagLlmAnswerServiceFallbackTest {
     }
 
     @Test
+    void namedSpeakerProviderUsesTheVerifiedQuoteContract() throws Exception {
+        startServers();
+        String quote = "The server migration is scheduled for March 14 at 02:00.";
+        primary.handle((exchange, requestBody, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                FakeOpenAiServer.jsonResponse("{\"answer\":\"" + quote + "\",\"citations\":[1]}")));
+
+        RagLlmOutcome outcome = service.answerSpeakerQuote(userId, conversationId, "When is the server migration scheduled?",
+                SummaryLanguage.EN, context(), contextMessages(), AskDeadline.start(5_000));
+
+        assertThat(outcome.status()).isEqualTo(RagLlmOutcome.Status.ANSWER);
+        assertThat(outcome.answer().answer()).isEqualTo(quote);
+        assertThat(outcome.answer().citationIds()).containsExactly(messageId);
+        assertThat(primary.requestCount()).isEqualTo(1);
+        assertThat(messagesOf(primary.requests().getFirst().body()))
+                .contains("verbatim", "U1").doesNotContain("0912 345 678", "\"priorTurns\":");
+        assertThat(fallback.requestCount()).isZero();
+    }
+
+    @Test
     void primaryAnsweringGarbageOpensTheBreakerAndCountsFailures() throws Exception {
         startServers();
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,

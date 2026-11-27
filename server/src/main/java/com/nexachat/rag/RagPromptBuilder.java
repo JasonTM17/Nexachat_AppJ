@@ -38,18 +38,32 @@ public final class RagPromptBuilder {
             SummaryLanguage language,
             List<RagContextItem> context,
             List<AskPriorTurn> priorTurns) {
+        return build(question, language, context, priorTurns, false);
+    }
+
+    RagPrompt buildSpeakerQuote(String question, SummaryLanguage language, List<RagContextItem> context) {
+        return build(question, language, context, List.of(), true);
+    }
+
+    private RagPrompt build(String question, SummaryLanguage language, List<RagContextItem> context,
+                            List<AskPriorTurn> priorTurns, boolean speakerQuote) {
         if (context == null || context.isEmpty()) {
             throw new IllegalArgumentException("ask context is empty");
         }
         ObjectNode payload = objectMapper.createObjectNode();
         ArrayNode messages = payload.putArray("messages");
         Map<Integer, List<UUID>> messageIdsByIndex = new LinkedHashMap<>();
+        Map<Integer, String> quoteSources = new LinkedHashMap<>();
         for (RagContextItem item : context) {
             ObjectNode node = messages.addObject();
             node.put("i", item.index());
             node.put("sender", item.senderLabel());
-            node.put("text", redactor.redact(item.text()));
+            String text = redactor.redact(item.text());
+            node.put("text", text);
             messageIdsByIndex.put(item.index(), item.messageIds());
+            if (speakerQuote) {
+                quoteSources.put(item.index(), text);
+            }
         }
         if (priorTurns != null && !priorTurns.isEmpty()) {
             ArrayNode prior = payload.putArray("priorTurns");
@@ -66,7 +80,13 @@ public final class RagPromptBuilder {
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("ask payload could not be encoded", exception);
         }
-        return new RagPrompt(systemMessage(language), userMessage, messageIdsByIndex, language);
+        String system = systemMessage(language);
+        if (speakerQuote) {
+            system += "\nThe messages are from the same selected speaker. Copy one complete supporting sentence "
+                    + "verbatim and cite its one source index. Keep qualifications and return a null answer when "
+                    + "the requested fact is unsettled or lacks support. The quote may be in the source language.";
+        }
+        return new RagPrompt(system, userMessage, messageIdsByIndex, language, quoteSources);
     }
 
     private static String systemMessage(SummaryLanguage language) {

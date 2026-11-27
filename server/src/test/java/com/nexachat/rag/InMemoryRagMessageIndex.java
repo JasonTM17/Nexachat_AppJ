@@ -2,6 +2,7 @@ package com.nexachat.rag;
 
 import com.nexachat.summary.engine.Tokenizer;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -37,13 +38,12 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
 
     @Override
     public List<RagMessage> recentMessages(UUID conversationId, int limit) {
-        List<RagMessage> matching = new ArrayList<>();
-        for (RagMessage message : messages) {
-            if (message.conversationId().equals(conversationId)
-                    && !optedOutMessages.contains(message.id())) {
-                matching.add(message);
-            }
-        }
+        return recentMessagesBySpeaker(conversationId, null, limit, null);
+    }
+
+    @Override
+    public List<RagMessage> recentMessagesBySpeaker(UUID conversationId, UUID senderId, int limit, Instant admittedFrom) {
+        List<RagMessage> matching = new ArrayList<>(eligibleMessages(conversationId, senderId, admittedFrom));
         matching.sort(Comparator.comparingLong(RagMessage::seq).reversed());
         List<RagMessage> limited = matching.subList(0, Math.min(limit, matching.size()));
         List<RagMessage> ordered = new ArrayList<>(limited);
@@ -53,17 +53,17 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
 
     @Override
     public List<RagMessage> lexicalCandidates(UUID conversationId, List<String> terms, int limit) {
+        return lexicalCandidatesBySpeaker(conversationId, null, terms, limit, null);
+    }
+
+    @Override
+    public List<RagMessage> lexicalCandidatesBySpeaker(
+            UUID conversationId, UUID senderId, List<String> terms, int limit, Instant admittedFrom) {
         if (terms == null || terms.isEmpty()) {
             return List.of();
         }
         List<RagMessage> matching = new ArrayList<>();
-        for (RagMessage message : messages) {
-            if (!message.conversationId().equals(conversationId)) {
-                continue;
-            }
-            if (optedOutMessages.contains(message.id())) {
-                continue;
-            }
+        for (RagMessage message : eligibleMessages(conversationId, senderId, admittedFrom)) {
             String folded = Tokenizer.foldForMatching(message.content());
             long hits = terms.stream().filter(term -> folded.contains(term)).count();
             if (hits > 0) {
@@ -75,6 +75,22 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
                 .reversed()
                 .thenComparing(Comparator.comparingLong(RagMessage::seq).reversed()));
         return List.copyOf(matching.subList(0, Math.min(limit, matching.size())));
+    }
+
+    @Override
+    public List<UUID> findEligibleSpeakerIds(UUID conversationId, Instant admittedFrom, String displayName) {
+        String name = AskSpeakerLookup.normalizedName(displayName);
+        return eligibleMessages(conversationId, null, admittedFrom).stream()
+                .filter(message -> AskSpeakerLookup.normalizedName(message.senderName()).equals(name))
+                .map(RagMessage::senderId).distinct().limit(2).toList();
+    }
+
+    private List<RagMessage> eligibleMessages(UUID conversationId, UUID senderId, Instant admittedFrom) {
+        return RagMessageIndex.admittedOnly(messages.stream()
+                .filter(message -> message.conversationId().equals(conversationId))
+                .filter(message -> senderId == null || senderId.equals(message.senderId()))
+                .filter(message -> !optedOutMessages.contains(message.id()))
+                .toList(), admittedFrom);
     }
 
     private long matchingScore(RagMessage message, List<String> terms) {

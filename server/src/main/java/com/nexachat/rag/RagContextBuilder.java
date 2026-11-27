@@ -42,6 +42,17 @@ public final class RagContextBuilder {
             RagMessageIndex index,
             RagProperties.Retrieval config,
             Instant admittedFrom) {
+        return build(ranked, recentMessages, index, config, admittedFrom, false);
+    }
+
+    static ContextResult buildSpeakerContext(List<ScoredMessage> ranked, List<RagMessage> recentMessages,
+                                             RagProperties.Retrieval config, Instant admittedFrom) {
+        return build(ranked, recentMessages, null, config, admittedFrom, true);
+    }
+
+    private static ContextResult build(List<ScoredMessage> ranked, List<RagMessage> recentMessages,
+                                       RagMessageIndex index, RagProperties.Retrieval config,
+                                       Instant admittedFrom, boolean completeMessages) {
         if (ranked == null || ranked.isEmpty()) {
             return new ContextResult(List.of(), 0, Map.of());
         }
@@ -108,7 +119,8 @@ public final class RagContextBuilder {
                 .sorted(Comparator.comparingLong(RagMessage::seq))
                 .toList();
 
-        List<List<RagMessage>> groups = groupConsecutive(ordered);
+        List<List<RagMessage>> groups = completeMessages ? ordered.stream().map(List::of).toList()
+                : groupConsecutive(ordered);
         Map<UUID, String> senderLabels = new LinkedHashMap<>();
         List<RagContextItem> items = new ArrayList<>();
         int budget = Math.max(1, config.getMaxContextChars());
@@ -117,6 +129,9 @@ public final class RagContextBuilder {
         Set<UUID> serializedIds = new LinkedHashSet<>();
         for (List<RagMessage> group : groups) {
             SerializedGroup serialized = serializeGroup(group, budget - used);
+            if (completeMessages && serialized.truncated()) {
+                continue;
+            }
             if (serialized.messageIds().isEmpty()) {
                 break;
             }
