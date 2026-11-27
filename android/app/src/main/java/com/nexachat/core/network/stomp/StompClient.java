@@ -181,6 +181,7 @@ public final class StompClient {
     private final AtomicInteger subscriptionCounter = new AtomicInteger();
     private final AtomicLong connectAttemptSeq = new AtomicLong();
     private final Object attemptSequenceLock = new Object();
+    private volatile long networkCancelledAttemptId;
 
     @Nullable
     private volatile java.util.function.Consumer<String> connectBearerObserver;
@@ -464,6 +465,18 @@ public final class StompClient {
         }
     }
 
+    /** Cancels the socket when its network is gone so failure handling can reconnect. */
+    void cancelOnNetworkLoss() {
+        WebSocket active;
+        synchronized (attemptSequenceLock) {
+            active = socket;
+            if (active == null) return;
+            networkCancelledAttemptId = connectAttemptSeq.get();
+            open = false;
+        }
+        active.cancel();
+    }
+
     /** True between CONNECTED and the next close or failure. */
     public boolean isOpen() {
         return open;
@@ -490,6 +503,7 @@ public final class StompClient {
             @Override
             public void onOpen(@NonNull WebSocket webSocket, @NonNull Response response) {
                 if (!liveness.runIfCurrent(() -> {
+                    if (networkCancelledAttemptId == attemptId) return;
                     socket = webSocket;
                     lastInboundMs = now();
                     LinkedHashMap<String, String> headers = new LinkedHashMap<>();
@@ -505,7 +519,8 @@ public final class StompClient {
 
             @Override
             public void onMessage(@NonNull WebSocket webSocket, @NonNull String text) {
-                if (!liveness.runIfCurrent(() -> lastInboundMs = now())) {
+                if (networkCancelledAttemptId == attemptId
+                        || !liveness.runIfCurrent(() -> lastInboundMs = now())) {
                     return;
                 }
                 for (StompFrame frame : parser.feed(text)) {
@@ -515,6 +530,7 @@ public final class StompClient {
                     String command = frame.getCommand();
                     if (StompCommand.CONNECTED.equals(command)) {
                         if (!liveness.runIfCurrent(() -> {
+                            if (networkCancelledAttemptId == attemptId) return;
                             open = true;
                             sink.trySend(State.Open.INSTANCE);
                         })) {
@@ -684,11 +700,11 @@ public final class StompClient {
     }
 
     private boolean sendFrame(@NonNull StompFrame frame) {
-        if (!open) {
-            return false;
+        String encoded = StompCodec.encode(frame);
+        synchronized (attemptSequenceLock) {
+            WebSocket active = socket;
+            return open && active != null && active.send(encoded);
         }
-        WebSocket active = socket;
-        return active != null && active.send(StompCodec.encode(frame));
     }
 
     private interface CancelHandle {

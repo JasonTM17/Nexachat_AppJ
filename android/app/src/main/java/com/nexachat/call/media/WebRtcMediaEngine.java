@@ -135,10 +135,8 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             try {
                 PeerConnectionFactory factory = getFactory();
                 enterCommunicationMode(callGeneration);
-                PeerConnection.RTCConfiguration configuration = new PeerConnection.RTCConfiguration(
-                        toRtcIceServers(iceConfig));
-                configuration.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
-                peerConnection = factory.createPeerConnection(configuration, new PeerObserver(callGeneration));
+                peerConnection = factory.createPeerConnection(
+                        peerConfiguration(iceConfig), new PeerObserver(callGeneration));
                 if (peerConnection == null) throw new IllegalStateException("Peer connection unavailable");
 
                 MediaConstraints audioConstraints = new MediaConstraints();
@@ -575,6 +573,14 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                 }
             }
         }
+    }
+
+    static PeerConnection.RTCConfiguration peerConfiguration(IceConfig iceConfig) {
+        PeerConnection.RTCConfiguration configuration = new PeerConnection.RTCConfiguration(toRtcIceServers(iceConfig));
+        configuration.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+        // Either peer may acquire a new network while the original offerer stays connected.
+        configuration.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY;
+        return configuration;
     }
 
     private static List<PeerConnection.IceServer> toRtcIceServers(IceConfig config) {

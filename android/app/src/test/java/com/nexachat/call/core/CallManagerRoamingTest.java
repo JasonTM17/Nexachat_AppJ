@@ -70,6 +70,26 @@ public final class CallManagerRoamingTest {
     }
 
     @Test
+    public void iceSendFailureBeforeDisconnectCallbackWaitsForReconnect() {
+        establishActiveCall();
+        signaling.connected = false;
+        CallSignal.IceCandidate candidate = new CallSignal.IceCandidate("audio", 0, "candidate:network-change");
+        media.listener.onLocalIce(candidate);
+        scheduler.runCurrent();
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
+
+        signaling.disconnect();
+        scheduler.runCurrent();
+        signaling.sent.clear();
+        signaling.connect();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+        assertEquals(1, signaling.sent.size());
+        assertEquals(candidate, signaling.sent.get(0).getCandidate());
+    }
+
+    @Test
     public void reconnectWithinGraceTimerRestoresActiveAndRestartsIce() {
         establishActiveCall();
 
