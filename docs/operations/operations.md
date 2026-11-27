@@ -535,6 +535,10 @@ To verify a setup with one test push:
    data-only push (`type=NEW_MESSAGE`) that the client uses to sync; message
    content never passes through FCM.
 
+For ordinary messages, the dispatcher selects current members who were admitted
+when the message was created. The same database query applies current mute
+settings. The subject of a removal notice can still receive that specific push.
+
 ### Android client (FCM)
 
 `android/app/google-services.json` is gitignored and must be supplied locally. The
@@ -622,16 +626,16 @@ NexaChat supports self-service account deletion across two channels:
 
 ### Access-token revocation
 
-Access tokens are HS256 JWTs with a 15-minute lifetime. Logout, logout-all and
-password change stamp `users.tokens_valid_after` (added by Flyway `V11`); the
-JWT filter rejects any token whose `iat` is at or before that cutoff, so a stolen
-access token stops working immediately instead of living out its lifetime.
+Access tokens are HS256 JWTs with a 15-minute default lifetime. Every access
+revocation advances `users.access_token_version` (Flyway V49) under the user
+row lock and updates `users.tokens_valid_after` (Flyway V11). Authentication
+requires the current signed version and an `iat` after the cutoff, including
+when two revocations share one timestamp.
 
-- The cutoff is stored at one-second resolution because JWT `iat` has no
-  sub-second precision: tokens whose `iat` is equal to the cutoff second fail
-  closed. A token minted in that same second after revocation may need a refresh
-  after the next second boundary.
-- The filter caches "account exists + cutoff" per user id in a bounded LRU
+- V49 sets existing accounts to version zero. Pre-upgrade tokens follow the
+  previous cutoff rule for version-zero accounts. The first revocation of
+  an account also expires every token of that account without a version.
+- The filter caches account validity, version and cutoff per user id in a bounded LRU
   (`nexachat.security.validity-cache-ttl-seconds`, default 60, capped at the
   access-token lifetime) so the hot path does no database work; a cache miss
   falls back to a projection query.
@@ -641,10 +645,17 @@ access token stops working immediately instead of living out its lifetime.
 - After the revocation transaction commits, the local `StompSessionRegistry`
   closes that user's tracked WebSocket sessions. The event is process-local;
   multi-instance deployments do not broadcast the close to other servers.
+- V49 is additive. Verify the database migration and use a single application
+  version for authorization. A pre-V49 binary understands only the timestamp
+  cutoff and can accept tokens already rejected because of their version.
+  Before rolling back to that binary, stop access-token issuance and retire
+  tokens under the existing signing key. Use a signing-key rotation or wait
+  until all previously issued access tokens have reached their latest possible
+  expiration before reopening access.
 
 Logout revokes only the presented refresh-token lineage. It leaves other
-lineages' cached replay responses intact, even though the account-wide access
-cutoff also invalidates their existing access JWTs. Logout-all and password
+lineages' cached replay responses intact. The account-wide access version
+invalidates their existing access JWTs. Logout-all and password
 change still invalidate replay responses for the sessions they revoke.
 
 ### Keyed refresh replay

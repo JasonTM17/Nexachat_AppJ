@@ -42,10 +42,10 @@ Why a header and not `?token=` on the URL:
 
 The server validates the JWT in the inbound channel interceptor before it
 processes CONNECT (or the STOMP 1.2 `STOMP` command), checking signature,
-issuer `nexachat`, audience `nexachat-api`, expiry, and the revocation cutoff
-(`users.tokens_valid_after`, Flyway V11). A token issued before the user's
-revocation cutoff (after logout or password change) or an otherwise
-invalid/expired token is rejected: the rejected handshake closes the socket and
+issuer `nexachat`, audience `nexachat-api`, expiry, the access-token version
+(`users.access_token_version`, Flyway V49), and the cutoff
+(`users.tokens_valid_after`, Flyway V11). An invalid, expired or revoked token
+causes the handshake to close the socket, and
 the server does not guarantee an `ERROR` frame; the client may see the CONNECT
 acknowledgement timeout instead. A raw socket that has not completed an
 authenticated handshake within 10 s is also closed. One account may hold at

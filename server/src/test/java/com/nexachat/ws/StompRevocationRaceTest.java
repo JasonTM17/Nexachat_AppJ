@@ -188,6 +188,29 @@ class StompRevocationRaceTest {
     }
 
     @Test
+    void queuedDeliveryUsesTheActorVersionEvenWhenTheCutoffIsUnchanged() {
+        UUID userId = UUID.randomUUID();
+        Instant issuedAt = Instant.now().minusSeconds(2);
+        Instant expiresAt = Instant.now().plusSeconds(300);
+        Instant cutoff = issuedAt.minusSeconds(1);
+        UserRepository users = mock(UserRepository.class);
+        when(users.findAuthValidityById(userId)).thenReturn(
+                Optional.of(new UserAuthValidity(userId, cutoff, com.nexachat.user.User.Role.USER, false, 1L)),
+                Optional.of(new UserAuthValidity(userId, cutoff, com.nexachat.user.User.Role.USER, false, 2L)));
+        StompAuthChannelInterceptor interceptor = interceptor(users, mock(StompSessionRegistry.class));
+        MessageChannel channel = mock(MessageChannel.class);
+        MessageHandler handler = mock(MessageHandler.class);
+        Message<?> sent = sendMessage(userId, "tagging-session", issuedAt, expiresAt, 1L);
+
+        assertThat(interceptor.beforeHandle(sent, channel, handler)).isSameAs(sent);
+        Message<?> queued = interceptor.preSend(MessageBuilder.withPayload("typing event").build(), channel);
+        interceptor.afterMessageHandled(sent, channel, handler, null);
+
+        assertThat(queued.getHeaders().get("nexachat.internal.revocation.accessTokenVersion")).isEqualTo(1L);
+        assertThat(interceptor.beforeHandle(queued, channel, handler)).isNull();
+    }
+
+    @Test
     void concurrentSocketWritesSerializeBeforeTheDecoratorCanBufferARevokedFrame() throws Exception {
         UUID userId = UUID.randomUUID();
         String sessionId = "decorated-outbound";
@@ -515,10 +538,15 @@ class StompRevocationRaceTest {
                                                String sessionId,
                                                Instant issuedAt,
                                                Instant expiresAt) {
+        return sendMessage(userId, sessionId, issuedAt, expiresAt, null);
+    }
+
+    private static Message<byte[]> sendMessage(UUID userId, String sessionId, Instant issuedAt,
+                                               Instant expiresAt, Long accessTokenVersion) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
         accessor.setSessionId(sessionId);
         accessor.setDestination("/app/conversations/" + CONVERSATION_ID + "/typing");
-        accessor.setUser(new StompUserPrincipal(userId, issuedAt, expiresAt));
+        accessor.setUser(new StompUserPrincipal(userId, issuedAt, expiresAt, accessTokenVersion));
         accessor.setLeaveMutable(true);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }

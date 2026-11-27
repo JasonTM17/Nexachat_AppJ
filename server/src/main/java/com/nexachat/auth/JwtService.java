@@ -33,6 +33,7 @@ public class JwtService {
 
     public static final String CLAIM_TYPE = "type";
     public static final String TYPE_ACCESS = "access";
+    private static final String CLAIM_ACCESS_TOKEN_VERSION = "accessTokenVersion";
     /** Binds an access token to this service. Tokens for any other issuer or audience are rejected. */
     public static final String ISSUER = "nexachat";
     public static final String AUDIENCE = "nexachat-api";
@@ -78,9 +79,9 @@ public class JwtService {
      * re-login on a fast stack) would be born dead for its whole TTL. When the
      * fresh, locked user snapshot carries a cutoff at or after the mint
      * second, the issue instant moves one second past the cutoff. Tokens
-     * issued before a later revocation keep {@code iat <= cutoff} and still
-     * die; the callers hold the owner row lock, so the cutoff they see cannot
-     * be older than the one a concurrent revocation would stamp.
+     * issued before a later revocation carry an older access-token version
+     * even when both revocations have the same second-precision cutoff.
+     * Callers hold the owner row lock while reading the current version.
      */
     public String generateAccessToken(User user) {
         Instant issuedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS);
@@ -94,6 +95,7 @@ public class JwtService {
                 .audience().single(AUDIENCE)
                 .subject(user.getId().toString())
                 .claim(CLAIM_TYPE, TYPE_ACCESS)
+                .claim(CLAIM_ACCESS_TOKEN_VERSION, user.getAccessTokenVersion())
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(issuedAt.plusSeconds(accessTtlSeconds)))
                 .signWith(key)
@@ -104,7 +106,12 @@ public class JwtService {
      * Verified access-token material: the caller id plus the second-precision
      * issue instant the revocation cutoff is compared against.
      */
-    public record AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt, String tokenId) {
+    public record AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt, String tokenId,
+                                    Long accessTokenVersion) {
+        public AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt, String tokenId) {
+            this(userId, issuedAt, expiresAt, tokenId, null);
+        }
+
         /** Compatibility for verified claims that do not include a token identifier. */
         public AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt) {
             this(userId, issuedAt, expiresAt, null);
@@ -151,11 +158,16 @@ public class JwtService {
             if (expiresAt == null) {
                 throw new JwtException("Token has no expiration");
             }
+            Long version = claims.get(CLAIM_ACCESS_TOKEN_VERSION, Long.class);
+            if (version != null && version < 0) {
+                throw new JwtException("Token has an invalid access-token version");
+            }
             return new AccessTokenClaims(
                     UUID.fromString(subject),
                     issuedAt == null ? Instant.EPOCH : issuedAt.toInstant(),
                     expiresAt.toInstant(),
-                    claims.getId());
+                    claims.getId(),
+                    version);
         } catch (IllegalArgumentException e) {
             throw new JwtException("Token subject is not a user id", e);
         }
@@ -168,7 +180,8 @@ public class JwtService {
      */
     public JwtPrincipal parseAccessToken(String token) {
         AccessTokenClaims claims = parseAccessTokenClaims(token);
-        return new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt());
+        return new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt(),
+                claims.accessTokenVersion());
     }
 
     /** Value echoed to clients as {@code accessTokenExpiresIn}. */

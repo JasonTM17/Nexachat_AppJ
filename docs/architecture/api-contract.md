@@ -119,6 +119,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V46 | `V46__scheduled_messages.sql` | `scheduled_messages` author queue (PENDING/SENT/CANCELED/FAILED, claim lease, retry backoff) with the `(sender_id, client_message_id)` idempotency key. |
 | V47 | `V47__rag_context_revision.sql` | `conversations.ai_context_version` plus `rag_ask_cache.context_version`, with a message-change trigger and expiry index so derived RAG answers are replayable only against the exact source context. |
 | V48 | `V48__message_embeddings_model_key.sql` | Widens `message_embeddings` to primary key `(message_id, model)` so local and external embedding identities can coexist for the same source message instead of overwriting each other. |
+| V49 | `V49__access_token_version.sql` | Adds a per-user version for access-token revocation. |
 
 ## Operational notes
 
@@ -244,7 +245,7 @@ These keys are Spring properties; override them with the matching
 | `INVALID_CREDENTIALS` | 401 | Unknown email or phone, or wrong password, on login |
 | `TOKEN_EXPIRED` | 401 | Access/refresh token past its TTL |
 | `TOKEN_INVALID` | 401 | Malformed, unknown or revoked token |
-| `TOKEN_REUSED` | 401 | Rotated refresh token presented again (family revoked) |
+| `TOKEN_REUSED` | 401 | Spent refresh token presented again under strict reuse rules (family revoked) |
 | `REFRESH_RECOVERY_UNAVAILABLE` | 409 | Keyed retry cannot recover the original response; this error does not itself revoke the refresh family |
 | `REFRESH_SERVICE_UNAVAILABLE` | 503 | Replay-response encryption failed during rotation |
 | `UNAUTHORIZED` | 401 | Missing/invalid Bearer token |
@@ -547,7 +548,9 @@ account hash (it still pays one dummy bcrypt compare for timing).
 **Access-token claims:** access tokens are HS256 JWTs with `iss=nexachat` and
 `aud=nexachat-api`; a token missing either claim is rejected as `401 TOKEN_INVALID`.
 
-**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, `PATCH /auth/password`, password reset, and `DELETE /users/me` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` is at or before that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
+**Token revocation (Flyway V11 and V49)**
+
+Logout, logout-all, password change, password reset, and account deletion advance the user's access-token version, update the cutoff and evict the local validity cache. Access JWTs must carry the current signed version and have an `iat` after the cutoff. Tokens issued before V49 remain eligible under the previous cutoff rule until the account's first revocation. REST rejects revoked tokens with `401 TOKEN_INVALID`. STOMP rejects the CONNECT handshake and closes revoked local sessions.
 
 **Account deletion (Flyway V26):** `DELETE /users/me` confirms with `password` when a password hash exists and with `code` from `POST /users/me/deletion-code` when it does not, then tombstones the row (`users.deleted_at`), clears the phone for re-registration, replaces the password hash, clears the recovery email and all `email_otps` rows, removes contacts/device tokens/private labels/pending group-join requests and any linked Google identity plus its account-owned link nonces, scrubs AI consent, per-user request limits and per-conversation ask/summary caches, and deletes unbound uploads and the avatar after commit. It removes the user from every group (if the deleting user is the only admin while other members remain, the earliest remaining member by `joined_at` — tie-break by user id — is promoted to admin in the same transaction before the leave; when they are the last member, the group is left empty like self-leave), keeps direct conversations and sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` omitted, `deleted: true` on `UserResponse` and `ConversationMemberView`). A retry with the same access token after success returns `401 TOKEN_INVALID` (the token is rejected before the handler runs). Self-leave (`POST …/leave`) keeps blocking a sole admin with other members present.
 

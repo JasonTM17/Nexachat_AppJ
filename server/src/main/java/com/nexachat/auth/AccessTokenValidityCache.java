@@ -1,5 +1,6 @@
 package com.nexachat.auth;
 
+import com.nexachat.user.UserAuthValidity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -16,10 +17,8 @@ import java.util.UUID;
 /**
  * Bounded in-memory cache of the JWT filter's per-user validity lookup.
  *
- * <p>The filter needs two facts on every authenticated request: does the
- * account still exist, and is there an access-token cutoff the token's
- * {@code iat} must be after. Loading that from the database on every request
- * would put a query on the hot path, so the answer is cached per user id.
+ * <p>Cache account status, role and access-token cutoff/version per user id
+ * to keep the REST hot path from querying the database on every request.
  *
  * <p>Bounds: the TTL never exceeds the access-token lifetime, so a stale entry
  * cannot outlive the token it describes; the map is a bounded LRU, so a burst
@@ -41,7 +40,11 @@ public class AccessTokenValidityCache {
      * tokens fail even if issued after the last revocation stamp.
      */
     public record Validity(boolean present, Instant tokensValidAfter, String role,
-                           boolean suspended) {
+                           boolean suspended, long accessTokenVersion) {
+
+        public Validity(boolean present, Instant tokensValidAfter, String role, boolean suspended) {
+            this(present, tokensValidAfter, role, suspended, 0L);
+        }
 
         /** Pre-role call shape: an ordinary, non-suspended account. */
         public Validity(boolean present, Instant tokensValidAfter) {
@@ -50,6 +53,17 @@ public class AccessTokenValidityCache {
 
         public static Validity missing() {
             return new Validity(false, null, null, false);
+        }
+
+        public static Validity from(UserAuthValidity account) {
+            return new Validity(true, account.tokensValidAfter(),
+                    account.role() == null ? null : account.role().name(), account.suspended(),
+                    account.accessTokenVersion());
+        }
+
+        public boolean acceptsAccessToken(Instant issuedAt, Long tokenVersion) {
+            return present && !suspended
+                    && UserAuthValidity.matchesAccessToken(issuedAt, tokenVersion, tokensValidAfter, accessTokenVersion);
         }
     }
 

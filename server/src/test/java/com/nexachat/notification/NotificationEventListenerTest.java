@@ -5,6 +5,7 @@ import com.nexachat.call.CallRegistry;
 import com.nexachat.call.CallRingingEvent;
 import com.nexachat.call.CallSession;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.conversation.dto.PushRecipientRow;
 import com.nexachat.message.Message;
 import com.nexachat.message.MessageCreatedEvent;
 import com.nexachat.message.dto.MessageResponse;
@@ -107,10 +108,8 @@ class NotificationEventListenerTest {
     void createdSystemEventStillDispatchesPushToRemovedSubject() {
         MessageResponse message = message(Message.Type.SYSTEM, 9L);
         // The removed subject is no longer in the member list at fan-out time.
-        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
-                .thenReturn(List.of(senderId));
-        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
-                .thenReturn(List.of());
+        when(memberRepository.findPushRecipients(eq(conversationId), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(new PushRecipientRow(senderId, false)));
         when(presenceState.isOnline(recipientId)).thenReturn(false);
         User owner = mock(User.class);
         when(owner.getId()).thenReturn(recipientId);
@@ -125,10 +124,9 @@ class NotificationEventListenerTest {
     }
 
     private void stubOfflineRecipient() {
-        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
-                .thenReturn(List.of(senderId, recipientId));
-        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
-                .thenReturn(List.of());
+        when(memberRepository.findPushRecipients(eq(conversationId), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(new PushRecipientRow(senderId, false),
+                        new PushRecipientRow(recipientId, false)));
         when(presenceState.isOnline(recipientId)).thenReturn(false);
         User owner = mock(User.class);
         when(owner.getId()).thenReturn(recipientId);
@@ -142,10 +140,10 @@ class NotificationEventListenerTest {
     void sharedDeviceTokenGetsOnePushForTheAccountSignedInLast() {
         UUID secondRecipientId = UUID.randomUUID();
         MessageResponse message = message(Message.Type.TEXT, 10L);
-        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
-                .thenReturn(List.of(senderId, recipientId, secondRecipientId));
-        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
-                .thenReturn(List.of());
+        when(memberRepository.findPushRecipients(eq(conversationId), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(new PushRecipientRow(senderId, false),
+                        new PushRecipientRow(recipientId, false),
+                        new PushRecipientRow(secondRecipientId, false)));
         when(presenceState.isOnline(recipientId)).thenReturn(false);
         when(presenceState.isOnline(secondRecipientId)).thenReturn(false);
         UserDeviceToken older = sharedRow(Instant.parse("2026-11-10T08:00:00Z"), recipientId);
@@ -171,31 +169,21 @@ class NotificationEventListenerTest {
 
         listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
 
-        verify(memberRepository).findAdmittedUserIds(conversationId, message.createdAt());
+        verify(memberRepository).findPushRecipients(
+                eq(conversationId), eq(message.createdAt()), any(Instant.class));
     }
 
-    /**
-     * Fan-out snapshot contract (GH#313): when the event carries the
-     * publisher-computed member list, the listener must NOT re-read the
-     * database — neither the admitted-members snapshot nor the
-     * peer-suppression probe.
-     */
     @Test
-    void createdSendWithFanOutSnapshotSkipsThePostCommitQueries() {
+    void createdSendWithFanOutSnapshotRechecksEligibilityInOneQuery() {
         MessageResponse message = message(Message.Type.TEXT, 12L);
-        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
-                .thenReturn(List.of());
-        when(presenceState.isOnline(recipientId)).thenReturn(false);
-        User owner = mock(User.class);
-        when(owner.getId()).thenReturn(recipientId);
-        UserDeviceToken token = UserDeviceToken.create(
-                owner, "recipient-token", UserDeviceToken.Platform.ANDROID, "Phone");
-        when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(token));
+        stubOfflineRecipient();
 
         listener.onMessageCreated(new MessageCreatedEvent(conversationId, message, null, false,
                 List.of(senderId, recipientId), null));
 
         assertSinglePush(message, false);
+        verify(memberRepository).findPushRecipients(
+                eq(conversationId), eq(message.createdAt()), any(Instant.class));
         verify(memberRepository, never()).findAdmittedUserIds(any(), any());
         verify(messageRepository, never()).findPeerSuppressedSenderId(any());
     }

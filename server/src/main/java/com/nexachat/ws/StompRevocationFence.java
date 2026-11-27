@@ -80,16 +80,14 @@ public class StompRevocationFence {
         }
     }
 
-    /** Reads the authoritative cutoff while the caller holds this user's read lease. */
-    public boolean isCurrent(UUID userId, Instant issuedAt, Instant expiresAt) {
+    /** Reads authoritative session validity while the caller holds the user's read lease. */
+    public boolean isCurrent(UUID userId, Instant issuedAt, Instant expiresAt, Long accessTokenVersion) {
         if (userId == null || issuedAt == null || expiresAt == null
                 || !Instant.now().isBefore(expiresAt)) {
             return false;
         }
         return userRepository.findAuthValidityById(userId)
-                .map(validity -> !validity.suspended()
-                        && (validity.tokensValidAfter() == null
-                                || issuedAt.isAfter(validity.tokensValidAfter())))
+                .map(validity -> validity.acceptsAccessToken(issuedAt, accessTokenVersion))
                 .orElse(false);
     }
 

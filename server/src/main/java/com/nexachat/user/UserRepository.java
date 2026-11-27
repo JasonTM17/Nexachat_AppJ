@@ -42,7 +42,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * the whole user row.
      */
     @Query("SELECT new com.nexachat.user.UserAuthValidity(u.id, u.tokensValidAfter, u.role,"
-            + " u.suspendedAt IS NOT NULL)"
+            + " u.suspendedAt IS NOT NULL, u.accessTokenVersion)"
             + " FROM User u WHERE u.id = :id AND u.deletedAt IS NULL")
     Optional<UserAuthValidity> findAuthValidityById(@Param("id") UUID id);
 

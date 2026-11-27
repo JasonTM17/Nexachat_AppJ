@@ -43,6 +43,7 @@ class JwtServiceTest {
 
         JwtPrincipal principal = jwtService.parseAccessToken(token);
         assertThat(principal.userId()).isEqualTo(userId);
+        assertThat(principal.accessTokenVersion()).isZero();
 
         Claims claims = Jwts.parser().verifyWith(KEY).build()
                 .parseSignedClaims(token).getPayload();

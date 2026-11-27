@@ -9,6 +9,8 @@ import com.nexachat.message.dto.SendMessageRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 
 import java.util.List;
 import java.util.UUID;
@@ -21,15 +23,16 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
- * Push fan-out races group admission: the AFTER_COMMIT callback can run after
- * a member was added, so recipients must be filtered by who was admitted when
- * the message was created — not by who is a member when the listener runs.
+ * Push recipients must be admitted at creation and still eligible when the
+ * AFTER_COMMIT callback runs.
  */
+@RecordApplicationEvents
 class NotificationAdmissionScopeIT extends ConcurrentDatabaseITSupport {
 
     @Autowired private MessageService messages;
     @Autowired private NotificationEventListener notifications;
     @Autowired private UserDeviceTokenRepository tokens;
+    @Autowired private ApplicationEvents events;
     @MockitoBean private FcmPushService fcmPushService;
 
     @Test
@@ -58,6 +61,35 @@ class NotificationAdmissionScopeIT extends ConcurrentDatabaseITSupport {
                 eq(conversation), eq(created.id()), eq(created.seq()),
                 eq(created.senderDisplayName()), eq(false));
         verify(fcmPushService, never()).sendNewMessageNotification(eq(late.getId()),
+                any(List.class), any(UUID.class), any(UUID.class), anyLong(), any(), anyBoolean());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatchChecksMembershipEvenWhenTheEventCarriesAnAdmissionSnapshot() {
+        var owner = user("Owner");
+        var retained = user("Retained");
+        var removed = user("Removed");
+        UUID conversation = group(owner, retained, removed);
+        MessageResponse created = messages.send(owner.getId(), conversation,
+                new SendMessageRequest(UUID.randomUUID(), "TEXT",
+                        "a message for current members", null, List.of())).message();
+        MessageCreatedEvent pending = events.stream(MessageCreatedEvent.class)
+                .filter(event -> event.message().id().equals(created.id()))
+                .findFirst().orElseThrow();
+
+        groups.removeMember(owner.getId(), conversation, removed.getId());
+        tokens.save(UserDeviceToken.create(retained, "retained-token",
+                UserDeviceToken.Platform.ANDROID, "phone"));
+        tokens.save(UserDeviceToken.create(removed, "removed-token",
+                UserDeviceToken.Platform.ANDROID, "phone"));
+
+        notifications.onMessageCreated(pending);
+
+        verify(fcmPushService).sendNewMessageNotification(eq(retained.getId()), any(List.class),
+                eq(conversation), eq(created.id()), eq(created.seq()),
+                eq(created.senderDisplayName()), eq(false));
+        verify(fcmPushService, never()).sendNewMessageNotification(eq(removed.getId()),
                 any(List.class), any(UUID.class), any(UUID.class), anyLong(), any(), anyBoolean());
     }
 }

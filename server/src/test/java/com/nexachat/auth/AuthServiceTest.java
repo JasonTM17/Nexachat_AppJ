@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -662,8 +663,10 @@ class AuthServiceTest {
         // logout (its negative case is proven in TokenServiceTest).
         authService.logout(userId, "rt-claimed-by-caller");
 
-        verify(tokenService).revokeIfOwned("rt-claimed-by-caller", userId);
-        verify(accessTokenRevocationService).revoke(userId);
+        var ordered = inOrder(revocationFence, tokenService, accessTokenRevocationService);
+        ordered.verify(revocationFence).holdWriteUntilTransactionCompletion(userId);
+        ordered.verify(tokenService).revokeIfOwned("rt-claimed-by-caller", userId);
+        ordered.verify(accessTokenRevocationService).revoke(userId);
     }
 
     @Test
@@ -672,7 +675,9 @@ class AuthServiceTest {
 
         authService.logoutAll(userId);
 
-        verify(tokenService).revokeAllForUser(userId);
-        verify(accessTokenRevocationService).revoke(userId);
+        var ordered = inOrder(revocationFence, tokenService, accessTokenRevocationService);
+        ordered.verify(revocationFence).holdWriteUntilTransactionCompletion(userId);
+        ordered.verify(tokenService).revokeAllForUser(userId);
+        ordered.verify(accessTokenRevocationService).revoke(userId);
     }
 }

@@ -78,6 +78,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
     private static final String REVOCATION_ACTOR_HEADER = "nexachat.internal.revocation.actor";
     private static final String REVOCATION_ISSUED_AT_HEADER = "nexachat.internal.revocation.issuedAt";
     private static final String REVOCATION_EXPIRES_AT_HEADER = "nexachat.internal.revocation.expiresAt";
+    private static final String REVOCATION_VERSION_HEADER = "nexachat.internal.revocation.accessTokenVersion";
     private static final String UUID_PATTERN =
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 
@@ -100,7 +101,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
     /** Authenticated sessions may subscribe only to the supported own queues. */
     private static final Pattern USER_QUEUE = Pattern.compile("^/user/queue/(inbox|errors|presence|calls)$");
 
-    private record RevocationActor(UUID userId, Instant issuedAt, Instant expiresAt) {
+    private record RevocationActor(UUID userId, Instant issuedAt, Instant expiresAt, Long accessTokenVersion) {
     }
 
     private record ExecutionFrame(StompRevocationFence.ReadLease lease,
@@ -296,13 +297,14 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
                         && principal.issuedAt() != null) {
                     lease = revocationFence.acquireRead(principal.userId());
                     if (!isCurrentAndReleaseOnFailure(lease, principal.userId(), principal.issuedAt(),
-                            principal.expiresAt())) {
+                            principal.expiresAt(), principal.accessTokenVersion())) {
                         closeRevokedSession(accessor.getSessionId());
                         return null;
                     }
                     if (command == StompCommand.SEND) {
                         actorForHandler = new RevocationActor(
-                                principal.userId(), principal.issuedAt(), principal.expiresAt());
+                                principal.userId(), principal.issuedAt(), principal.expiresAt(),
+                                principal.accessTokenVersion());
                     }
                 }
             } else {
@@ -310,7 +312,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
                 if (outboundActor != null) {
                     lease = revocationFence.acquireRead(outboundActor.userId());
                     if (!isCurrentAndReleaseOnFailure(lease, outboundActor.userId(), outboundActor.issuedAt(),
-                            outboundActor.expiresAt())) {
+                            outboundActor.expiresAt(), outboundActor.accessTokenVersion())) {
                         return null;
                     }
                 }
@@ -377,6 +379,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
                 .setHeader(REVOCATION_ACTOR_HEADER, actor.userId().toString())
                 .setHeader(REVOCATION_ISSUED_AT_HEADER, actor.issuedAt().toString())
                 .setHeader(REVOCATION_EXPIRES_AT_HEADER, actor.expiresAt().toString())
+                .setHeader(REVOCATION_VERSION_HEADER, actor.accessTokenVersion())
                 .build();
     }
 
@@ -385,13 +388,15 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
         Object rawUserId = message.getHeaders().get(REVOCATION_ACTOR_HEADER);
         Object rawIssuedAt = message.getHeaders().get(REVOCATION_ISSUED_AT_HEADER);
         Object rawExpiresAt = message.getHeaders().get(REVOCATION_EXPIRES_AT_HEADER);
+        Object rawVersion = message.getHeaders().get(REVOCATION_VERSION_HEADER);
         if (!(rawUserId instanceof String userId)
                 || !(rawIssuedAt instanceof String issuedAt)
                 || !(rawExpiresAt instanceof String expiresAt)) {
             return null;
         }
         try {
-            return new RevocationActor(UUID.fromString(userId), Instant.parse(issuedAt), Instant.parse(expiresAt));
+            return new RevocationActor(UUID.fromString(userId), Instant.parse(issuedAt), Instant.parse(expiresAt),
+                    rawVersion instanceof Long version ? version : null);
         } catch (IllegalArgumentException exception) {
             return null;
         }
@@ -406,9 +411,10 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
     private boolean isCurrentAndReleaseOnFailure(StompRevocationFence.ReadLease lease,
                                                  UUID userId,
                                                  Instant issuedAt,
-                                                 Instant expiresAt) {
+                                                 Instant expiresAt,
+                                                 Long accessTokenVersion) {
         try {
-            boolean current = revocationFence.isCurrent(userId, issuedAt, expiresAt);
+            boolean current = revocationFence.isCurrent(userId, issuedAt, expiresAt, accessTokenVersion);
             if (!current) {
                 lease.close();
             }
@@ -437,14 +443,11 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
             return false;
         }
         final JwtPrincipal principal;
-        final Instant issuedAt;
-        final Instant expiresAt;
         try {
             JwtService.AccessTokenClaims claims =
                     jwtService.parseAccessTokenClaims(header.substring(BEARER_PREFIX.length()));
-            principal = new JwtPrincipal(claims.userId());
-            issuedAt = claims.issuedAt();
-            expiresAt = claims.expiresAt();
+            principal = new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt(),
+                    claims.accessTokenVersion());
         } catch (JwtException | IllegalArgumentException e) {
             log.warn("STOMP CONNECT rejected: invalid access token");
             return false;
@@ -453,10 +456,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
             log.warn("STOMP CONNECT rejected: authenticated account no longer exists");
             return false;
         }
-        // Same revocation boundary as the REST JWT filter: an access token that
-        // was issued before the user's cutoff (logout / password change) must
-        // not open a socket either.
-        if (isAccessTokenRevoked(principal.userId(), issuedAt)) {
+        if (isAccessTokenRevoked(principal.userId(), principal.issuedAt(), principal.accessTokenVersion())) {
             log.warn("STOMP CONNECT rejected: access token was revoked");
             return false;
         }
@@ -464,22 +464,17 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
             log.warn("STOMP CONNECT rejected: too many open sessions");
             return false;
         }
-        accessor.setUser(new StompUserPrincipal(principal.userId(), issuedAt, expiresAt));
+        accessor.setUser(new StompUserPrincipal(principal.userId(), principal.issuedAt(), principal.expiresAt(),
+                principal.accessTokenVersion()));
         return true;
     }
 
-    private boolean isAccessTokenRevoked(UUID userId, Instant issuedAt) {
+    private boolean isAccessTokenRevoked(UUID userId, Instant issuedAt, Long accessTokenVersion) {
         // CONNECT is a cold path (once per socket), so the authoritative value
         // is read straight from the database instead of the REST hot-path cache.
         // A suspended account fails this check the same way a revoked one does.
         return userRepository.findAuthValidityById(userId)
-                .map(found -> {
-                    if (found.suspended()) {
-                        return true;
-                    }
-                    Instant cutoff = found.tokensValidAfter();
-                    return cutoff != null && !issuedAt.isAfter(cutoff);
-                })
+                .map(found -> !found.acceptsAccessToken(issuedAt, accessTokenVersion))
                 .orElse(true);
     }
 
@@ -603,6 +598,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
         headers.setHeader(REVOCATION_ACTOR_HEADER, userId);
         headers.setHeader(REVOCATION_ISSUED_AT_HEADER, principal.issuedAt().toString());
         headers.setHeader(REVOCATION_EXPIRES_AT_HEADER, principal.expiresAt().toString());
+        headers.setHeader(REVOCATION_VERSION_HEADER, principal.accessTokenVersion());
         headers.setLeaveMutable(true);
         Map<String, Object> messageHeaders = headers.getMessageHeaders();
         messaging.convertAndSendToUser(userId, "/queue/errors", response, messageHeaders);
@@ -621,7 +617,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
         return accessor.getUser() instanceof StompUserPrincipal principal ? principal : null;
     }
 
-    /** Re-checks token expiry and the authoritative cutoff on every client action. */
+    /** Re-checks token expiry and session validity on every client action. */
     private boolean isCurrentSession(StompHeaderAccessor accessor) {
         if (!(accessor.getUser() instanceof StompUserPrincipal principal)) {
             return false;
@@ -635,18 +631,14 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
             return false;
         }
         if (validityCache == null) {
-            return !isAccessTokenRevoked(principal.userId(), principal.issuedAt());
+            return !isAccessTokenRevoked(principal.userId(), principal.issuedAt(), principal.accessTokenVersion());
         }
         // Per-frame probe: the REST hot-path cache serves this so SEND/SUBSCRIBE
         // bursts do not pay a Neon round-trip each. The revocation fence in
         // beforeHandle stays authoritative, so a stale "valid" answer here
         // still cannot get a frame past the fence.
-        AccessTokenValidityCache.Validity validity = loadValidity(principal.userId());
-        if (!validity.present() || validity.suspended()) {
-            return false;
-        }
-        Instant cutoff = validity.tokensValidAfter();
-        return cutoff == null || principal.issuedAt().isAfter(cutoff);
+        return loadValidity(principal.userId()).acceptsAccessToken(principal.issuedAt(),
+                principal.accessTokenVersion());
     }
 
     /** Mirrors {@code JwtAuthFilter.loadValidity}: cache first, DB fill on miss. */
@@ -657,8 +649,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
         }
         long generation = validityCache.generation();
         AccessTokenValidityCache.Validity loaded = userRepository.findAuthValidityById(userId)
-                .map(found -> new AccessTokenValidityCache.Validity(true, found.tokensValidAfter(),
-                        found.role() == null ? null : found.role().name(), found.suspended()))
+                .map(AccessTokenValidityCache.Validity::from)
                 .orElseGet(AccessTokenValidityCache.Validity::missing);
         validityCache.putIfGeneration(userId, loaded, generation);
         return loaded;

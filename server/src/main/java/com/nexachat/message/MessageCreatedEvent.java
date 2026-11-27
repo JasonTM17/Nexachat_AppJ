@@ -27,8 +27,9 @@ import java.util.UUID;
  * peer-suppressed. Both are computed inside the publishing transaction —
  * which holds the conversation write lock every group membership mutation
  * serializes on, and which wrote the one-way {@code peer_suppressed} flag —
- * so the AFTER_COMMIT listeners can reuse them instead of re-reading the
- * database. Both are {@code null} when the publisher did not freeze them
+ * so the AFTER_COMMIT listeners can reuse them. Push dispatch also checks
+ * current membership and mutes in a single query. Both fields are {@code null}
+ * when the publisher did not freeze them
  * (replays and lost insert races: the surviving row's own flag and snapshot
  * belong to another transaction), and listeners then fall back to their
  * existing post-commit queries. When {@code admittedUserIds} is non-null,

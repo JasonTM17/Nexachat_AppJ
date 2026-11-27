@@ -533,6 +533,40 @@ class AttachmentFlowIT {
     }
 
     @Test
+    void removedGroupMemberLosesAccessOnBothDownloadRoutes() throws Exception {
+        MvcResult group = postJson("/api/v1/conversations/group", alice.accessToken(),
+                Map.of("title", "Attachment access", "memberIds", List.of(bob.id())))
+                .andExpect(status().isCreated()).andReturn();
+        String conversationId = objectMapper.readTree(group.getResponse().getContentAsString())
+                .get("id").asText();
+        JsonNode uploaded = upload(alice, "group-photo.png", "image/png", PNG_BYTES);
+        String attachmentId = uploaded.get("id").asText();
+        postJson("/api/v1/conversations/" + conversationId + "/messages", alice.accessToken(),
+                Map.of("clientMessageId", UUID.randomUUID(), "type", "IMAGE",
+                        "attachmentIds", List.of(attachmentId)))
+                .andExpect(status().isCreated());
+        List<String> downloadRoutes = List.of("/api/v1/attachments/" + attachmentId + "/content",
+                uploaded.get("url").asText());
+        for (String route : downloadRoutes) {
+            mockMvc.perform(get(route).header("Authorization", "Bearer " + bob.accessToken()))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(delete("/api/v1/conversations/" + conversationId + "/members/" + bob.id())
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isNoContent());
+
+        for (String route : downloadRoutes) {
+            mockMvc.perform(get(route).header("Authorization", "Bearer " + bob.accessToken())
+                            .header("Range", "bytes=0-5"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error.code").value("NOT_MEMBER"));
+            mockMvc.perform(get(route).header("Authorization", "Bearer " + alice.accessToken()))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Test
     void deletingMediaMessageKeepsAttachmentOutOfTombstoneHistory() throws Exception {
         UUID conversationId = openDirectConversation();
         JsonNode uploaded = upload(alice, "deleted.png", "image/png", PNG_BYTES);
