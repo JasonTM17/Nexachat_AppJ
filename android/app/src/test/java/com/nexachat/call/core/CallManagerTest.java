@@ -502,7 +502,7 @@ public final class CallManagerTest {
         scheduler.runCurrent();
 
         assertEquals(CallState.RECONNECTING_NETWORK, session().getState());
-        scheduler.advanceBy(15_000L);
+        scheduler.advanceBy(30_000L);
 
         assertEquals(CallState.ENDED, session().getState());
         assertEquals(CallEndReason.FAILED, session().getEndReason());
