@@ -358,24 +358,25 @@ composer draft are available on return.
 
 ### 4.11 Call screen — `CallActivity` (`activity_call.xml`, `layout-land/activity_call.xml`)
 
-Manifest-launched for in-call control. Expected order: `call_peer_name` →
-`call_status` (live region; also re-announced via
-`announceForAccessibility` on state transitions, `CallActivity.java:451`) →
-`call_timer` (live region, once the call connects) → control row:
-`call_mute`, `call_speaker`, `call_camera` + `call_camera_switch` (video
-calls only), `call_hang_up` — labels below each button are decoration.
+During active video, `call_video_peer_name` and `call_video_detail` appear
+with the shared control row in `view_call_controls.xml`. They hide together
+after five seconds of inactivity by default. The next tap shows them and
+refreshes the elapsed time. A tap to show the row cannot activate a button.
+Touch exploration keeps the row and header visible. Android's recommended
+timeout applies when available. Voice calls, setup and reconnection keep
+their controls visible. `call_status` announces connection state changes.
 
 | id | Type | Expected accessible name (source) |
 | --- | --- | --- |
-| `call_peer_name` | TextView | peer display name (set at runtime) |
+| `call_peer_name`, `call_video_peer_name` | TextView | peer display name, bound at runtime for the current call state |
 | `call_status` | TextView, live region | state title (bound from `CallUiModel`); announced on change |
-| `call_timer` | TextView, live region | elapsed time, latest value announced |
-| `call_mute` | icon-only MaterialButton | "Mute" (`call_mute`, `strings_call.xml:16`) — **flag: the label string is singular; a mute→unmute cd swap at runtime is not visible in the layout, verify on-device** |
-| `call_speaker` | icon-only MaterialButton | "Speaker" (`call_speaker`) — same flag as mute |
-| `call_camera` | icon-only MaterialButton (video calls) | "Camera off" (`call_camera_off`) — same flag; the toggled-on name must still be honest |
-| `call_camera_switch` | icon-only MaterialButton (video calls) | "Switch camera" (`call_switch_camera`) |
-| `call_hang_up` | icon-only MaterialButton (72dp, red) | "Hang up" / VI "Kết thúc" (`call_hang_up`, `strings_call.xml:20`; `values-vi/strings_call.xml:20`) |
-| `call_remote_video`, `call_local_video`, `call_local_preview`, `call_pulse_ring`, `call_peer_initials`, all `*_label` texts | decoration | nothing (`importantForAccessibility="no"`) |
+| `call_timer`, `call_video_detail` | TextView | elapsed time with a call-duration description. `call_video_detail` shows connection status while reconnecting |
+| `call_mute` | icon-only MaterialButton | "Mute" or "Unmute". Verify the name after toggling |
+| `call_speaker` | icon-only MaterialButton | Speakerphone on or off. Verify the name after routing changes |
+| `call_camera` | icon-only MaterialButton (video calls) | "Camera off" or "Camera on", based on the current camera state |
+| `call_camera_switch` | icon-only MaterialButton (video calls with front and rear cameras) | "Switch to rear camera" or "Switch to front camera". Disabled until the local camera is running |
+| `call_hang_up` | icon-only MaterialButton (56dp, red) | "Hang up" / VI "Kết thúc" (`call_hang_up`) |
+| `call_remote_video`, `call_local_video`, `call_local_preview`, `call_pulse_ring`, `call_peer_initials` | decoration | hidden from accessibility navigation |
 
 ## 5. Focus-order risks pinned by this inventory
 
@@ -423,9 +424,9 @@ below. For each screen, assert:
   summary mode/scope), switches' on/off state (`aiSummaryConsent`,
   `showPresence`, `showSeen`, `streakReminders`), `messageInput` empty-draft
   disable state on `sendButton`.
-- **Touch-target floors** from bounds: ≥ 48dp (`min_touch_target`) on
-  icon buttons; `call_control_size`/`call_end_size` control buttons; 72dp
-  inbox rows.
+- **Touch-target floors** from bounds. Icon and in-call controls use 48dp
+  (`min_touch_target`), Hang up uses 56dp (`call_hang_up_size`), and incoming
+  call controls and inbox rows use 72dp.
 - **Focus-order traversal**: the dumped traversal sequence must match the
   per-screen expected order in §4 — this is the TalkBack-order oracle.
 - **Live-region behavior** is a semantic property: assert the notification

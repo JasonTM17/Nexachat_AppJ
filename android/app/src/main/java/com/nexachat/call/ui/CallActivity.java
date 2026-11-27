@@ -15,8 +15,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -82,6 +84,7 @@ public class CallActivity extends ComponentActivity {
     private View videoHeader;
     private TextView videoPeerName;
     private TextView videoDetail;
+    private boolean videoHeaderInUse;
     private Button muteButton;
     private Button speakerButton;
     private Button hangUpButton;
@@ -95,9 +98,12 @@ public class CallActivity extends ComponentActivity {
     private Button switchCameraButton;
     private View controlsRow;
     private boolean controlsHidden;
+    private boolean revealingControlsGesture;
     private boolean autoHideScheduled;
     private static final long CONTROLS_HIDE_DELAY_MS = 5_000L;
-    private static final long CONTROLS_FADE_MS = 250L;
+    private AccessibilityManager accessibilityManager;
+    private final AccessibilityManager.TouchExplorationStateChangeListener touchExplorationListener =
+            enabled -> syncAutoHide(this.currentSession);
     private boolean renderersInitialized;
     private boolean localVideoBound;
     private boolean remoteVideoBound;
@@ -132,6 +138,8 @@ public class CallActivity extends ComponentActivity {
     private Object remoteVideoTrack;
     private CallMediaType requestedMediaType = CallMediaType.AUDIO;
     private boolean deviceHasCamera = true;
+    private boolean canSwitchCamera;
+    private boolean frontFacingCamera = true;
     private CallSession currentSession;
     private CallManager.CallListener listener;
     private FirebaseCallStatusDisplaySession firebaseCallStatusDisplaySession;
@@ -153,6 +161,7 @@ public class CallActivity extends ComponentActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_call);
         bindViews();
+        accessibilityManager = getSystemService(AccessibilityManager.class);
         firebaseCallStatusDisplaySession = new FirebaseCallStatusDisplaySession(
                 firebaseCallStatusDisplayAdapter,
                 firebaseEphemeralStateSource::listenToCallStatus,
@@ -160,6 +169,8 @@ public class CallActivity extends ComponentActivity {
                     if (!isFinishing() && !isDestroyed()) render(currentSession);
                 }));
         deviceHasCamera = getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY);
+        canSwitchCamera = getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT)
+                && getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA);
         requestedMediaType = CallMediaType.parse(
                 getIntent().getStringExtra(CallLauncher.EXTRA_MEDIA_TYPE));
         if (savedInstanceState != null) {
@@ -205,6 +216,10 @@ public class CallActivity extends ComponentActivity {
     @Override protected void onStart() {
         super.onStart();
         if (launchDecision == CallActivityLaunchPolicy.Decision.FINISH || isFinishing()) return;
+        if (accessibilityManager != null) {
+            accessibilityManager.addTouchExplorationStateChangeListener(touchExplorationListener);
+        }
+        setControlsHidden(false);
         startFirebaseCallStatusDisplay();
         if (remoteVideoBound) {
             mainHandler.removeCallbacks(remoteFlowWatcher);
@@ -231,8 +246,8 @@ public class CallActivity extends ComponentActivity {
         };
         callManager.addListener(listener);
         callManager.setCallVideoListener(new CallManager.CallVideoListener() {
-            @Override public void onLocalVideoTrack(@Nullable Object videoTrack) {
-                CallActivity.this.onLocalVideoTrack(videoTrack);
+            @Override public void onLocalVideoTrack(@Nullable Object videoTrack, boolean frontFacing) {
+                CallActivity.this.onLocalVideoTrack(videoTrack, frontFacing);
             }
 
             @Override public void onRemoteVideoTrack(@Nullable Object videoTrack) {
@@ -286,6 +301,11 @@ public class CallActivity extends ComponentActivity {
     }
 
     @Override protected void onStop() {
+        if (accessibilityManager != null) {
+            accessibilityManager.removeTouchExplorationStateChangeListener(touchExplorationListener);
+        }
+        cancelAutoHide();
+        revealingControlsGesture = false;
         if (firebaseStatusEvents != null) {
             firebaseStatusEvents.dispose();
             firebaseStatusEvents = null;
@@ -414,26 +434,28 @@ public class CallActivity extends ComponentActivity {
         hangUpButton.setOnClickListener(view -> callManager.hangUp());
     }
 
-    /**
-     * WhatsApp/Meet-style immersive mode: in a live video call the control row
-     * fades out after a few seconds without touches so it stops covering the
-     * video; any tap brings it back. Touch-driven only — render passes must not
-     * reset the countdown, or frequent state refreshes would pin it forever.
-     */
+    /** Controls and the elapsed-time header share the same inactivity deadline. */
     private final Runnable autoHideTick = () -> {
         autoHideScheduled = false;
-        if (currentSession != null && CallAutoHidePolicy.shouldAutoHide(
-                currentSession.getMediaType(), currentSession.getState())) {
-            controlsHidden = true;
-            setControlsRowVisible(false, true);
-        }
+        if (canAutoHide(currentSession)) setControlsHidden(true);
     };
+
+    private boolean canAutoHide(@Nullable CallSession session) {
+        return session != null && CallAutoHidePolicy.shouldAutoHide(session.getMediaType(), session.getState())
+                && (accessibilityManager == null || !accessibilityManager.isTouchExplorationEnabled());
+    }
 
     private void scheduleAutoHide() {
         if (autoHideScheduled) return;
         autoHideScheduled = true;
         mainHandler.removeCallbacks(autoHideTick);
-        mainHandler.postDelayed(autoHideTick, CONTROLS_HIDE_DELAY_MS);
+        long delay = CONTROLS_HIDE_DELAY_MS;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && accessibilityManager != null) {
+            delay = accessibilityManager.getRecommendedTimeoutMillis((int) CONTROLS_HIDE_DELAY_MS,
+                    AccessibilityManager.FLAG_CONTENT_TEXT | AccessibilityManager.FLAG_CONTENT_ICONS
+                            | AccessibilityManager.FLAG_CONTENT_CONTROLS);
+        }
+        mainHandler.postDelayed(autoHideTick, delay);
     }
 
     private void cancelAutoHide() {
@@ -441,55 +463,44 @@ public class CallActivity extends ComponentActivity {
         mainHandler.removeCallbacks(autoHideTick);
     }
 
-    private void setControlsRowVisible(boolean show, boolean animate) {
-        if (controlsRow == null) return;
-        controlsRow.animate().cancel();
-        // Pure visibility toggle on purpose: alpha animations run on the render
-        // thread and their end-state can desync from the view property on some
-        // devices, leaving the row invisible despite alpha=1. Visibility is a
-        // plain layout property and cannot desync. INVISIBLE (not GONE) keeps
-        // the layout stable so nothing jumps when the bar fades out.
-        controlsRow.setAlpha(show ? 1f : 0f);
-        controlsRow.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+    private void setControlsHidden(boolean hidden) {
+        controlsHidden = hidden;
+        controlsRow.setVisibility(hidden ? View.INVISIBLE : View.VISIBLE);
+        updateVideoHeaderVisibility();
+        if (!hidden && videoHeaderInUse && currentSession != null
+                && currentSession.getState() == CallState.ACTIVE) {
+            renderTimer();
+        }
     }
 
     /** Reconciles the auto-hide overlay with the latest session state. */
     private void syncAutoHide(CallSession session) {
-        boolean eligible = session != null && CallAutoHidePolicy.shouldAutoHide(
-                session.getMediaType(), session.getState());
-        if (!eligible) {
+        if (!canAutoHide(session)) {
             cancelAutoHide();
-            if (controlsHidden || (controlsRow != null
-                    && (controlsRow.getVisibility() != View.VISIBLE || controlsRow.getAlpha() < 1f))) {
-                controlsHidden = false;
-                setControlsRowVisible(true, false);
-            }
+            if (controlsHidden) setControlsHidden(false);
             return;
         }
         if (!controlsHidden) scheduleAutoHide();
     }
 
-    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
-        if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
-            handleUserPresence();
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            revealingControlsGesture = controlsHidden && canAutoHide(currentSession);
+            if (revealingControlsGesture) setControlsHidden(false);
+            if (canAutoHide(currentSession)) {
+                cancelAutoHide();
+                scheduleAutoHide();
+            }
+        }
+        if (revealingControlsGesture) {
+            // Consume the full gesture that exposed the controls.
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                revealingControlsGesture = false;
+            }
+            return true;
         }
         return super.dispatchTouchEvent(event);
-    }
-
-    private void handleUserPresence() {
-        if (currentSession == null || !CallAutoHidePolicy.shouldAutoHide(
-                currentSession.getMediaType(), currentSession.getState())) {
-            return;
-        }
-        if (controlsHidden) {
-            // The revealing tap must not reach the buttons: while hidden they are
-            // INVISIBLE, so this touch lands on the background and the next tap
-            // hits the actual control — exactly how the big apps sequence it.
-            controlsHidden = false;
-            setControlsRowVisible(true, true);
-        }
-        cancelAutoHide();
-        scheduleAutoHide();
     }
 
     private void renderCurrent() {
@@ -499,7 +510,8 @@ public class CallActivity extends ComponentActivity {
     private void render(CallSession session) {
         if (peerName == null) return;
         if (session == null || session.getState() == CallState.IDLE) {
-            setVideoHeaderVisible(false);
+            setVideoHeaderInUse(false);
+            syncAutoHide(null);
             timer.setVisibility(View.GONE);
             mainHandler.removeCallbacks(timerTick);
             String requestedName = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_NAME);
@@ -535,7 +547,7 @@ public class CallActivity extends ComponentActivity {
         boolean showTimer = model.isShowTimer() && answered;
         boolean showVideoHeader = videoCall && showTimer;
         boolean showDuration = showTimer && (!showVideoHeader || active);
-        setVideoHeaderVisible(showVideoHeader);
+        setVideoHeaderInUse(showVideoHeader);
         TextView visibleName = showVideoHeader ? videoPeerName : peerName;
         visibleName.setText(name);
         TextView callStatus = showVideoHeader ? videoDetail : status;
@@ -553,17 +565,16 @@ public class CallActivity extends ComponentActivity {
         mainHandler.removeCallbacks(timerTick);
         if (showDuration) renderTimer();
         if (showDuration && active) mainHandler.postDelayed(timerTick, 1000L);
-        // Hide the whole weighted column so the visible controls stay evenly spaced.
-        setControlVisible(muteButton, model.isShowMute());
-        setControlVisible(speakerButton, model.isShowSpeaker());
-        setControlVisible(hangUpButton, model.isShowHangUp());
+        muteButton.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
+        speakerButton.setVisibility(model.isShowSpeaker() ? View.VISIBLE : View.GONE);
+        hangUpButton.setVisibility(model.isShowHangUp() ? View.VISIBLE : View.GONE);
         if (muteButton instanceof com.google.android.material.button.MaterialButton) {
             ((com.google.android.material.button.MaterialButton) muteButton)
                     .setIconResource(session.isMuted() ? R.drawable.ic_mic_off : R.drawable.ic_mic);
         }
         if (speakerButton instanceof com.google.android.material.button.MaterialButton) {
             ((com.google.android.material.button.MaterialButton) speakerButton)
-                    .setIconResource(session.isSpeakerOn() ? R.drawable.ic_volume_down : R.drawable.ic_volume_up);
+                    .setIconResource(session.isSpeakerOn() ? R.drawable.ic_volume_up : R.drawable.ic_volume_down);
         }
         if (model.getHangUpLabelRes() != 0) {
             hangUpButton.setContentDescription(getString(model.getHangUpLabelRes()));
@@ -586,8 +597,7 @@ public class CallActivity extends ComponentActivity {
         }
         boolean showCameraControls = videoCall && isLive && deviceHasCamera;
         if (cameraButton != null) {
-            // Hide the whole weighted column, not just the button, so voice calls keep their spacing.
-            setControlVisible(cameraButton, showCameraControls);
+            cameraButton.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
             int cameraIcon = session.isCameraOn() ? R.drawable.ic_videocam : R.drawable.ic_videocam_off;
             int cameraLabelRes = session.isCameraOn() ? R.string.call_camera_off : R.string.call_camera_on;
             if (cameraButton instanceof com.google.android.material.button.MaterialButton) {
@@ -597,30 +607,27 @@ public class CallActivity extends ComponentActivity {
             cameraButton.setContentDescription(getString(cameraLabelRes));
         }
         if (switchCameraButton != null) {
-            setControlVisible(switchCameraButton, showCameraControls);
+            switchCameraButton.setVisibility(showCameraControls && canSwitchCamera ? View.VISIBLE : View.GONE);
+            switchCameraButton.setEnabled(session.isCameraOn() && localVideoBound);
+            int label = frontFacingCamera ? R.string.call_switch_to_back_camera : R.string.call_switch_to_front_camera;
+            String description = getString(label);
+            switchCameraButton.setContentDescription(description);
+            androidx.appcompat.widget.TooltipCompat.setTooltipText(switchCameraButton, description);
         }
         syncAutoHide(session);
     }
 
-    private void setVideoHeaderVisible(boolean visible) {
-        videoHeader.setVisibility(visible ? View.VISIBLE : View.GONE);
-        int centerVisibility = visible ? View.GONE : View.VISIBLE;
+    private void setVideoHeaderInUse(boolean inUse) {
+        videoHeaderInUse = inUse;
+        updateVideoHeaderVisibility();
+        int centerVisibility = inUse ? View.GONE : View.VISIBLE;
         peerName.setVisibility(centerVisibility);
         status.setVisibility(centerVisibility);
     }
 
-    /** Shows or hides a control together with its column (button and label). */
-    private static void setControlVisible(View button, boolean visible) {
-        int visibility = visible ? View.VISIBLE : View.GONE;
-        button.setVisibility(visibility);
-        View column = (View) button.getParent();
-        column.setVisibility(visibility);
-        if (column instanceof android.view.ViewGroup) {
-            android.view.ViewGroup group = (android.view.ViewGroup) column;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                group.getChildAt(i).setVisibility(visibility);
-            }
-        }
+    private void updateVideoHeaderVisibility() {
+        videoHeader.setVisibility(!videoHeaderInUse ? View.GONE
+                : controlsHidden ? View.INVISIBLE : View.VISIBLE);
     }
 
     private void updatePulseAnimation(boolean isLive) {
@@ -671,12 +678,13 @@ public class CallActivity extends ComponentActivity {
     private int lastAnnouncedStatus = 0;
 
     private void renderTimer() {
-        if (currentSession == null || currentSession.getAnsweredAtMs() == null) return;
+        if (currentSession == null || currentSession.getAnsweredAtMs() == null
+                || (videoHeaderInUse && controlsHidden)) return;
         long elapsedSeconds = Math.max(0L,
                 (System.currentTimeMillis() - currentSession.getAnsweredAtMs()) / 1000L);
         String formatted = CallTimerFormatter.formatSeconds(
                 elapsedSeconds, getString(R.string.time_duration_mm_ss));
-        TextView visibleTimer = videoHeader.getVisibility() == View.VISIBLE ? videoDetail : timer;
+        TextView visibleTimer = videoHeaderInUse ? videoDetail : timer;
         visibleTimer.setText(formatted);
         visibleTimer.setContentDescription(getString(R.string.call_timer_content_description, formatted));
     }
@@ -923,8 +931,9 @@ public class CallActivity extends ComponentActivity {
         proximityWakeLock = null;
     }
 
-    private void onLocalVideoTrack(@Nullable Object track) {
-        if (localVideoBound && localVideoTrack instanceof org.webrtc.VideoTrack) {
+    private void onLocalVideoTrack(@Nullable Object track, boolean frontFacing) {
+        frontFacingCamera = frontFacing;
+        if (localVideoBound && localVideoTrack != track && localVideoTrack instanceof org.webrtc.VideoTrack) {
             ((org.webrtc.VideoTrack) localVideoTrack).removeSink(localVideoView);
             localVideoBound = false;
         }
@@ -932,8 +941,11 @@ public class CallActivity extends ComponentActivity {
         if (track instanceof org.webrtc.VideoTrack) {
             ensureVideoRenderers();
             if (renderersInitialized) {
-                ((org.webrtc.VideoTrack) track).addSink(localVideoView);
-                localVideoBound = true;
+                localVideoView.setMirror(frontFacing);
+                if (!localVideoBound) {
+                    ((org.webrtc.VideoTrack) track).addSink(localVideoView);
+                    localVideoBound = true;
+                }
             }
         }
         render(currentSession);
@@ -973,7 +985,6 @@ public class CallActivity extends ComponentActivity {
         localVideoView.init(sharedContext, null);
         // SurfaceView needs an explicit overlay z-order to float above the remote surface.
         localVideoView.setZOrderMediaOverlay(true);
-        localVideoView.setMirror(true);
         localVideoView.setScalingType(org.webrtc.RendererCommon.ScalingType.SCALE_ASPECT_FILL);
         renderersInitialized = true;
     }

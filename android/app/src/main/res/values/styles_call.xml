@@ -30,6 +30,24 @@
         <item name="snackbarButtonStyle">@style/Widget.NexaChat.Button.Text.Snackbar</item>
     </style>
 
+    <style name="Widget.NexaChat.CallControl" parent="Widget.NexaChat.Button.Icon">
+        <item name="android:layout_width">@dimen/min_touch_target</item>
+        <item name="android:layout_height">@dimen/min_touch_target</item>
+        <item name="android:layout_marginHorizontal">@dimen/space_xs</item>
+        <item name="android:minWidth">@dimen/min_touch_target</item>
+        <item name="android:minHeight">@dimen/min_touch_target</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="backgroundTint">@color/call_control_background</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconTint">@color/call_icon_on_control</item>
+    </style>
+
     <!-- The call scene is always dark; dialog actions use a light plum so they stay legible. -->
     <style name="ThemeOverlay.NexaChat.Call.MaterialAlertDialog" parent="ThemeOverlay.NexaChat.MaterialAlertDialog">
         <item name="colorPrimary">@color/call_dialog_action</item>

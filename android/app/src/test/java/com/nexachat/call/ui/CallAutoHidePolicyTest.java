@@ -9,10 +9,10 @@ import static org.junit.Assert.assertTrue;
 public final class CallAutoHidePolicyTest {
 
     @Test
-    public void liveVideoStatesAutoHide() {
+    public void onlyEstablishedVideoAutoHides() {
         assertTrue(CallAutoHidePolicy.shouldAutoHide(CallMediaType.VIDEO, CallState.ACTIVE));
-        assertTrue(CallAutoHidePolicy.shouldAutoHide(CallMediaType.VIDEO, CallState.CONNECTING));
-        assertTrue(CallAutoHidePolicy.shouldAutoHide(CallMediaType.VIDEO, CallState.RECONNECTING_NETWORK));
+        assertFalse(CallAutoHidePolicy.shouldAutoHide(CallMediaType.VIDEO, CallState.CONNECTING));
+        assertFalse(CallAutoHidePolicy.shouldAutoHide(CallMediaType.VIDEO, CallState.RECONNECTING_NETWORK));
     }
 
     @Test

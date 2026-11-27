@@ -13,7 +13,8 @@ public interface CallMediaEngine {
          * Typed as Object so the core seam stays free of org.webrtc types; the
          * concrete engine emits org.webrtc.VideoTrack instances.
          */
-        default void onLocalVideoTrack(Object videoTrack) {}
+        /** The current local track and the physical camera's facing direction. */
+        default void onLocalVideoTrack(Object videoTrack, boolean frontFacing) {}
         default void onRemoteVideoTrack(Object videoTrack) {}
 
         /** The camera stopped working mid-call; the session must stop claiming it is on. */

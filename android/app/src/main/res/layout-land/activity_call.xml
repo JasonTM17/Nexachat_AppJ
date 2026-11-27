@@ -22,16 +22,19 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:paddingHorizontal="32dp"
-        android:paddingVertical="20dp">
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="16dp">
 
-        <!-- Left Column: Avatar, Name, Status, Timer -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:gravity="center"
             android:orientation="vertical">
 
@@ -96,218 +99,12 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- Right Column: controls row with the end call centered below -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
 
-            <LinearLayout
-                android:id="@+id/call_controls_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="horizontal">
-
-            <!-- Mute Column -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/space_md"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/call_mute"
-                    android:layout_width="@dimen/call_control_size"
-                    android:layout_height="@dimen/call_control_size"
-                    app:backgroundTint="@color/call_control_background"
-                    android:contentDescription="@string/call_mute"
-                    android:insetLeft="0dp"
-                    android:insetTop="0dp"
-                    android:insetRight="0dp"
-                    android:insetBottom="0dp"
-                    android:padding="0dp"
-                    android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
-                    app:icon="@drawable/ic_mic"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_mute_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_mute"
-                    android:textColor="@color/call_text_muted"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <!-- Speaker Column -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/space_md"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/call_speaker"
-                    android:layout_width="@dimen/call_control_size"
-                    android:layout_height="@dimen/call_control_size"
-                    app:backgroundTint="@color/call_control_background"
-                    android:contentDescription="@string/call_speaker"
-                    android:insetLeft="0dp"
-                    android:insetTop="0dp"
-                    android:insetRight="0dp"
-                    android:insetBottom="0dp"
-                    android:padding="0dp"
-                    android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
-                    app:icon="@drawable/ic_volume_up"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_speaker_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_speaker"
-                    android:textColor="@color/call_text_muted"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <!-- Camera Column (video calls only) -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/space_md"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/call_camera"
-                    android:layout_width="@dimen/call_control_size"
-                    android:layout_height="@dimen/call_control_size"
-                    app:backgroundTint="@color/call_control_background"
-                    android:contentDescription="@string/call_camera_off"
-                    android:insetLeft="0dp"
-                    android:insetTop="0dp"
-                    android:insetRight="0dp"
-                    android:insetBottom="0dp"
-                    android:padding="0dp"
-                    android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
-                    android:visibility="gone"
-                    app:icon="@drawable/ic_videocam"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_camera_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_camera_off"
-                    android:textColor="@color/call_text_muted"
-                    android:textSize="12sp"
-                    android:visibility="gone" />
-            </LinearLayout>
-
-            <!-- Camera Switch Column (video calls only) -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/space_md"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/call_camera_switch"
-                    android:layout_width="@dimen/call_control_size"
-                    android:layout_height="@dimen/call_control_size"
-                    app:backgroundTint="@color/call_control_background"
-                    android:contentDescription="@string/call_switch_camera"
-                    android:insetLeft="0dp"
-                    android:insetTop="0dp"
-                    android:insetRight="0dp"
-                    android:insetBottom="0dp"
-                    android:padding="0dp"
-                    android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
-                    android:visibility="gone"
-                    app:icon="@drawable/ic_switch_camera"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:iconTint="@color/call_icon_on_control" />
-                <TextView
-                    android:id="@+id/call_camera_switch_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_switch_camera_short"
-                    android:textAppearance="?attr/textAppearanceLabelMedium"
-                    android:textColor="@color/call_text_muted"
-                    android:visibility="gone" />
-            </LinearLayout>
-
-            </LinearLayout>
-
-            <!-- End call sits centered under the controls row -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/call_hang_up"
-                    android:layout_width="@dimen/call_end_size"
-                    android:layout_height="@dimen/call_end_size"
-                    app:backgroundTint="@color/call_end_background"
-                    android:contentDescription="@string/call_hang_up"
-                    android:insetLeft="0dp"
-                    android:insetTop="0dp"
-                    android:insetRight="0dp"
-                    android:insetBottom="0dp"
-                    android:padding="0dp"
-                    android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
-                    app:icon="@drawable/ic_call_end"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="32dp"
-                    app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_hang_up_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_hang_up"
-                    android:textColor="@color/call_action_decline_text"
-                    android:textSize="12sp" />
-            </LinearLayout>
-        </LinearLayout>
+        <include layout="@layout/view_call_controls" />
     </LinearLayout>
     </ScrollView>
 

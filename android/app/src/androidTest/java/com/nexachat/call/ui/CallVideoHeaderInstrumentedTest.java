@@ -11,6 +11,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.content.res.ColorStateList;
 import android.os.LocaleList;
 import android.util.DisplayMetrics;
 import android.view.ContextThemeWrapper;
@@ -23,6 +24,7 @@ import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.nexachat.R;
+import com.google.android.material.button.MaterialButton;
 import java.util.Locale;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -69,6 +71,8 @@ public final class CallVideoHeaderInstrumentedTest {
         name.setText("Nguyễn Phương Linh và tên hiển thị rất dài");
         header.setVisibility(View.VISIBLE);
         preview.setVisibility(View.VISIBLE);
+        root.findViewById(R.id.call_camera).setVisibility(View.VISIBLE);
+        root.findViewById(R.id.call_camera_switch).setVisibility(View.VISIBLE);
         String variant = language + " " + theme + " " + width + "x" + height;
         assertEquals(variant + " timer is not announced every second",
                 View.ACCESSIBILITY_LIVE_REGION_NONE, detail.getAccessibilityLiveRegion());
@@ -94,6 +98,28 @@ public final class CallVideoHeaderInstrumentedTest {
             assertEquals(variant + " " + text + " reaches the last character",
                     text.length(), detail.getLayout().getLineEnd(lastLine));
             assertGradientContrast(variant, header, name, detail);
+            assertCallControlGeometry(variant, root);
+        }
+    }
+
+    private static void assertCallControlGeometry(String variant, View root) {
+        View row = root.findViewById(R.id.call_controls_row);
+        int previousRight = -8;
+        for (int id : new int[] {R.id.call_mute, R.id.call_speaker, R.id.call_camera,
+                R.id.call_camera_switch, R.id.call_hang_up}) {
+            MaterialButton button = root.findViewById(id);
+            assertNotNull(variant + " control has an icon", button.getIcon());
+            assertTrue(variant + " control has a name", button.getContentDescription().length() > 0);
+            assertTrue(variant + " minimum touch target", button.getWidth() >= 48 && button.getHeight() >= 48);
+            assertTrue(variant + " neighboring targets are separated by 8dp", button.getLeft() - previousRight >= 8);
+            assertTrue(variant + " control stays inside the row", button.getRight() <= row.getWidth());
+            assertEquals(variant + " icons share the same vertical center", row.getHeight() / 2,
+                    (button.getTop() + button.getBottom()) / 2);
+            previousRight = button.getRight();
+            ColorStateList background = button.getBackgroundTintList();
+            double contrast = ColorUtils.calculateContrast(button.getIconTint().getDefaultColor(),
+                    background.getColorForState(new int[] {android.R.attr.state_enabled}, background.getDefaultColor()));
+            assertTrue(variant + " active control contrast " + contrast, contrast >= 4.5);
         }
     }
 
