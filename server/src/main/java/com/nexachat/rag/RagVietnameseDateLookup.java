@@ -15,9 +15,10 @@ import java.util.regex.Pattern;
 /** Direct Vietnamese date lookups with an explicit event label and a settled date. */
 record RagVietnameseDateLookup(String event) {
 
+    static final String QUESTION_END = "(?:\\s+(?:ạ|a))?\\s*[?!]*\\z";
     private static final Pattern QUESTION = Pattern.compile(
             "\\A(?<event>[^,;?!]+?) (?:là|la) (?:(?:ngày|ngay) (?:nào|nao|mấy|may)"
-                    + "|(?:hôm|hom) (?:nào|nao))\\s*[?!]*\\z");
+                    + "|(?:hôm|hom) (?:nào|nao))" + QUESTION_END);
     private static final Pattern WHITESPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern ASSERTION_INTRO = Pattern.compile(
             "\\A(?:(?:tôi|toi|mình|minh|tớ|to|chúng tôi|chung toi) (?:(?:đã|da) )?"

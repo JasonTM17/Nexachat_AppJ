@@ -66,7 +66,8 @@ final class RagExtractiveAnswerer {
                     + "|chua (?:chot|an dinh|xac nhan|biet|chon)|khong ro)\\b");
     private static final int VI_GRAMMAR_FLAGS = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS;
     private static final Pattern VI_DATE_REQUEST = Pattern.compile(
-            "\\b(?:(?:ngày|ngay)\\s+(?:nào|nao|mấy|may)|(?:hôm|hom)\\s+(?:nào|nao))\\s*[?!]*\\z",
+            "\\b(?:(?:ngày|ngay)\\s+(?:nào|nao|mấy|may)|(?:hôm|hom)\\s+(?:nào|nao))"
+                    + RagVietnameseDateLookup.QUESTION_END,
             VI_GRAMMAR_FLAGS);
     private static final Pattern VI_DATE_PENDING_CONFIRMATION = Pattern.compile(
             "\\b(?:chờ|đợi|cho|doi)\\s+(?:thông báo|thong bao|xác nhận|xac nhan|phê duyệt|phe duyet)"

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.llm.Redactor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Map;
@@ -95,14 +97,15 @@ class RagOutputValidatorTest {
         assertThat(validator.validateDetailed(fabricatedCitation, speakerPrompt).status()).isEqualTo(RagOutputValidator.Status.INVALID);
     }
 
-    @Test
-    void speakerDateQuoteRejectsADateOnlyAttachedToAnotherEvent() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"Hạn gửi bản thảo là ngày nào?", "Hạn gửi bản thảo là ngày nào ạ?"})
+    void speakerDateQuoteRejectsADateOnlyAttachedToAnotherEvent(String question) throws Exception {
         ObjectMapper json = new ObjectMapper();
         var builder = new RagPromptBuilder(json, new Redactor());
         String relative = "Hạn gửi bản thảo nằm sau buổi hướng dẫn ngày 7/5.";
         String explicit = "Hạn gửi bản thảo là ngày 9/5, sau buổi hướng dẫn.";
         var context = new RagContextItem(1, List.of(messageId), 2, "U1", relative + " " + explicit);
-        RagPrompt prompt = builder.buildSpeakerQuote("Hạn gửi bản thảo là ngày nào?",
+        RagPrompt prompt = builder.buildSpeakerQuote(question,
                 SummaryLanguage.VI, List.of(context));
 
         String rejected = json.writeValueAsString(Map.of("answer", relative, "citations", List.of(1)));
@@ -110,7 +113,7 @@ class RagOutputValidatorTest {
         String accepted = json.writeValueAsString(Map.of("answer", explicit, "citations", List.of(1)));
         assertThat(validator.validate(accepted, prompt)).isNotNull();
         var relativeOnly = new RagContextItem(1, List.of(messageId), 2, "U1", relative);
-        RagPrompt noQuote = builder.buildSpeakerQuote("Hạn gửi bản thảo là ngày nào?",
+        RagPrompt noQuote = builder.buildSpeakerQuote(question,
                 SummaryLanguage.VI, List.of(relativeOnly));
         assertThat(validator.validateDetailed(rejected, noQuote).status()).isEqualTo(RagOutputValidator.Status.INVALID);
     }

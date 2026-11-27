@@ -222,7 +222,8 @@ public class AskService {
                 stats.recordNotFound();
                 return new AskExecution(consentSnapshot, timeoutResponse(contextOmitted, false), conversationId, context);
             }
-            UUID resolved = retrievalService.findSpeaker(conversationId, admittedFrom, namedLookup.name());
+            UUID resolved = namedLookup.ambiguous() ? null
+                    : retrievalService.findSpeaker(conversationId, admittedFrom, namedLookup.name());
             if (deadline.expired() || resolved == null) {
                 stats.recordNotFound();
                 AskResponse response = deadline.expired() ? timeoutResponse(contextOmitted, false)
