@@ -26,6 +26,9 @@
     <color name="call_text_primary">#FFFFFCFF</color>
     <color name="call_text_secondary">#FFD7CCD9</color>
     <color name="call_text_muted">#FFD7CCD9</color>
+    <color name="call_video_header_shade_top">#CC1D1920</color>
+    <color name="call_video_header_shade_bottom">#AC1D1920</color>
+    <color name="call_video_header_detail">#FFF2EDF3</color>
     <color name="call_icon_on_control">#FFFFFCFF</color>
     <color name="call_action_decline_text">#FFFFB4AB</color>
     <color name="call_action_accept_text">#FF8CD6B7</color>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Preview width (96dp), end margin (20dp), and a 12dp gap to the labels. -->
+    <dimen name="call_video_header_end_inset">128dp</dimen>
+    <dimen name="call_video_header_fade">44dp</dimen>
+</resources>

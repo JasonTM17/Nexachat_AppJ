@@ -253,15 +253,7 @@
     </LinearLayout>
     </ScrollView>
 
-    <!-- Keep 12dp between the header and the local preview. -->
-    <include
-        layout="@layout/view_call_video_header"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="24dp"
-        android:layout_marginEnd="128dp" />
+    <include layout="@layout/view_call_video_header" />
 
     <!-- Floating local camera preview (top-end, video calls only) -->
     <FrameLayout
