@@ -399,7 +399,7 @@ public class AskService {
         }
 
         if (requiresAnswerEvidence && RagExtractiveAnswerer.hasConflictingClaims(
-                question, language, retrieval.lookupCandidates(), deadline)) {
+                question, language, retrieval.lookupCandidates(), deadline, speaker != null)) {
             stats.recordNotFound();
             return AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE,
                     false, null, evidenceOmitted, false);

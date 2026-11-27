@@ -114,4 +114,42 @@ class RagOutputValidatorTest {
                 SummaryLanguage.VI, List.of(relativeOnly));
         assertThat(validator.validateDetailed(rejected, noQuote).status()).isEqualTo(RagOutputValidator.Status.INVALID);
     }
+
+    @Test
+    void directDateQuoteMustMatchTheDatedAssertionInItsOwnSource() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        var builder = new RagPromptBuilder(json, new Redactor());
+        String statement = "Hạn nộp phiếu khảo sát là mười hai tháng Tám.";
+        String differentEvent = "Hạn nộp phiếu khảo sát sẽ công bố riêng, còn ngày duyệt là 6/8.";
+        var source = new RagContextItem(1, List.of(messageId), 2, "U1", statement);
+        var distractor = new RagContextItem(2, List.of(UUID.randomUUID()), 3, "U1", differentEvent);
+        RagPrompt prompt = builder.buildSpeakerQuote("Hạn nộp phiếu khảo sát là ngày nào?",
+                SummaryLanguage.VI, List.of(source, distractor));
+
+        String accepted = json.writeValueAsString(Map.of("answer", statement, "citations", List.of(1)));
+        assertThat(validator.validate(accepted, prompt).citationIds()).containsExactly(messageId);
+        for (String rejected : List.of(statement, differentEvent)) {
+            String raw = json.writeValueAsString(Map.of("answer", rejected, "citations", List.of(2)));
+            assertThat(validator.validateDetailed(raw, prompt).status()).isEqualTo(RagOutputValidator.Status.INVALID);
+        }
+    }
+
+    @Test
+    void dateQuoteRejectsPendingConfirmationAndAnIsolatedDateFromAnotherClause() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        var builder = new RagPromptBuilder(json, new Redactor());
+        String pending = "Buổi kiểm kê kho là ngày 14/7, nhóm mình còn chờ xác nhận cuối cùng.";
+        String confirmed = "Buổi kiểm kê kho là ngày 18/7, còn ngày duyệt phiếu là 16/7;"
+                + " nhóm chờ thông báo chính thức về chỗ đỗ xe.";
+        var context = new RagContextItem(1, List.of(messageId), 2, "U1", pending + " " + confirmed);
+        RagPrompt prompt = builder.buildSpeakerQuote("Buổi kiểm kê kho là ngày nào?",
+                SummaryLanguage.VI, List.of(context));
+
+        for (String quote : List.of(pending, "16/7")) {
+            String raw = json.writeValueAsString(Map.of("answer", quote, "citations", List.of(1)));
+            assertThat(validator.validateDetailed(raw, prompt).status()).isEqualTo(RagOutputValidator.Status.INVALID);
+        }
+        String fullQuote = json.writeValueAsString(Map.of("answer", confirmed, "citations", List.of(1)));
+        assertThat(validator.validate(fullQuote, prompt).citationIds()).containsExactly(messageId);
+    }
 }

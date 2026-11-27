@@ -68,6 +68,12 @@ final class RagExtractiveAnswerer {
     private static final Pattern VI_DATE_REQUEST = Pattern.compile(
             "\\b(?:(?:ngày|ngay)\\s+(?:nào|nao|mấy|may)|(?:hôm|hom)\\s+(?:nào|nao))\\s*[?!]*\\z",
             VI_GRAMMAR_FLAGS);
+    private static final Pattern VI_DATE_PENDING_CONFIRMATION = Pattern.compile(
+            "\\b(?:chờ|đợi|cho|doi)\\s+(?:thông báo|thong bao|xác nhận|xac nhan|phê duyệt|phe duyet)"
+                    + "\\s+(?:chính thức|chinh thuc|cuối cùng|cuoi cung)\\b"
+                    + "(?!\\s++(?:về|ve|cho|của|cua)\\s++(?!(?:ngày|ngay|lịch|lich|hạn|han"
+                    + "|mốc|moc|thời\\s+điểm|thoi\\s+diem)\\b))",
+            VI_GRAMMAR_FLAGS);
     private static final Pattern VI_RELATIVE_EVENT = Pattern.compile(
             "\\b(?:trước|truoc|sau)\\s+(?:buổi|buoi|khi|lúc|luc|ngày|ngay|hôm|hom)\\b",
             VI_GRAMMAR_FLAGS);
@@ -84,7 +90,12 @@ final class RagExtractiveAnswerer {
             String question,
             SummaryLanguage language,
             List<RagMessage> candidates,
-            AskDeadline deadline) {
+            AskDeadline deadline,
+            boolean namedSpeaker) {
+        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
+        if (dateLookup != null) {
+            return hasConflictingDates(candidates, deadline, dateLookup);
+        }
         String foldedQuestion = RagQuestionNormalizer.normalize(question);
         Matcher quantityQuestion = QUANTITY_QUESTION.matcher(foldedQuestion);
         String unit = quantityQuestion.find() ? quantityQuestion.group(1) : null;
@@ -122,6 +133,23 @@ final class RagExtractiveAnswerer {
                     if (previous != null && !previous.equals(value.value())) {
                         return true;
                     }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasConflictingDates(
+            List<RagMessage> candidates, AskDeadline deadline, RagVietnameseDateLookup lookup) {
+        String confirmed = null;
+        for (RagMessage candidate : candidates) {
+            deadline.check();
+            for (String statement : attributedStatements(candidate.content(), true)) {
+                for (String date : lookup.inspect(statement).values()) {
+                    if (confirmed != null && !confirmed.equals(date)) {
+                        return true;
+                    }
+                    confirmed = date;
                 }
             }
         }
@@ -178,8 +206,9 @@ final class RagExtractiveAnswerer {
         }
         String content = message.content();
         boolean needsSettledEvidence = needsSettledEvidence(question, language);
+        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
         boolean attributedDate = namedSpeaker && asksForVietnameseDate(question, language);
-        Set<ValueType> requestedTypes = requestedValueTypes(question);
+        Set<ValueType> requestedTypes = dateLookup == null ? requestedValueTypes(question) : Set.of();
         boolean identifierLookup = isIdentifierLookup(question, requestedTypes);
         Span best = null;
         ExactMatch exact = null;
@@ -191,7 +220,11 @@ final class RagExtractiveAnswerer {
                     : !isEvidenceSentence(text, needsSettledEvidence)) {
                 continue;
             }
-            int matches = matchedTermCount(text, terms, language);
+            RagVietnameseDateLookup.DateEvidence date = dateLookup == null ? null : dateLookup.inspect(text);
+            if (date != null && !date.usable()) {
+                continue;
+            }
+            int matches = date != null && date.directlyBound() ? terms.size() : matchedTermCount(text, terms, language);
             if (matches == 0 || matches < bestMatches) {
                 continue;
             }
@@ -277,8 +310,14 @@ final class RagExtractiveAnswerer {
     }
 
     static List<String> attributedStatements(String content, boolean attributedDate) {
+        return attributedStatements(content, attributedDate, null);
+    }
+
+    static List<String> attributedStatements(String content, boolean attributedDate, RagVietnameseDateLookup lookup) {
         return sentences(content).stream().map(span -> content.substring(span.start(), span.end()))
-                .filter(text -> isAttributedStatement(text, attributedDate)).toList();
+                .filter(text -> isAttributedStatement(text, attributedDate))
+                .filter(text -> lookup == null || lookup.inspect(text).usable())
+                .toList();
     }
 
     static boolean asksForVietnameseDate(String question, SummaryLanguage language) {
@@ -289,7 +328,8 @@ final class RagExtractiveAnswerer {
         return isEvidenceSentence(text, true)
                 && !CONDITIONAL_CUE.matcher(text).find()
                 && !UNSET_ATTRIBUTED_FACT.matcher(text).find()
-                && (!attributedDate || !onlyDatesARelativeEvent(text));
+                && (!attributedDate || !VI_DATE_PENDING_CONFIRMATION.matcher(Tokenizer.nfc(text)).find()
+                        && !onlyDatesARelativeEvent(text));
     }
 
     private static boolean onlyDatesARelativeEvent(String text) {
