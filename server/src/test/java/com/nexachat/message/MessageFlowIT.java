@@ -436,7 +436,9 @@ class MessageFlowIT {
                 assertThat(jdbcTemplate.queryForObject(
                         "SELECT last_message_seq FROM conversations WHERE id = ?", Long.class, conversationId))
                         .isEqualTo(sentSequences.stream().mapToLong(Long::longValue).max().orElseThrow());
-                assertThat(dataSource.getHikariPoolMXBean().getActiveConnections()).isZero();
+                // The pool can still be serving background work after the HTTP and STOMP checks.
+                await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                        assertThat(dataSource.getHikariPoolMXBean().getActiveConnections()).isZero());
                 assertThat(dataSource.getHikariPoolMXBean().getTotalConnections())
                         .isLessThanOrEqualTo(dataSource.getMaximumPoolSize());
             } finally {
