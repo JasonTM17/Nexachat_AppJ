@@ -5315,6 +5315,16 @@ class LabelsLifecycleExecutorTest(unittest.TestCase):
 
 
 class PollsRemindersExecutorTest(unittest.TestCase):
+    def test_reminder_clock_targets_the_device_fixture_container(self):
+        with mock.patch.dict(journeys.os.environ, {
+            "NEXACHAT_E2E_REMINDER_DB": "nexachat_quality_test",
+            "NEXACHAT_E2E_DB_CONTAINER": "nexachat-quality-test-db",
+        }):
+            clock = journeys._reminder_clock({})
+
+        self.assertEqual(clock.db_name, "nexachat_quality_test")
+        self.assertEqual(clock.container, "nexachat-quality-test-db")
+
     """Offline fake device+REST world for run_polls_reminders.
 
     The world mirrors the surfaces probed on emulator-5554: the chat overflow
