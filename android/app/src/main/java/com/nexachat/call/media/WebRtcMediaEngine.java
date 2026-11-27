@@ -26,6 +26,8 @@ import org.webrtc.Camera1Enumerator;
 import org.webrtc.Camera2Enumerator;
 import org.webrtc.CameraEnumerator;
 import org.webrtc.CameraVideoCapturer;
+import org.webrtc.DefaultVideoDecoderFactory;
+import org.webrtc.DefaultVideoEncoderFactory;
 import org.webrtc.EglBase;
 import org.webrtc.IceCandidate;
 import org.webrtc.MediaConstraints;
@@ -55,6 +57,8 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     private static final double DUCKED_REMOTE_VOLUME = 0.2;
     private static final Object FACTORY_LOCK = new Object();
     private static PeerConnectionFactory sharedFactory;
+    // Codecs and call-local camera/render contexts share textures through this process-owned root.
+    private static EglBase sharedVideoEglBase;
     @SuppressWarnings("unused")
     private static AudioDeviceModule sharedAudioDeviceModule;
 
@@ -427,7 +431,8 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
 
     /** Runs on mediaExecutor. Camera absence never fails the call: remote video still renders. */
     private void setupLocalVideo(PeerConnectionFactory factory, long callGeneration) {
-        eglBase = EglBase.create();
+        EglBase codecEglBase = sharedVideoEglBase;
+        eglBase = EglBase.create(codecEglBase == null ? null : codecEglBase.getEglBaseContext());
         videoCapturer = createCameraCapturer(callGeneration);
         if (videoCapturer == null) {
             peerConnection.addTransceiver(
@@ -543,12 +548,32 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                     .setUseHardwareAcousticEchoCanceler(true)
                     .setUseHardwareNoiseSuppressor(true)
                     .createAudioDeviceModule();
-            sharedAudioDeviceModule = audioDeviceModule;
-            sharedFactory = PeerConnectionFactory.builder()
-                    .setAudioDeviceModule(audioDeviceModule)
-                    .createPeerConnectionFactory();
-            if (sharedFactory == null) throw new IllegalStateException("WebRTC factory unavailable");
-            return sharedFactory;
+            EglBase codecEglBase = null;
+            try {
+                try {
+                    codecEglBase = EglBase.create();
+                } catch (RuntimeException unavailable) {
+                    // Keep audio and byte-buffer codecs available if shared EGL cannot initialize.
+                }
+                EglBase.Context codecContext = codecEglBase == null
+                        ? null : codecEglBase.getEglBaseContext();
+                PeerConnectionFactory factory = PeerConnectionFactory.builder()
+                        .setAudioDeviceModule(audioDeviceModule)
+                        .setVideoEncoderFactory(new DefaultVideoEncoderFactory(codecContext, false, false))
+                        // Decode to buffers so renderer and luma inspection do not hold codec textures.
+                        .setVideoDecoderFactory(new DefaultVideoDecoderFactory(null))
+                        .createPeerConnectionFactory();
+                if (factory == null) throw new IllegalStateException("WebRTC factory unavailable");
+                sharedVideoEglBase = codecEglBase;
+                sharedAudioDeviceModule = audioDeviceModule;
+                sharedFactory = factory;
+                return factory;
+            } finally {
+                if (sharedFactory == null) {
+                    audioDeviceModule.release();
+                    if (codecEglBase != null) codecEglBase.release();
+                }
+            }
         }
     }
 
