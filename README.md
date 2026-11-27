@@ -213,14 +213,13 @@ rules tests and a secret scan on every PR and push to `main`/`develop`; a green
 
 ## Release
 
-Tags drive releases. Pushing `v*` (or dispatching the workflow with a tag) runs
-`Android APK Release` (`.github/workflows/android-release.yml`): it derives
-`versionName`/`versionCode` from the tag, builds a signed release APK, verifies
-the signer against the first fingerprint in
+Pushing a release tag on `main` runs `Android APK Release`
+(`.github/workflows/android-release.yml`). The workflow derives `versionName`
+and `versionCode`, verifies the APK and AAB signing certificates against
 [`site/.well-known/assetlinks.json`](site/.well-known/assetlinks.json), and
-publishes `nexachat-<tag>.apk` plus its `.sha256` to the GitHub Release. Notes
-come from `docs/release-notes/<tag>.md` when present. Operator steps:
-[docs/release/release-checklist.md](docs/release/release-checklist.md).
+uploads the signed files and checksums as a workflow artifact. The repository
+owner verifies the files before publishing them with `docs/release-notes/<tag>.md`.
+Follow the [release checklist](docs/release/release-checklist.md).
 
 ## Repository layout
 

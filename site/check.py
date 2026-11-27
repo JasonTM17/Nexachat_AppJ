@@ -1550,8 +1550,10 @@ def test_download_page():
             ("stable_asset_name='nexachat-latest.apk'", "stable APK asset name"),
             ('cp "$apk" "$asset_dir/$stable_asset_name"', "stable APK asset copy"),
             ('sha256sum "$stable_asset_name" > "$stable_asset_name.sha256"', "stable checksum generation"),
-            ('stable_apk="$asset_dir/nexachat-latest.apk"', "stable upload path"),
-            ('"$stable_apk" "$stable_checksum"', "stable asset upload"),
+            ('asset_dir="$RUNNER_TEMP/nexachat-release-assets"', "stable artifact staging path"),
+            ("uses: actions/upload-artifact@", "signed artifact upload"),
+            ("path: ${{ runner.temp }}/nexachat-release-assets/", "signed artifact upload path"),
+            ("if-no-files-found: error", "signed artifact missing-file guard"),
         ):
             if needle not in release_workflow:
                 failures.append(f"android-release.yml missing {description}")

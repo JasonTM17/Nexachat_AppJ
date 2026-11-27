@@ -7,12 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing semantic version tag to build and publish (for example v1.2.3)
+        description: Existing semantic version tag selected as the workflow ref (for example v1.2.3)
         required: true
         type: string
 
 concurrency:
-  group: android-apk-release-${{ github.event.inputs.tag || github.ref }}
+  group: android-apk-release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -20,17 +20,42 @@ permissions:
 
 jobs:
   release:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name))
     runs-on: ubuntu-latest
     environment: android-release
-    permissions:
-      contents: write
     steps:
-      - name: Check out the release tag
+      - name: Check out the release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+          ref: ${{ github.sha }}
+
+      - name: Verify the tag, event commit and main ancestry
+        env:
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo '::error::Select a release tag as the workflow ref.'
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$INPUT_RELEASE_TAG" != "$GITHUB_REF_NAME" ]]; then
+            echo '::error::The dispatch input must exactly match the selected tag.'
+            exit 1
+          fi
+          event_commit="$(git rev-parse --verify "$GITHUB_SHA^{commit}")"
+          tag_commit="$(git rev-parse --verify "$GITHUB_REF^{commit}")"
+          if [[ "$(git rev-parse HEAD)" != "$event_commit" || "$tag_commit" != "$event_commit" ]]; then
+            echo '::error::The selected tag and checkout must point to the workflow event commit.'
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$event_commit" refs/remotes/origin/main; then
+            echo '::error::The release commit must be on main.'
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -52,16 +77,10 @@ jobs:
 
       - name: Derive Android version from tag
         id: release_version
-        env:
-          INPUT_RELEASE_TAG: ${{ github.event.inputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            release_tag="$INPUT_RELEASE_TAG"
-          else
-            release_tag="$GITHUB_REF_NAME"
-          fi
+          release_tag="$GITHUB_REF_NAME"
           if [[ "$release_tag" != v* ]]; then
             echo '::error::Release tags must start with v and use MAJOR.MINOR.PATCH.'
             exit 1
@@ -159,6 +178,8 @@ jobs:
         id: release_assets
         env:
           RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+          RELEASE_VERSION_NAME: ${{ steps.release_version.outputs.version_name }}
+          RELEASE_VERSION_CODE: ${{ steps.release_version.outputs.version_code }}
         shell: bash
         run: |
           set -euo pipefail
@@ -175,6 +196,13 @@ jobs:
           apksigner="$(find "$sdk_root/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
           if [[ -z "$apksigner" || ! -x "$apksigner" ]]; then
             echo '::error::apksigner was not found in the Android SDK build-tools.'
+            exit 1
+          fi
+          aapt="$(dirname "$apksigner")/aapt"
+          package_info="$("$aapt" dump badging "$apk")"
+          expected_package="package: name='com.nexachat' versionCode='$RELEASE_VERSION_CODE' versionName='$RELEASE_VERSION_NAME'"
+          if [[ "${package_info%%$'\n'*}" != "$expected_package"* ]]; then
+            echo '::error::The APK package or version does not match the release tag.'
             exit 1
           fi
           certs="$("$apksigner" verify --print-certs "$apk")"
@@ -213,33 +241,13 @@ jobs:
           cp "$aab" "$asset_dir/$aab_name"
           (cd "$asset_dir" && sha256sum "$aab_name" > "$aab_name.sha256")
 
-      - name: Publish APK, AAB and checksums to GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          asset_dir="$RUNNER_TEMP/nexachat-release-assets"
-          apk="$asset_dir/nexachat-${RELEASE_TAG}.apk"
-          checksum="$apk.sha256"
-          stable_apk="$asset_dir/nexachat-latest.apk"
-          stable_checksum="$stable_apk.sha256"
-          aab="$asset_dir/nexachat-${RELEASE_TAG}.aab"
-          aab_checksum="$aab.sha256"
-          notes_file="docs/release-notes/${RELEASE_TAG}.md"
-          if [[ -f "$notes_file" ]]; then
-            echo "Using release notes from $notes_file."
-            notes_arg=(--notes-file "$notes_file")
-          else
-            echo "Notice: Release notes file $notes_file not found; falling back to --generate-notes."
-            notes_arg=(--generate-notes)
-          fi
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$apk" "$checksum" "$stable_apk" "$stable_checksum" "$aab" "$aab_checksum" --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$RELEASE_TAG" "$apk" "$checksum" "$stable_apk" "$stable_checksum" "$aab" "$aab_checksum" "${notes_arg[@]}" --repo "$GITHUB_REPOSITORY"
-          fi
+      - name: Upload signed Android release assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nexachat-${{ steps.release_version.outputs.tag }}-signed
+          path: ${{ runner.temp }}/nexachat-release-assets/
+          if-no-files-found: error
+          compression-level: 0
 
       - name: Remove temporary keystore
         if: always()
