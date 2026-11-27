@@ -484,6 +484,84 @@ class AskServiceTest {
         assertThat(response.citations()).isEmpty();
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "VI | Hội trường Lam Vân chứa bao nhiêu người? | Hội trường Lam Vân chứa 38 người. | Hội trường Lam Vân chứa 52 người.",
+            "EN | How many people can the Juniper hall seat? | The Juniper hall can seat 48 people. | The Juniper hall can seat 62 people."
+    })
+    void conflictingQuantitiesRemainVisibleBeforeDiversitySelection(
+            SummaryLanguage language, String question, String firstClaim, String secondClaim) {
+        RagMessage first = addMessage(conversationId, senderId, 1, firstClaim);
+        addMessage(conversationId, senderId, 2, secondClaim);
+        setConsent(true);
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.answer(new RagLlmAnswer(firstClaim, List.of(first.id())), false));
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, language));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.answer()).isNull();
+        assertThat(response.citations()).isEmpty();
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(questionCache, never()).saveIfConsentSnapshotMatches(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void similarScalarClaimsCannotHideAConflictingCode() {
+        addMessage(conversationId, senderId, 1, "The Fenwick project gate code is 7348.");
+        addMessage(conversationId, senderId, 2, "The Fenwick project gate code is 8291.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the Fenwick project gate code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.answer()).isNull();
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void aQuantityAnswerKeepsItsUnitWhenOtherNumbersAppear() {
+        RagMessage fact = addMessage(conversationId, senderId, 1, "The Juniper hall can seat 64 people in 2027.");
+        addMessage(conversationId, senderId, 2, "The Juniper hall can seat people or store 80 folded chairs.");
+        addMessage(conversationId, senderId, 3, "The Juniper hall can seat 64 people in 2028.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("How many people can the Juniper hall seat?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("64 people");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void aLowerBoundDoesNotContradictACompatibleExactCount() {
+        RagMessage confirmed = addMessage(conversationId, senderId, 1, "The Juniper hall can seat 64 people.");
+        addMessage(conversationId, senderId, 2, "The Juniper hall can seat at least 38 people.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("How many people can the Juniper hall seat?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("64 people");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(confirmed.id());
+    }
+
+    @Test
+    void optedOutAndOtherConversationClaimsDoNotAffectTheVisibleCount() {
+        RagMessage fact = addMessage(conversationId, senderId, 1, "Hội trường Lam Vân chứa 38 người.");
+        RagMessage privateClaim = addMessage(conversationId, UUID.randomUUID(), 2, "Hội trường Lam Vân chứa 52 người.");
+        index.optOutMessage(privateClaim.id());
+        addMessage(UUID.randomUUID(), senderId, 3, "Hội trường Lam Vân chứa 57 người.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Hội trường Lam Vân chứa bao nhiêu người?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("38 người");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
     @Test
     void aSpecificQueryStillSelectsOneOfThePreviouslyAmbiguousValues() {
         RagMessage fact = addMessage(conversationId, senderId, 1,

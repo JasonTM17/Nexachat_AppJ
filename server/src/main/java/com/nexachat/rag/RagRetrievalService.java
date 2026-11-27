@@ -151,7 +151,10 @@ public class RagRetrievalService {
                 ranked.get(0).score(),
                 contextResult.inputChars(),
                 contextResult.messages(),
-                optedOutEvidenceOverlap);
+                optedOutEvidenceOverlap,
+                // MMR deduplicates similar language, including claims that differ in their value.
+                // Keep the bounded, admitted pool for the local lookup check only.
+                requireAnswerEvidence ? fused.stream().map(ScoredMessage::message).toList() : List.of());
     }
 
     private static RetrievalResult empty(boolean optedOutEvidenceOverlap) {

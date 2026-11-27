@@ -4,9 +4,11 @@ import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.engine.Tokenizer;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,8 +37,102 @@ final class RagExtractiveAnswerer {
     private static final Pattern VALUE_NEGATION = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}])(?:not|isn['’]t|aren['’]t|wasn['’]t|no longer"
                     + "|không phải|không còn|khong phai|khong con)(?![\\p{L}\\p{N}])");
+    private static final Pattern QUANTITY_QUESTION = Pattern.compile(
+            "\\b(?:how many|bao nhieu)\\s+([\\p{L}]+)");
+    private static final Pattern QUANTITY_WITH_UNIT = Pattern.compile(
+            "(?<![\\p{L}\\p{N}.,:/+\\-])(\\p{Nd}+)\\s+([\\p{L}\\p{M}]+)");
+    private static final Pattern NON_EXACT_QUANTITY = Pattern.compile(
+            "\\b(?:at least|less than|fewer than|(?<!no )more than|or more|or fewer|roughly|approximately|around|about"
+                    + "|it nhat|toi thieu|nhieu hon|it hon|khoang|tam|tro len|tro xuong)\\b");
+    private static final Pattern MAXIMUM_QUANTITY = Pattern.compile(
+            "\\b(?:maximum|max|up to|at most|no more than|toi da|khong qua)\\b");
+    private static final Pattern CLAUSE_BOUNDARY = Pattern.compile(
+            "(?iu)\\s*(?:;|,(?=\\s))\\s*|\\s+(?:while|whereas|but|còn|nhưng)\\s+");
+    private static final Pattern CONDITIONAL_CUE = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}])(?:if|unless|pending|proposed|nếu|neu|dự kiến|du kien)"
+                    + "(?![\\p{L}\\p{N}])");
 
     private RagExtractiveAnswerer() {
+    }
+
+    static boolean hasConflictingClaims(
+            String question,
+            SummaryLanguage language,
+            List<RagMessage> candidates,
+            AskDeadline deadline) {
+        String foldedQuestion = RagQuestionNormalizer.normalize(question);
+        Matcher quantityQuestion = QUANTITY_QUESTION.matcher(foldedQuestion);
+        String unit = quantityQuestion.find() ? quantityQuestion.group(1) : null;
+        boolean asksForMaximum = MAXIMUM_QUANTITY.matcher(foldedQuestion).find();
+        Set<ValueType> types = unit == null ? requestedValueTypes(question) : Set.of();
+        if (unit == null && types.isEmpty()) {
+            return false;
+        }
+        // Keep all distinguishing words, such as a requested edition or place, even if
+        // retrieval had to limit its query terms. See each clause as its own assertion.
+        List<String> terms = RagQuestionTerms.answerTerms(question, language, Integer.MAX_VALUE);
+        if (terms.isEmpty()) {
+            return false;
+        }
+        Map<ValueType, String> values = new EnumMap<>(ValueType.class);
+        for (RagMessage candidate : candidates) {
+            deadline.check();
+            String content = candidate.content();
+            for (Span sentence : sentences(content)) {
+                String text = content.substring(sentence.start(), sentence.end());
+                if (!isEvidenceSentence(text, true) || CONDITIONAL_CUE.matcher(text).find()) {
+                    continue;
+                }
+                for (String clause : CLAUSE_BOUNDARY.split(text)) {
+                    if (matchedTermCount(clause, terms, language) != terms.size()
+                            || VALUE_NEGATION.matcher(clause).find()) {
+                        continue;
+                    }
+                    ClaimValue value = claimValue(clause, types, unit, asksForMaximum, language);
+                    if (value == null) {
+                        continue;
+                    }
+                    String previous = values.putIfAbsent(value.type(), value.value());
+                    if (previous != null && !previous.equals(value.value())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static ClaimValue claimValue(
+            String clause, Set<ValueType> types, String unit, boolean asksForMaximum, SummaryLanguage language) {
+        if (unit == null) {
+            ExactMatch exact = findExactValue(types, clause, new Span(0, clause.length()));
+            return exact == null ? null : new ClaimValue(exact.type(), exact.value());
+        }
+        String folded = RagQuestionNormalizer.normalize(clause);
+        if (NON_EXACT_QUANTITY.matcher(folded).find()
+                || (!asksForMaximum && MAXIMUM_QUANTITY.matcher(folded).find())) {
+            return null;
+        }
+        Matcher matcher = QUANTITY_WITH_UNIT.matcher(clause);
+        String count = null;
+        while (matcher.find()) {
+            String noun = Tokenizer.foldForMatching(matcher.group(2));
+            if (!noun.equals(unit) && !(language != SummaryLanguage.VI && matchesInflection(Set.of(noun), unit))) {
+                continue;
+            }
+            String digits = matcher.group(1).codePoints()
+                    .collect(StringBuilder::new, (builder, digit) -> builder.append(Character.digit(digit, 10)),
+                            StringBuilder::append).toString().replaceFirst("^0+(?!$)", "");
+            if (count != null && !count.equals(digits)) {
+                // A range or a clause with several quantities does not assert one value.
+                return null;
+            }
+            count = digits;
+        }
+        return count == null ? null : new ClaimValue(ValueType.NUMBER, count);
+    }
+
+    private record ClaimValue(ValueType type, String value) {
     }
 
     static Result extract(

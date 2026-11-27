@@ -112,8 +112,14 @@ compositional term evidence. A local extractive answer needs support in its own
 sentence. Lookups for locations, times and settled plans require declarative
 evidence. The extractor keeps the full supporting sentence for a location
 lookup or a negated value, and abstains from choosing a single value when
-equally supported sentences or candidate sources give different values. Broad aggregation or
-explicit multi-message synthesis prompts such as
+equally supported sentences or candidate sources give different values. For a
+lookup, the server checks explicit scalar claims and counts in the admitted
+candidate pool before MMR removes similar messages. Conflicting claims with
+full question-term coverage and comparable values return `NO_EVIDENCE`
+without sending the prompt to the answer provider. Counts use the requested
+unit. Approximate quantities and lower bounds may agree with a different exact
+count, and an upper bound is comparable when the question asks for a maximum.
+Broad aggregation or explicit multi-message synthesis prompts such as
 summaries, recaps, action-item lists, and corpus-scoped requests for other
 relevant milestones bypass that lookup evidence requirement because the whole
 recent context is their subject. Narrow composite lookups do not bypass it merely because they are phrased

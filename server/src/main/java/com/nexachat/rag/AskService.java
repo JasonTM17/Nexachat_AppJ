@@ -368,6 +368,13 @@ public class AskService {
                     false, null, evidenceOmitted, false);
         }
 
+        if (requiresAnswerEvidence && RagExtractiveAnswerer.hasConflictingClaims(
+                question, language, retrieval.lookupCandidates(), deadline)) {
+            stats.recordNotFound();
+            return AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE,
+                    false, null, evidenceOmitted, false);
+        }
+
         ExtractiveSelection extractive = selectExtractive(question, language, retrieval);
         if (extractive != null
                 && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()
