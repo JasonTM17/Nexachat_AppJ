@@ -126,6 +126,18 @@ class FirebaseRealtimeAuthServiceTest {
     }
 
     @Test
+    void refusesAnOlderAccessVersionBeforeSigningOrWriting() {
+        when(user.getAccessTokenVersion()).thenReturn(2L);
+        JwtPrincipal revoked = new JwtPrincipal(USER_ID, NOW.minusSeconds(10), NOW.plusSeconds(90), 1L);
+
+        assertInvalidToken(() -> service.issue(revoked));
+
+        verify(admin, never()).createCustomToken(eq(USER_ID.toString()), anyMap());
+        verify(rtdb, never()).writeSessionLease(eq(USER_ID), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(), anyMap());
+    }
+
+    @Test
     void refusesATombstonedAccountBeforeSigningOrWriting() {
         when(user.getDeletedAt()).thenReturn(NOW.minusSeconds(1));
 

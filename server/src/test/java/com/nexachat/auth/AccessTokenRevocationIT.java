@@ -190,6 +190,25 @@ class AccessTokenRevocationIT extends SecurityITBase {
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }
 
+    @Test
+    void repeatedRevocationInOneClockSecondInvalidatesImmediateLogin() throws Exception {
+        String phone = ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551208");
+        cutoffClock.set(Instant.now().truncatedTo(ChronoUnit.SECONDS));
+        Registered first = register(phone);
+        postJson("/api/v1/auth/logout-all", Map.of(), first.accessToken())
+                .andExpect(status().isNoContent());
+
+        Registered next = login(phone);
+        getWithAuth("/api/v1/users/me", next.accessToken()).andExpect(status().isOk());
+        postJson("/api/v1/auth/logout-all", Map.of(), next.accessToken())
+                .andExpect(status().isNoContent());
+        getWithAuth("/api/v1/users/me", next.accessToken())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
+
+        getWithAuth("/api/v1/users/me", login(phone).accessToken()).andExpect(status().isOk());
+    }
+
     /**
      * Regression for the fresh-token-born-dead race: on a fast stack,
      * logout-all and the immediate re-login land in the same wall-clock
@@ -242,6 +261,12 @@ class AccessTokenRevocationIT extends SecurityITBase {
         @Primary
         CutoffClock cutoffClock() {
             return new CutoffClock();
+        }
+
+        @Bean
+        @Primary
+        JwtService testJwtService(JwtProperties properties, CutoffClock clock) {
+            return new JwtService(properties, clock);
         }
     }
 

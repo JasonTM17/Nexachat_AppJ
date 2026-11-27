@@ -13,7 +13,11 @@ import java.time.Instant;
  * Placed in {@code common} so feature modules (contact/conversation/message)
  * can use it without depending on the auth package.
  */
-public record JwtPrincipal(UUID userId, Instant issuedAt, Instant expiresAt) {
+public record JwtPrincipal(UUID userId, Instant issuedAt, Instant expiresAt, Long accessTokenVersion) {
+
+    public JwtPrincipal(UUID userId, Instant issuedAt, Instant expiresAt) {
+        this(userId, issuedAt, expiresAt, null);
+    }
 
     /** Compatibility constructor for internal callers that only need the user id. */
     public JwtPrincipal(UUID userId) {

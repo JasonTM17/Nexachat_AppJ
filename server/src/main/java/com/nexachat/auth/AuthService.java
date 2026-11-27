@@ -318,18 +318,18 @@ public class AuthService {
     }
 
     /**
-     * Logout revokes the presented refresh token and stamps the access-token
-     * cutoff, so the access token this session was using stops working now
-     * instead of at its natural expiry.
+     * Logout revokes the presented refresh lineage and advances access-token revocation.
      */
     @Transactional
     public void logout(UUID userId, String rawRefreshToken) {
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         tokenService.revokeIfOwned(rawRefreshToken, userId);
         accessTokenRevocationService.revoke(userId);
     }
 
     @Transactional
     public void logoutAll(UUID userId) {
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         tokenService.revokeAllForUser(userId);
         accessTokenRevocationService.revoke(userId);
         // Every installation is signed out, so every device key is dead weight.

@@ -11,7 +11,12 @@ import java.util.UUID;
  * .convertAndSendToUser} match for {@code /user/queue/*} routing, so it MUST be
  * the plain user id, not a {@code toString()} of a richer record.
  */
-public record StompUserPrincipal(UUID userId, Instant issuedAt, Instant expiresAt) implements Principal {
+public record StompUserPrincipal(UUID userId, Instant issuedAt, Instant expiresAt,
+                                 Long accessTokenVersion) implements Principal {
+
+    public StompUserPrincipal(UUID userId, Instant issuedAt, Instant expiresAt) {
+        this(userId, issuedAt, expiresAt, null);
+    }
 
     /** Convenience identity for unit fixtures that do not model JWT claims. */
     public StompUserPrincipal(UUID userId) {

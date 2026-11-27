@@ -5,6 +5,7 @@ import com.nexachat.conversation.dto.InboxConversationRow;
 import com.nexachat.conversation.dto.InboxMemberView;
 import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.conversation.dto.MemberResponse;
+import com.nexachat.conversation.dto.PushRecipientRow;
 import com.nexachat.conversation.dto.UnreadCountRow;
 import com.nexachat.presence.DirectPeerPresenceRow;
 import jakarta.persistence.LockModeType;
@@ -137,20 +138,19 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             """)
     List<UUID> findDirectPeerUserIdsByUserId(@Param("userId") UUID userId);
 
-    /**
-     * Members whose mute is currently effective: {@code muted = true} and either
-     * forever ({@code mutedUntil IS NULL}) or not yet expired. Used by push
-     * dispatch so an expired mute starts notifying again without a cleanup job.
-     */
+    /** Current members admitted when the message was created, with effective mutes. */
     @Query("""
-            SELECT m.user.id
+            SELECT new com.nexachat.conversation.dto.PushRecipientRow(
+                       m.user.id, CASE WHEN m.muted = true
+                           AND (m.mutedUntil IS NULL OR m.mutedUntil > :now)
+                           THEN true ELSE false END)
             FROM ConversationMember m
             WHERE m.conversation.id = :conversationId
-              AND m.muted = true
-              AND (m.mutedUntil IS NULL OR m.mutedUntil > :now)
+              AND m.joinedAt <= :createdAt
             """)
-    List<UUID> findMutedMemberIds(@Param("conversationId") UUID conversationId,
-                                  @Param("now") Instant now);
+    List<PushRecipientRow> findPushRecipients(@Param("conversationId") UUID conversationId,
+                                             @Param("createdAt") Instant createdAt,
+                                             @Param("now") Instant now);
 
     /**
      * The caller's own mute/archive/pin flags for a set of conversations,

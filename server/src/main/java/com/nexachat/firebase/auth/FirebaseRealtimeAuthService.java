@@ -7,6 +7,7 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.firebase.config.FirebaseDatabaseUrl;
 import com.nexachat.user.User;
+import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -112,9 +113,9 @@ public class FirebaseRealtimeAuthService {
         }
         User user = users.findByIdForUpdate(userId)
                 .orElseThrow(FirebaseRealtimeAuthService::invalidAccessToken);
-        if (user.getDeletedAt() != null
-                || (user.getTokensValidAfter() != null
-                && !principal.issuedAt().isAfter(user.getTokensValidAfter()))) {
+        if (user.getDeletedAt() != null || user.isSuspended()
+                || !UserAuthValidity.matchesAccessToken(principal.issuedAt(), principal.accessTokenVersion(),
+                        user.getTokensValidAfter(), user.getAccessTokenVersion())) {
             throw invalidAccessToken();
         }
         return now;

@@ -4,6 +4,7 @@ import com.nexachat.call.CallRegistry;
 import com.nexachat.call.CallRingingEvent;
 import com.nexachat.call.CallSession;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.conversation.dto.PushRecipientRow;
 import com.nexachat.message.MessageCreatedEvent;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.presence.PresenceSessionState;
@@ -18,7 +19,6 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -68,9 +68,8 @@ public class NotificationEventListener {
      * added back to the recipient set for that one event.
      * {@link #onCallRinging} is never gated — a call must ring.
      *
-     * <p>The push reaches only members admitted when the message was created:
-     * a member who joined or rejoined later never sees the content, so their
-     * devices must not ring for it either.
+     * <p>Ordinary pushes require current membership and admission at the time
+     * of creation. The dispatch-time query also evaluates mute expiry.
      *
      * <p>A replay (an idempotent send retry) still broadcasts so the sender
      * reaches SENT, but it must not push again: the stored row's first send
@@ -81,10 +80,6 @@ public class NotificationEventListener {
         if (event.replay()) {
             return;
         }
-        // Fan-out snapshot (GH#313): a publisher that froze the member
-        // snapshot and suppression verdict inside the sending transaction is
-        // trusted — the gating below runs on the same values the post-commit
-        // re-reads would produce; replays and legacy events re-read instead.
         boolean fanOutPrecomputed = event.admittedUserIds() != null;
         // V38: a peer-suppressed send is never delivered — the only member it
         // could notify is its own sender, whom the loop below always skips.
@@ -97,26 +92,24 @@ public class NotificationEventListener {
         UUID conversationId = event.conversationId();
         UUID senderId = event.message().senderId();
         UUID subjectUserId = event.subjectUserId();
-        List<UUID> memberIds = fanOutPrecomputed
-                ? event.admittedUserIds()
-                : memberRepository.findAdmittedUserIds(
-                        conversationId, event.message().createdAt());
-        // A removed subject may already be gone from the member list at
-        // fan-out time (they are necessarily gone for the post-commit
-        // re-read, and still present in an in-transaction snapshot — both are
-        // the "admitted at createdAt" view); keep them as a candidate either
-        // way so the removal notice always reaches their devices.
-        Set<UUID> recipientIds = new LinkedHashSet<>(memberIds);
+        Set<UUID> admittedAtCreation = fanOutPrecomputed
+                ? Set.copyOf(event.admittedUserIds()) : null;
+        Map<UUID, Boolean> recipients = new LinkedHashMap<>();
+        for (PushRecipientRow member : memberRepository.findPushRecipients(
+                conversationId, event.message().createdAt(), clock.instant())) {
+            if (admittedAtCreation == null || admittedAtCreation.contains(member.userId())) {
+                recipients.put(member.userId(), member.muted());
+            }
+        }
+        // The subject still receives their own group system notice.
         if (subjectUserId != null) {
-            recipientIds.add(subjectUserId);
+            recipients.put(subjectUserId, false);
         }
         // V38: a member who blocked the sender never gets a push for their
         // messages — in shared groups the message stays visible in history
         // but the blocker's devices stay silent.
-        recipientIds.removeAll(new HashSet<>(
-                blockRepository.findBlockerIdsBlocking(senderId, recipientIds)));
-        Set<UUID> mutedMemberIds = new HashSet<>(
-                memberRepository.findMutedMemberIds(conversationId, clock.instant()));
+        recipients.keySet().removeAll(new HashSet<>(
+                blockRepository.findBlockerIdsBlocking(senderId, recipients.keySet())));
         Set<UUID> mentionedMemberIds = new HashSet<>();
         event.message().mentions().forEach(mention -> mentionedMemberIds.add(mention.userId()));
         boolean mentionAll = event.message().mentionAll();
@@ -125,13 +118,13 @@ public class NotificationEventListener {
         // the message once, addressed to the account signed in there.
         Map<UUID, List<UserDeviceToken>> offlineRows = new LinkedHashMap<>();
         Set<UUID> mentionedRecipients = new HashSet<>();
-        for (UUID memberId : recipientIds) {
+        for (var recipient : recipients.entrySet()) {
+            UUID memberId = recipient.getKey();
             if (memberId.equals(senderId)) {
                 continue;
             }
             boolean mentioned = mentionAll || mentionedMemberIds.contains(memberId);
-            boolean subject = memberId.equals(subjectUserId);
-            if (mutedMemberIds.contains(memberId) && !mentioned && !subject) {
+            if (recipient.getValue() && !mentioned) {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {

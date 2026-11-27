@@ -263,10 +263,7 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
 
     private boolean isRevoked(StompUserPrincipal principal) {
         return userRepository.findAuthValidityById(principal.userId())
-                .map(validity -> {
-                    Instant cutoff = validity.tokensValidAfter();
-                    return cutoff != null && !principal.issuedAt().isAfter(cutoff);
-                })
+                .map(validity -> !validity.acceptsAccessToken(principal.issuedAt(), principal.accessTokenVersion()))
                 .orElse(true);
     }
 

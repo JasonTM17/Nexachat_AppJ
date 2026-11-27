@@ -20,7 +20,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,8 +38,8 @@ import java.util.UUID;
  * </ul>
  *
  * <p><b>Revocation:</b> after a logout, logout-all or password change the user
- * row carries a cutoff instant; a token whose {@code iat} is at or before it is
- * rejected with {@code TOKEN_INVALID}. The account-exists-plus-cutoff lookup is
+ * row carries a revocation version and cutoff. Tokens must match the current
+ * version and postdate the cutoff. The validity lookup is
  * served from {@link AccessTokenValidityCache} so the hot path does no database
  * work, falling back to the database on a cache miss.
  */
@@ -80,14 +79,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     // suspend also stamps the cutoff, but a token minted in the
                     // same second must still fail closed.
                     request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.ACCOUNT_SUSPENDED);
-                } else if (isRevoked(claims, validity)) {
+                } else if (!validity.acceptsAccessToken(claims.issuedAt(), claims.accessTokenVersion())) {
                     request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_INVALID);
                 } else {
                     if (claims.tokenId() != null && !claims.tokenId().isBlank()) {
                         request.setAttribute(ACCESS_TOKEN_ID_ATTRIBUTE, claims.tokenId());
                     }
                     var authentication = new UsernamePasswordAuthenticationToken(
-                            new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt()),
+                            new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt(),
+                                    claims.accessTokenVersion()),
                             null, authoritiesFor(validity.role()));
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -113,22 +113,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
         long generation = validityCache.generation();
         Validity loaded = userRepository.findAuthValidityById(userId)
-                .map(found -> new Validity(true, found.tokensValidAfter(),
-                        found.role() == null ? null : found.role().name(), found.suspended()))
+                .map(Validity::from)
                 .orElseGet(Validity::missing);
         validityCache.putIfGeneration(userId, loaded, generation);
         return loaded;
-    }
-
-    /**
-     * True when the token was issued at or before the cutoff. A token without
-     * an {@code iat} is treated as issued at the epoch, so any cutoff rejects
-     * it. Inclusive comparison fails closed for the cutoff second because JWT
-     * {@code iat} has one-second resolution.
-     */
-    private boolean isRevoked(JwtService.AccessTokenClaims claims, Validity validity) {
-        Instant cutoff = validity.tokensValidAfter();
-        return cutoff != null && !claims.issuedAt().isAfter(cutoff);
     }
 
     /**

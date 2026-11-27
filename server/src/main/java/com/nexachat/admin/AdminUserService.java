@@ -7,6 +7,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.ws.StompRevocationFence;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,7 @@ public class AdminUserService {
     private final UserRepository userRepository;
     private final TokenService tokenService;
     private final AccessTokenRevocationService accessTokenRevocationService;
+    private final StompRevocationFence revocationFence;
     private final AdminAuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -54,12 +56,14 @@ public class AdminUserService {
                             UserRepository userRepository,
                             TokenService tokenService,
                             AccessTokenRevocationService accessTokenRevocationService,
+                            StompRevocationFence revocationFence,
                             AdminAuditService auditService,
                             ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.tokenService = tokenService;
         this.accessTokenRevocationService = accessTokenRevocationService;
+        this.revocationFence = revocationFence;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
     }
@@ -183,6 +187,7 @@ public class AdminUserService {
     @Transactional
     public void suspend(UUID targetId, String reason, UUID actorId, User.Role actorRole, String ip) {
         requireReason(reason);
+        revocationFence.holdWriteUntilTransactionCompletion(targetId);
         // Lock the admin set only when the target can actually be an admin —
         // an unlocked pre-read sizes the lock set so plain-account suspends
         // never queue behind unrelated admin rows. The authoritative role is
@@ -228,6 +233,7 @@ public class AdminUserService {
     /** Force-logout: every refresh token revoked plus the access-token cutoff. */
     @Transactional
     public void revokeSessions(UUID targetId, String reason, UUID actorId, User.Role actorRole, String ip) {
+        revocationFence.holdWriteUntilTransactionCompletion(targetId);
         User target = requireActionableTarget(targetId, actorId, actorRole);
         tokenService.revokeAllForUser(targetId);
         accessTokenRevocationService.revoke(targetId);
@@ -252,6 +258,7 @@ public class AdminUserService {
                     "self-role-change");
             throw ApiException.of(ApiErrorCode.FORBIDDEN, "You cannot change your own role");
         }
+        revocationFence.holdWriteUntilTransactionCompletion(targetId);
         // Only a demotion can hit the last-admin invariant, and only an ADMIN
         // target needs the set locked first — the same unlocked pre-read and
         // under-lock re-validation as suspend.
