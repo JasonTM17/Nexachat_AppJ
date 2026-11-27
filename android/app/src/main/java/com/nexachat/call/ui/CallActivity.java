@@ -79,6 +79,9 @@ public class CallActivity extends ComponentActivity {
     private TextView peerInitials;
     private TextView status;
     private TextView timer;
+    private View videoHeader;
+    private TextView videoPeerName;
+    private TextView videoDetail;
     private Button muteButton;
     private Button speakerButton;
     private Button hangUpButton;
@@ -359,6 +362,9 @@ public class CallActivity extends ComponentActivity {
         peerInitials = findViewById(R.id.call_peer_initials);
         status = findViewById(R.id.call_status);
         timer = findViewById(R.id.call_timer);
+        videoHeader = findViewById(R.id.call_video_header);
+        videoPeerName = findViewById(R.id.call_video_peer_name);
+        videoDetail = findViewById(R.id.call_video_detail);
         muteButton = findViewById(R.id.call_mute);
         speakerButton = findViewById(R.id.call_speaker);
         hangUpButton = findViewById(R.id.call_hang_up);
@@ -493,6 +499,9 @@ public class CallActivity extends ComponentActivity {
     private void render(CallSession session) {
         if (peerName == null) return;
         if (session == null || session.getState() == CallState.IDLE) {
+            setVideoHeaderVisible(false);
+            timer.setVisibility(View.GONE);
+            mainHandler.removeCallbacks(timerTick);
             String requestedName = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_NAME);
             if (requestedName == null || requestedName.trim().isEmpty()) {
                 requestedName = getString(R.string.call_peer_fallback);
@@ -515,27 +524,35 @@ public class CallActivity extends ComponentActivity {
 
         String name = session.getPeerDisplayName();
         if (name == null || name.trim().isEmpty()) name = getString(R.string.call_peer_fallback);
-        peerName.setText(name);
         peerInitials.setText(MessageUiRules.extractInitials(name));
         CallAvatarColorResolver.apply(this, peerInitials, name);
         CallUiModel model = CallUiModelMapper.map(
                 session, firebaseCallStatusDisplaySession == null
                         ? null : firebaseCallStatusDisplaySession.display());
-        status.setText(model.getTitleRes());
-        if (model.getSubtitleRes() != 0) status.setText(model.getSubtitleRes());
-        status.setContentDescription(status.getText());
+        boolean videoCall = session.getMediaType() == CallMediaType.VIDEO;
+        boolean answered = session.getAnsweredAtMs() != null;
+        boolean active = session.getState() == CallState.ACTIVE;
+        boolean showTimer = model.isShowTimer() && answered;
+        boolean showVideoHeader = videoCall && showTimer;
+        boolean showDuration = showTimer && (!showVideoHeader || active);
+        setVideoHeaderVisible(showVideoHeader);
+        TextView visibleName = showVideoHeader ? videoPeerName : peerName;
+        visibleName.setText(name);
+        TextView callStatus = showVideoHeader ? videoDetail : status;
+        if (!showVideoHeader || !active) {
+            int statusRes = model.getSubtitleRes() != 0 ? model.getSubtitleRes() : model.getTitleRes();
+            callStatus.setText(statusRes);
+            callStatus.setContentDescription(callStatus.getText());
+        }
         if (model.getTitleRes() != lastAnnouncedStatus) {
-            status.announceForAccessibility(getString(model.getTitleRes()));
+            View announcementSource = showVideoHeader && active ? visibleName : callStatus;
+            announcementSource.announceForAccessibility(getString(model.getTitleRes()));
             lastAnnouncedStatus = model.getTitleRes();
         }
-        timer.setVisibility(model.isShowTimer() ? View.VISIBLE : View.GONE);
-        if (model.isShowTimer()) {
-            renderTimer();
-            mainHandler.removeCallbacks(timerTick);
-            mainHandler.post(timerTick);
-        } else {
-            mainHandler.removeCallbacks(timerTick);
-        }
+        timer.setVisibility(showTimer && !showVideoHeader ? View.VISIBLE : View.GONE);
+        mainHandler.removeCallbacks(timerTick);
+        if (showDuration) renderTimer();
+        if (showDuration && active) mainHandler.postDelayed(timerTick, 1000L);
         // Hide the whole weighted column so the visible controls stay evenly spaced.
         setControlVisible(muteButton, model.isShowMute());
         setControlVisible(speakerButton, model.isShowSpeaker());
@@ -555,7 +572,6 @@ public class CallActivity extends ComponentActivity {
                 session.isMuted() ? R.string.call_unmute : R.string.call_mute));
         speakerButton.setContentDescription(getString(
                 session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker));
-        boolean videoCall = session.getMediaType() == CallMediaType.VIDEO;
         remoteFlowShowing = remoteFlow.isFlowing(android.os.SystemClock.elapsedRealtime());
         boolean remoteShowing = videoCall && remoteVideoBound && isLive && remoteFlowShowing;
         if (remoteVideoView != null) {
@@ -584,6 +600,13 @@ public class CallActivity extends ComponentActivity {
             setControlVisible(switchCameraButton, showCameraControls);
         }
         syncAutoHide(session);
+    }
+
+    private void setVideoHeaderVisible(boolean visible) {
+        videoHeader.setVisibility(visible ? View.VISIBLE : View.GONE);
+        int centerVisibility = visible ? View.GONE : View.VISIBLE;
+        peerName.setVisibility(centerVisibility);
+        status.setVisibility(centerVisibility);
     }
 
     /** Shows or hides a control together with its column (button and label). */
@@ -653,8 +676,9 @@ public class CallActivity extends ComponentActivity {
                 (System.currentTimeMillis() - currentSession.getAnsweredAtMs()) / 1000L);
         String formatted = CallTimerFormatter.formatSeconds(
                 elapsedSeconds, getString(R.string.time_duration_mm_ss));
-        timer.setText(formatted);
-        timer.setContentDescription(getString(R.string.call_timer_content_description, formatted));
+        TextView visibleTimer = videoHeader.getVisibility() == View.VISIBLE ? videoDetail : timer;
+        visibleTimer.setText(formatted);
+        visibleTimer.setContentDescription(getString(R.string.call_timer_content_description, formatted));
     }
 
     private boolean hasOutgoingIntent() {
