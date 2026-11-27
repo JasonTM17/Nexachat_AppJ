@@ -8,6 +8,7 @@ import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.MessageService;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.summary.SummaryConsentRepository;
+import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import com.nexachat.user.UserSettingsService;
@@ -46,6 +47,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -283,6 +285,42 @@ class AskApiIT {
                 .andExpect(jsonPath("$.mode").value("CACHE"))
                 .andExpect(jsonPath("$.usage.cached").value(true))
                 .andExpect(jsonPath("$.usage.llmCalls").value(0));
+    }
+
+    @Test
+    void olderPolicyCacheCannotReplayOneSideOfAConflictingCount() throws Exception {
+        grantAiConsent(caller);
+        String firstClaim = "The Juniper hall can seat 48 people.";
+        TestMessage first = addMessage(peer.getId(), firstClaim);
+        addMessage(peer.getId(), "The Juniper hall can seat 62 people.");
+        String question = "How many people can the Juniper hall seat?";
+        String key = RagHashes.questionHash(AskService.hashInput(question, List.of()));
+        LocalLexicalEmbedding embedding = new LocalLexicalEmbedding();
+        RagQuestionCache.ContextSnapshot context = questionCache.contextSnapshot(conversationId);
+        String citedHash = RagHashes.combineHashes(Map.of(
+                first.id(), RagHashes.messageContentHash(first.id(), null, firstClaim)));
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(firstClaim,
+                List.of(new RagCitation(first.id(), first.seq(), firstClaim)), "EXTRACTIVE", List.of(first.id()),
+                citedHash, SummaryLanguage.EN, context.revision(), context.expiresAt());
+        assertThat(questionCache.saveIfConsentSnapshotMatches(caller.getId(), consentRepository.snapshot(caller.getId()),
+                conversationId, embedding.id(), key, embedding.embed(question), cached)).isTrue();
+        assertThat(questionCache.findExact(conversationId, embedding.id(), key)).isPresent();
+        String previousPolicy = RagHashes.sha256("ask-grounding-v2:" + embedding.id());
+        assertThat(jdbcTemplate.update("UPDATE rag_ask_cache SET model = ? WHERE conversation_id = ? AND question_hash = ?",
+                previousPolicy, conversationId, key)).isEqualTo(1);
+
+        String request = objectMapper.writeValueAsString(new AskRequest(question, SummaryLanguage.EN));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            MockHttpServletResponse response = postAsk(caller, request).andExpect(status().isOk()).andReturn().getResponse();
+            JsonNode json = objectMapper.readTree(response.getContentAsByteArray());
+            assertThat(json.path("mode").asText()).isEqualTo("NOT_FOUND");
+            assertThat(json.path("notFoundReason").asText()).isEqualTo("NO_EVIDENCE");
+            assertThat(json.path("answer").isNull()).isTrue();
+            assertThat(json.path("citations").isEmpty()).isTrue();
+            assertThat(json.path("usage").path("llmCalls").asInt()).isZero();
+        }
+        assertThat(jdbcTemplate.queryForList("SELECT model FROM rag_ask_cache WHERE conversation_id = ?",
+                String.class, conversationId)).containsExactly(previousPolicy);
     }
 
     @Test
