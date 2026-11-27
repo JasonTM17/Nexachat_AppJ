@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
@@ -104,6 +105,102 @@ public final class StompClientBearerAttemptTest {
         assertTrue(attempt.values().get(1) instanceof StompClient.State.Failed failed
                 && failed.isWakeRetryable());
         attempt.assertComplete();
+    }
+
+    @Test
+    public void networkLossRejectsSendsBeforeTheSocketFailureCallback() {
+        TokenStore store = mock(TokenStore.class);
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        WebSocket lostSocket = mock(WebSocket.class);
+        WebSocket replacementSocket = mock(WebSocket.class);
+        when(lostSocket.send(anyString())).thenReturn(true);
+        when(replacementSocket.send(anyString())).thenReturn(true);
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) ->
+                attemptId == 1L ? lostSocket : replacementSocket);
+
+        String connected = StompCodec.encode(new StompFrame(StompCommand.CONNECTED));
+        TestSubscriber<StompClient.State> first = client.connect("first").test();
+        WebSocketListener lostListener = listeners.get(1L);
+        lostListener.onOpen(lostSocket, mock(Response.class));
+        lostListener.onMessage(lostSocket, connected);
+        assertTrue(client.isOpen());
+        clearInvocations(lostSocket);
+
+        try {
+            client.cancelOnNetworkLoss();
+            verify(lostSocket).cancel();
+            assertFalse(client.send("/app/calls/test/signal", "{}"));
+            verify(lostSocket, never()).send(anyString());
+
+            lostListener.onMessage(lostSocket, connected);
+            first.assertValueCount(2);
+            assertFalse(client.isOpen());
+
+            TestSubscriber<StompClient.State> replacement = client.connect("second").test();
+            try {
+                WebSocketListener replacementListener = listeners.get(2L);
+                replacementListener.onOpen(replacementSocket, mock(Response.class));
+                replacementListener.onMessage(replacementSocket, connected);
+                lostListener.onFailure(lostSocket, new IOException("late cancellation"), null);
+                replacement.assertValueCount(2);
+                assertTrue(client.isOpen());
+                assertTrue(client.send("/app/calls/test/signal", "{}"));
+            } finally {
+                replacement.cancel();
+            }
+        } finally {
+            first.cancel();
+        }
+    }
+
+    @Test
+    public void networkLossWaitsForAConcurrentEnqueue() throws Exception {
+        StompClient client = new StompClient(new OkHttpClient(), mock(TokenStore.class));
+        AtomicReference<WebSocketListener> listener = new AtomicReference<>();
+        WebSocket socket = mock(WebSocket.class);
+        CountDownLatch enqueueStarted = new CountDownLatch(1);
+        CountDownLatch releaseEnqueue = new CountDownLatch(1);
+        when(socket.send(anyString())).thenAnswer(invocation -> {
+            enqueueStarted.countDown();
+            if (!releaseEnqueue.await(5L, TimeUnit.SECONDS)) {
+                throw new AssertionError("the test did not release the enqueue");
+            }
+            return true;
+        });
+        client.setTestListenerCapture((callback, attemptId) -> listener.set(callback));
+        client.setTestWebSocketFactoryForTests((callback, attemptId) -> socket);
+        TestSubscriber<StompClient.State> attempt = client.connect("access").test();
+        listener.get().onMessage(socket, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+
+        FutureTask<Boolean> send = new FutureTask<>(() -> client.send("/app/calls/test/signal", "{}"));
+        FutureTask<Void> cancel = new FutureTask<>(client::cancelOnNetworkLoss, null);
+        Thread sender = new Thread(send);
+        Thread networkLoss = new Thread(cancel);
+
+        try {
+            sender.start();
+            assertTrue(enqueueStarted.await(5L, TimeUnit.SECONDS));
+            networkLoss.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4L);
+            while (!cancel.isDone() && networkLoss.getState() != Thread.State.BLOCKED
+                    && System.nanoTime() < deadline) {
+                Thread.sleep(1L);
+            }
+            assertEquals("cancel must wait for the already-started send", Thread.State.BLOCKED, networkLoss.getState());
+            verify(socket, never()).cancel();
+            releaseEnqueue.countDown();
+            assertTrue(send.get(5L, TimeUnit.SECONDS));
+            cancel.get(5L, TimeUnit.SECONDS);
+            verify(socket).cancel();
+            assertFalse(client.send("/app/calls/test/signal", "{}"));
+        } finally {
+            releaseEnqueue.countDown();
+            sender.join(TimeUnit.SECONDS.toMillis(5L));
+            networkLoss.join(TimeUnit.SECONDS.toMillis(5L));
+            attempt.cancel();
+        }
     }
 
     @Test

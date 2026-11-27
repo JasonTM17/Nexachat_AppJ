@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -25,6 +26,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
+import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -56,6 +58,42 @@ public final class RealtimeSessionReArmTest {
         online.onNext(true);
         scheduler.triggerActions();
         assertTrue(connects.get() > ReconnectPolicy.MAX_ATTEMPTS);
+    }
+
+    @Test
+    public void networkLossCancelsAnOpenSocketBeforeTheHeartbeatCanExpire() {
+        TestScheduler scheduler = new TestScheduler();
+        BehaviorProcessor<Boolean> online = BehaviorProcessor.createDefault(false);
+        PublishProcessor<StompClient.State> staleSocket = PublishProcessor.create();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect(anyString(), any())).thenReturn(staleSocket,
+                Flowable.<StompClient.State>just(StompClient.State.Open.INSTANCE).concatWith(Flowable.never()));
+        doAnswer(ignored -> {
+            staleSocket.onNext(new StompClient.State.Failed(StompClient.REASON_OFFLINE));
+            staleSocket.onComplete();
+            return null;
+        }).when(stomp).cancelOnNetworkLoss();
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp, online,
+                BehaviorProcessor.createDefault(false), mock(TokenRefresher.class), scheduler);
+        staleSocket.onNext(StompClient.State.Open.INSTANCE);
+
+        online.onNext(false);
+        online.onNext(true);
+        online.onNext(true);
+        verify(stomp, never()).cancelOnNetworkLoss();
+        assertTrue(session.isCurrentlyOpen());
+
+        online.onNext(false);
+        online.onNext(false);
+        verify(stomp).cancelOnNetworkLoss();
+        assertFalse(session.isCurrentlyOpen());
+
+        online.onNext(true);
+        assertTrue(session.isCurrentlyOpen());
+        scheduler.advanceTimeBy(30L, TimeUnit.SECONDS);
+        verify(stomp, times(2)).connect(anyString(), any());
+        session.dispose();
     }
 
     @Test

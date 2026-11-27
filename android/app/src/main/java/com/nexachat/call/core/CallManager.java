@@ -1009,14 +1009,17 @@ public final class CallManager implements AutoCloseable {
                 && state != CallState.ACTIVE
                 && state != CallState.RECONNECTING_NETWORK) return;
         CallSignal signal = new CallSignal(type, callId, sdp, candidate);
-        if (state == CallState.RECONNECTING_NETWORK) {
-            pendingOutboundSignals.add(new QueuedOutboundSignal(
-                    currentSession.getConversationId(), signal, Long.MAX_VALUE));
-            return;
+        String conversationId = currentSession.getConversationId();
+        if (state != CallState.RECONNECTING_NETWORK) {
+            if (signaling.send(conversationId, signal)) return;
+            if (state != CallState.ACTIVE || type != CallSignal.Type.ICE) {
+                finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
+                return;
+            }
+            // A candidate can hit the closed socket before its disconnect callback is delivered.
+            handleSignalingDisconnected();
         }
-        if (!signaling.send(currentSession.getConversationId(), signal)) {
-            finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
-        }
+        pendingOutboundSignals.add(new QueuedOutboundSignal(conversationId, signal, Long.MAX_VALUE));
     }
 
     private void markConnected(String callId) {

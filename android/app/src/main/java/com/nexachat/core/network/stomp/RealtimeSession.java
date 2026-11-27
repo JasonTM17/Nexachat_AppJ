@@ -220,9 +220,14 @@ public final class RealtimeSession {
                 .distinctUntilChanged()
                 .subscribe(stompClient::setInForeground));
         subscriptions.add(networkMonitor.getIsOnline()
-                .filter(Boolean::booleanValue)
-                .subscribe(ignored -> {
-                    if (hasSession && sessionAdmitted && !isCurrentlyOpen()) {
+                .distinctUntilChanged()
+                .skipWhile(online -> !online)
+                .subscribe(online -> {
+                    if (!hasSession || !sessionAdmitted) return;
+                    if (!online) {
+                        // A socket on the lost route can stay open until its heartbeat expires.
+                        stompClient.cancelOnNetworkLoss();
+                    } else if (!isCurrentlyOpen()) {
                         ensureConnected();
                     }
                 }));

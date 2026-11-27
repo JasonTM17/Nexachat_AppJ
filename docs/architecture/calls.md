@@ -196,6 +196,11 @@ negotiated by the Android client; signaling does not carry audio bytes.
 - The default ICE configuration has public STUN only and no TURN. Strict NAT
   or mobile networks may not establish media; a shared LAN/Wi-Fi path is the
   expected demo environment.
+- Android gathers ICE candidates throughout the call so either device can
+  signal fresh candidates when its network changes. Only the original offerer
+  initiates an ICE restart when its signaling connection reopens.
+  Losing validated connectivity cancels the old STOMP socket, and the call
+  buffers candidates while signaling reconnects.
 - Video media (camera capture, local preview, remote rendering, camera
   toggle/switch) is implemented in the Android engine and UI; it has not been
   verified between two real Android devices. The signaling-to-media path
