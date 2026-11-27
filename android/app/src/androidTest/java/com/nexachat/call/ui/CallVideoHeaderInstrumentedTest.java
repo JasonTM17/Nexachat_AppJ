@@ -6,6 +6,11 @@ import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.os.LocaleList;
 import android.util.DisplayMetrics;
 import android.view.ContextThemeWrapper;
@@ -13,6 +18,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import androidx.core.graphics.ColorUtils;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -72,11 +78,13 @@ public final class CallVideoHeaderInstrumentedTest {
             root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
             root.layout(0, 0, width, height);
-            assertTrue(variant + " header stays above the center: " + header.getTop()
-                            + ".." + header.getBottom(),
-                    header.getTop() >= 0 && header.getBottom() <= height / 2);
-            assertTrue(variant + " header leaves a gap before the camera preview",
-                    preview.getLeft() - header.getRight() >= 12);
+            assertEquals(variant + " gradient spans the top edge", width, header.getWidth());
+            assertEquals(variant + " gradient starts at the top edge", 0, header.getTop());
+            assertTrue(variant + " call details stay above the center",
+                    detail.getBottom() <= height / 2);
+            int textEnd = header.getLeft() + Math.max(name.getRight(), detail.getRight());
+            assertTrue(variant + " text leaves a gap before the camera preview",
+                    preview.getLeft() - textEnd >= 12);
             if (text.equals("02:16")) {
                 assertEquals(variant + " duration stays on one line", 1, detail.getLineCount());
             }
@@ -85,6 +93,31 @@ public final class CallVideoHeaderInstrumentedTest {
             int lastLine = detail.getLineCount() - 1;
             assertEquals(variant + " " + text + " reaches the last character",
                     text.length(), detail.getLayout().getLineEnd(lastLine));
+            assertGradientContrast(variant, header, name, detail);
+        }
+    }
+
+    private static void assertGradientContrast(
+            String variant, View header, TextView name, TextView detail) {
+        Bitmap background = Bitmap.createBitmap(1, header.getHeight(), Bitmap.Config.ARGB_8888);
+        background.eraseColor(Color.WHITE);
+        Drawable gradient = header.getBackground();
+        Rect bounds = gradient.copyBounds();
+        try {
+            gradient.setBounds(0, 0, background.getWidth(), background.getHeight());
+            gradient.draw(new Canvas(background));
+            for (TextView label : new TextView[] {name, detail}) {
+                double contrast = ColorUtils.calculateContrast(label.getCurrentTextColor(),
+                        background.getPixel(0, label.getBottom() - 1));
+                assertTrue(variant + " " + label.getText() + " contrast on bright video: " + contrast,
+                        contrast >= 4.5);
+            }
+            int lastPixel = background.getPixel(0, background.getHeight() - 1);
+            assertTrue(variant + " gradient fades into the video with no visible bottom edge",
+                    ColorUtils.calculateContrast(lastPixel, Color.WHITE) < 1.08);
+        } finally {
+            gradient.setBounds(bounds);
+            background.recycle();
         }
     }
 }

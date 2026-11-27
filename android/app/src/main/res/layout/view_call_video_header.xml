@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/call_video_header"
-    android:layout_width="wrap_content"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/bg_call_video_header"
     android:orientation="vertical"
-    android:paddingHorizontal="@dimen/space_md"
-    android:paddingVertical="@dimen/space_sm"
+    android:paddingStart="20dp"
+    android:paddingTop="@dimen/space_md"
+    android:paddingEnd="@dimen/call_video_header_end_inset"
+    android:paddingBottom="@dimen/call_video_header_fade"
     android:visibility="gone">
 
     <TextView
@@ -15,18 +17,16 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:maxLines="2"
-        android:textAppearance="?attr/textAppearanceTitleSmall"
+        android:textAppearance="@style/TextAppearance.NexaChat.TitleMedium"
         android:textColor="@color/call_text_primary"
-        android:textDirection="firstStrong"
-        android:textStyle="bold" />
+        android:textDirection="firstStrong" />
 
     <TextView
         android:id="@+id/call_video_detail"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
         android:accessibilityLiveRegion="none"
         android:fontFeatureSettings="tnum"
-        android:textAppearance="?attr/textAppearanceBodySmall"
-        android:textColor="@color/call_text_secondary" />
+        android:textAppearance="@style/TextAppearance.NexaChat.BodySmall"
+        android:textColor="@color/call_video_header_detail" />
 </LinearLayout>
