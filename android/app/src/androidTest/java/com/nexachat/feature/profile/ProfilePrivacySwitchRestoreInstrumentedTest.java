@@ -13,7 +13,6 @@ import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.CompoundButton;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.MutableLiveData;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -21,17 +20,30 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import com.nexachat.MainActivity;
 import com.nexachat.R;
 import com.nexachat.data.SettingsRepository;
+import com.nexachat.summary.AiConsentApi;
 import com.nexachat.summary.AiConsentRepository;
+import com.nexachat.summary.AiSummaryConsentRequest;
+import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import okio.Buffer;
+import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import retrofit2.Retrofit;
+import retrofit2.converter.moshi.MoshiConverterFactory;
 
 /**
  * The privacy switches render repository state, so a view-state restore must never
@@ -45,6 +57,16 @@ public final class ProfilePrivacySwitchRestoreInstrumentedTest {
 
     private static final long SETTLE_MS = 5_000;
     private static final long DIALOG_GRACE_MS = 1_000;
+    private AiConsentRepository fixtureRepository;
+    private AiConsentApi originalConsentApi;
+
+    @After
+    public void restoreConsentApi() {
+        if (fixtureRepository != null) {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    setConsentApi(fixtureRepository, originalConsentApi));
+        }
+    }
 
     @Test
     public void recreatedProfileDoesNotWriteBackRestoredSwitchState() {
@@ -106,9 +128,6 @@ public final class ProfilePrivacySwitchRestoreInstrumentedTest {
             assertEquals("One seen toggle queues exactly one write",
                     seenBefore + 1, pendingPrivacyWrites(scenario, profile));
 
-            // Pinning the confirmed value keeps the optimistic off-state from rolling
-            // back before the next toggle, so the second click must take the dialog path.
-            pinConfirmedConsent(scenario, profile, false);
             long consentBefore = consentGenerations(scenario, profile);
             clickRow(scenario, profile, R.id.aiConsentRow);
             assertEquals("Disabling consent issues exactly one consent update",
@@ -179,24 +198,45 @@ public final class ProfilePrivacySwitchRestoreInstrumentedTest {
         return readField(fragment, "viewModel");
     }
 
-    /** Forces the three rows to render the on state regardless of any in-flight refresh. */
-    private static void seedRepositoryState(
+    /** Supplies consent settings across recreations without changing the active account. */
+    private void seedRepositoryState(
             ActivityScenario<MainActivity> scenario, ProfileFragment fragment) {
+        AiConsentApi consentFixture = fixtureConsentApi();
         scenario.onActivity(activity -> {
-            AiConsentRepository consent = consentRepository(fragment);
-            writeLongField(consent, "generation", Long.MAX_VALUE - 1_000);
-            writeBooleanField(consent, "confirmedConsent", true);
-            liveData(consent, "consent").setValue(Boolean.TRUE);
+            fixtureRepository = consentRepository(fragment);
+            originalConsentApi = readField(fixtureRepository, "api");
+            setConsentApi(fixtureRepository, consentFixture);
+            fixtureRepository.refresh();
             SettingsRepository settings = settingsRepository(fragment);
             processor(settings, "mutableShowPresence").onNext(Boolean.TRUE);
             processor(settings, "mutableShowSeen").onNext(Boolean.TRUE);
         });
     }
 
-    private static void pinConfirmedConsent(
-            ActivityScenario<MainActivity> scenario, ProfileFragment fragment, boolean value) {
-        scenario.onActivity(activity ->
-                writeBooleanField(consentRepository(fragment), "confirmedConsent", value));
+    private static AiConsentApi fixtureConsentApi() {
+        Moshi moshi = new Moshi.Builder().build();
+        AtomicBoolean consent = new AtomicBoolean(true);
+        OkHttpClient settingsClient = new OkHttpClient.Builder().addInterceptor(chain -> {
+            var request = chain.request();
+            if (request.method().equals("PATCH")) {
+                var body = request.body();
+                if (body == null) throw new IOException("Missing consent update body");
+                Buffer json = new Buffer();
+                body.writeTo(json);
+                AiSummaryConsentRequest update = moshi.adapter(AiSummaryConsentRequest.class)
+                        .fromJson(json);
+                if (update == null) throw new IOException("Missing consent update");
+                consent.set(update.isAiSummaryConsent());
+            }
+            return new Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+                    .code(200).message("OK")
+                    .body(ResponseBody.create("{\"aiSummaryConsent\":" + consent.get() + "}",
+                            MediaType.get("application/json")))
+                    .build();
+        }).build();
+        return new Retrofit.Builder().baseUrl("http://127.0.0.1/").client(settingsClient)
+                .addConverterFactory(MoshiConverterFactory.create(moshi)).build()
+                .create(AiConsentApi.class);
     }
 
     /** One disposable is queued per view-model write call; the count is the write seam. */
@@ -324,29 +364,14 @@ public final class ProfilePrivacySwitchRestoreInstrumentedTest {
         }
     }
 
-    private static void writeLongField(Object target, String name, long value) {
+    private static void setConsentApi(AiConsentRepository repository, AiConsentApi api) {
         try {
-            Field field = findField(target.getClass(), name);
+            Field field = findField(AiConsentRepository.class, "api");
             field.setAccessible(true);
-            field.setLong(target, value);
+            field.set(repository, api);
         } catch (ReflectiveOperationException failure) {
             throw new AssertionError(failure);
         }
-    }
-
-    private static void writeBooleanField(Object target, String name, boolean value) {
-        try {
-            Field field = findField(target.getClass(), name);
-            field.setAccessible(true);
-            field.setBoolean(target, value);
-        } catch (ReflectiveOperationException failure) {
-            throw new AssertionError(failure);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static MutableLiveData<Boolean> liveData(Object target, String name) {
-        return (MutableLiveData<Boolean>) readField(target, name);
     }
 
     @SuppressWarnings("unchecked")

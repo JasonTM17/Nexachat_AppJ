@@ -174,6 +174,18 @@ class PickerComponentTest(unittest.TestCase):
         component = driver.resumed_activity_component(dump)
         self.assertTrue(driver.is_system_picker_component(component))
 
+    def test_google_documents_ui_activity_record_is_system_picker(self):
+        dump = (
+            "  topResumedActivity=ActivityRecord{cc7f42d u0 "
+            "com.google.android.documentsui/com.android.documentsui.picker.PickActivity t50}\n"
+        )
+        component = driver.resumed_activity_component(dump)
+        self.assertEqual(
+            component,
+            "com.google.android.documentsui/com.android.documentsui.picker.PickActivity",
+        )
+        self.assertTrue(driver.is_system_picker_component(component))
+
     def test_app_components_are_not_system_pickers(self):
         dump = (
             "  topResumedActivity=ComponentInfo{"

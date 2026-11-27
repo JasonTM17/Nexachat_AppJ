@@ -1508,6 +1508,10 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
     PHONE_A = "+84991110002"
     PHONE_B = "+84991110003"
 
+    def test_generated_fixture_phone_uses_valid_mobile_prefix(self):
+        with mock.patch.object(journeys.uuid, "uuid4", return_value=uuid.UUID(int=2_000_000)):
+            self.assertEqual(journeys._new_disposable_phone(), "+84993000000")
+
     class Response:
         def __init__(self, status, body=None):
             self.status = status
@@ -1520,6 +1524,7 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         def __init__(self):
             self.users = {}
             self.sessions = {}
+            self.refresh_owners = {}
             self.clock = 0
             self.conversations = {}
             self.deleted_users = []
@@ -1532,6 +1537,7 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
             refresh = f"rt-{phone}-{self.clock}"
             self.sessions[access] = {"phone": phone, "iat": self.clock,
                                      "uid": user["id"]}
+            self.refresh_owners[refresh] = phone
             user["refresh_alive"].add(refresh)
             return {"accessToken": access, "refreshToken": refresh,
                     "user": {"id": user["id"], "phone": phone}}
@@ -1569,12 +1575,16 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
                 return AuthSessionLifecycleExecutorTest.Response(200, self._issue(body["phone"]))
             if path == "/api/v1/auth/refresh":
                 refresh = body.get("refreshToken")
-                owner = next((u for u in self.users.values()
-                              if refresh in u["refresh_alive"]), None)
-                if owner is None:
+                phone = self.refresh_owners.get(refresh)
+                owner = self.users.get(phone)
+                if owner is None or owner["deleted"]:
                     return AuthSessionLifecycleExecutorTest.Response(401, {})
+                if refresh not in owner["refresh_alive"]:
+                    owner["refresh_alive"].clear()
+                    owner["access_floor"] = self.clock
+                    return AuthSessionLifecycleExecutorTest.Response(
+                        401, {"error": {"code": "TOKEN_REUSED"}})
                 owner["refresh_alive"].discard(refresh)
-                phone = self._phone_of(self.users, owner)
                 return AuthSessionLifecycleExecutorTest.Response(200, self._issue(phone))
             if path in ("/api/v1/auth/logout", "/api/v1/auth/logout-all"):
                 user = self._user_for_token(token)
@@ -1793,7 +1803,7 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         self.assertEqual(readers[1].subscriptions, ["/topic/conversations.conv-direct-1"])
         self.assertTrue(readers[0].closed and readers[1].closed)
         # Disposable accounts were deleted through DELETE /users/me.
-        self.assertEqual(len(self.client.deleted_users), 3)
+        self.assertEqual(len(self.client.deleted_users), 4)
         # Driven STOMP evidence landed in the shared transcript list.
         self.assertTrue(any(e.get("eventType") == "MESSAGE_CREATED"
                             for e in context["stomp_events"]))
@@ -1855,9 +1865,8 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
             "logout", "logout-all", "password-change",
             "paused-frame-a-to-b-isolation",
         })
-        # Exactly one backoff sleep of the hinted second, then the retried
-        # POST answered 200 and the journey kept going.
-        self.assertEqual(sleeps, [1])
+        # The hint is whole seconds. Allow up to the next second once.
+        self.assertEqual(sleeps, [2])
         self.assertGreaterEqual(client.login_posts, 2)
 
     def test_login_fails_after_a_second_429_without_masking(self):
@@ -1879,7 +1888,7 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
                 journeys.run_auth_session_lifecycle(self.row, context)
         # The second 429 surfaces as a row failure; the backoff retried once.
         self.assertIn("auth login returned HTTP 429", str(caught.exception))
-        self.assertEqual(sleeps, [1])
+        self.assertEqual(sleeps, [2])
 
     def test_login_backoff_requires_a_usable_retry_hint(self):
         cases = (
@@ -1934,9 +1943,8 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         self.assertIn("unproven: paused-frame-a-to-b-isolation",
                       result["coverage"])
         self.assertIn("the REST session lifecycle is proven", result["coverage"])
-        # The disposable accounts (rest + the two pause accounts registered
-        # before the tunnel attempt) were still cleaned up.
-        self.assertEqual(len(self.client.deleted_users), 3)
+        # Both REST fixtures and the two pause accounts were cleaned up.
+        self.assertEqual(len(self.client.deleted_users), 4)
 
     def test_rotated_away_refresh_token_reuse_fails_the_row(self):
         class ReusingRefresh(self.FakeAuthClient):
@@ -2571,8 +2579,11 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
             self.world = world
             self.direct_id = direct_id
             self.group_id = group_id
+            self.show_seen = {"tok-an": True, "tok-binh": True}
 
         def get(self, path, token=None, params=None, headers=None):
+            if path == "/api/v1/users/me/settings":
+                return ChatInteractionsExecutorTest.Response(200, {"showSeen": self.show_seen[token]})
             if path == "/api/v1/conversations":
                 # 'NexaChat Team' sits beyond page 1 of An's stale-heavy inbox;
                 # a paged fetch must never see it — the executor reads unpaged.
@@ -2591,6 +2602,12 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
                     200, {"items": [dict(m) for m in self.store.messages.get(cid, [])]})
             return ChatInteractionsExecutorTest.Response(404)
 
+        def patch(self, path, token=None, body=None, headers=None):
+            if path == "/api/v1/users/me/settings":
+                self.show_seen[token] = body["showSeen"]
+                return ChatInteractionsExecutorTest.Response(200, {"showSeen": self.show_seen[token]})
+            return ChatInteractionsExecutorTest.Response(404)
+
         def post(self, path, token=None, body=None, headers=None):
             if path == "/api/v1/conversations/group":
                 # The executor's re-seed path: the consumed forward target is
@@ -2598,11 +2615,14 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
                 self.world.hide_group = False
                 return ChatInteractionsExecutorTest.Response(201, {"id": self.group_id})
             if path.endswith("/read"):
-                self.world.read_upto = int((body or {}).get("upToSeq") or 0)
-                self.store.events.append((f"/topic/conversations.{self.direct_id}", {
-                    "eventType": "MESSAGE_READ",
-                    "payload": {"userId": "user-binh", "upToSeq": self.world.read_upto},
-                }))
+                up_to = int((body or {}).get("upToSeq") or 0)
+                if self.show_seen["tok-binh"]:
+                    if self.show_seen["tok-an"]:
+                        self.world.read_upto = up_to
+                    self.store.events.append((f"/topic/conversations.{self.direct_id}", {
+                        "eventType": "MESSAGE_READ",
+                        "payload": {"userId": "user-binh", "upToSeq": up_to},
+                    }))
                 return ChatInteractionsExecutorTest.Response(204)
             return ChatInteractionsExecutorTest.Response(404)
 
@@ -2644,6 +2664,7 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
 
     def test_executor_drives_react_reply_edit_recall_forward_and_receipt(self):
         store, world, client, reader, direct_id, group_id = self._world_fixture()
+        client.show_seen.update({"tok-an": False, "tok-binh": False})
         row = journeys.ROW_BY_ID["chat-interactions"]
 
         class Api:
@@ -2691,6 +2712,7 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
         self.assertEqual(len(group_msgs), 1)
         self.assertTrue(group_msgs[0]["deletedAt"])  # swept, not left live
         self.assertTrue(world.read_upto > 0)
+        self.assertEqual(client.show_seen, {"tok-an": False, "tok-binh": False})
         seen = {env["eventType"] for env in context["stomp_events"]}
         self.assertTrue({"MESSAGE_CREATED", "REACTION_UPDATED", "MESSAGE_UPDATED",
                          "MESSAGE_DELETED", "MESSAGE_READ"} <= seen)
@@ -3394,10 +3416,11 @@ class ArchivePreferencesExecutorTest(unittest.TestCase):
                     "Conversation settings", "Assign labels", "Shared media",
                     "Starred messages", "Block Binh", "Report")
             if self.mute_dialog:
-                nodes += self._dialog(
-                    "android.widget.CheckedTextView",
-                    "For 1 hour", "For 4 hours", "Until 8:00 AM",
-                    "Until turned back on")
+                nodes.append(N(rid="alertTitle", text="Mute notifications"))
+                rows = (["Unmute notifications"] if flags["muted"]
+                        else ["For 1 hour", "For 4 hours", "Until 8:00 AM",
+                              "Until turned back on"])
+                nodes += self._dialog("android.widget.CheckedTextView", *rows)
             if self.inbox_dialog:
                 rows = ["Unpin conversation" if flags["pinned"] else "Pin conversation"]
                 rows += (["Unmute notifications"] if flags["muted"]
@@ -3430,10 +3453,8 @@ class ArchivePreferencesExecutorTest(unittest.TestCase):
             s = w.store
             w.menu_open = False
             text = node.text.strip()
-            if text == "Mute notifications":
+            if text in ("Mute notifications", "Unmute notifications"):
                 w.mute_dialog = True
-            elif text == "Unmute notifications":
-                s.flags["an"].update(muted=False, mutedUntil=None)
             elif text == "Pin conversation":
                 s.flags["an"].update(pinned=True, pinnedAt="2026-01-01T00:00:00Z")
             elif text == "Unpin conversation":
@@ -3490,7 +3511,9 @@ class ArchivePreferencesExecutorTest(unittest.TestCase):
                 return
             if w.mute_dialog:
                 w.mute_dialog = False
-                if text == "Until turned back on":
+                if text == "Unmute notifications":
+                    s.flags["an"].update(muted=False, mutedUntil=None)
+                elif text == "Until turned back on":
                     s.flags["an"].update(muted=True, mutedUntil=None)
                 else:
                     s.flags["an"].update(muted=True, mutedUntil="2026-01-01T01:00:00Z")
@@ -4024,6 +4047,16 @@ class InboxRowVisibilityTest(unittest.TestCase):
 
 
 class GroupsContactsExecutorTest(unittest.TestCase):
+    def test_invite_queue_scroll_uses_the_effective_display_size(self):
+        device = mock.Mock()
+        device.shell.return_value = "Physical size: 320x640\nOverride size: 400x900"
+        context = {"device": device}
+        approve = mock.Mock(box=(24, 700, 170, 752))
+
+        self.assertTrue(journeys._on_screen(approve, journeys._screen_size(context)))
+        journeys._scroll_screen_down(context)
+        device.swipe.assert_called_once_with(200, 648, 200, 270, 350)
+
     """Offline fake device+REST world for run_groups_contacts.
 
     The world mirrors the surfaces probed on emulator-5554: the contacts list

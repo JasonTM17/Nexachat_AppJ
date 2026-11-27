@@ -264,6 +264,7 @@
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
+                            android:id="@+id/amoledBlackRowIcon"
                             android:layout_width="@dimen/icon_size"
                             android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"
@@ -336,12 +337,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_plum">
                             <ImageView
+                                android:id="@+id/chatColorPlumCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorPlumCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -362,12 +365,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_indigo">
                             <ImageView
+                                android:id="@+id/chatColorIndigoCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorIndigoCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -388,12 +393,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_blue">
                             <ImageView
+                                android:id="@+id/chatColorBlueCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorBlueCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -414,12 +421,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_teal">
                             <ImageView
+                                android:id="@+id/chatColorTealCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorTealCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -446,12 +455,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_green">
                             <ImageView
+                                android:id="@+id/chatColorGreenCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorGreenCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -472,12 +483,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_amber">
                             <ImageView
+                                android:id="@+id/chatColorAmberCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorAmberCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -498,12 +511,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_rose">
                             <ImageView
+                                android:id="@+id/chatColorRoseCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorRoseCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -524,12 +539,14 @@
                             android:foreground="?attr/selectableItemBackground"
                             android:contentDescription="@string/chat_color_slate">
                             <ImageView
+                                android:id="@+id/chatColorSlateCircle"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/bg_chat_color_swatch"
                                 android:importantForAccessibility="no" />
                             <ImageView
+                                android:id="@+id/chatColorSlateCheck"
                                 android:layout_width="@dimen/icon_size"
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
@@ -589,6 +606,7 @@
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
+                            android:id="@+id/aiConsentRowIcon"
                             android:layout_width="@dimen/icon_size"
                             android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"
@@ -638,6 +656,7 @@
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
+                            android:id="@+id/showPresenceRowIcon"
                             android:layout_width="@dimen/icon_size"
                             android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"
@@ -687,6 +706,7 @@
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
+                            android:id="@+id/showSeenRowIcon"
                             android:layout_width="@dimen/icon_size"
                             android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"
@@ -817,6 +837,7 @@
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
+                            android:id="@+id/streakRemindersRowIcon"
                             android:layout_width="@dimen/icon_size"
                             android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"

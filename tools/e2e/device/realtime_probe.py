@@ -33,8 +33,8 @@ from e2e_common import Client, login  # noqa: E402
 class FrameReader:
     """Minimal STOMP reader: subscribe, then stream MESSAGE frames."""
 
-    def __init__(self, ws_url: str, token: str):
-        self.ws = websocket.create_connection(ws_url, timeout=10)
+    def __init__(self, ws_url: str, token: str, *, native_client: bool = False):
+        self.ws = websocket.create_connection(ws_url, timeout=10, suppress_origin=native_client)
         self.buffer = ""
         self.subscriptions = 0
         self._frame(

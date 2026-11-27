@@ -1848,7 +1848,6 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     """
     _campaign_serial(context)
     _campaign_base_url(context)
-    _prepare_seeded_an(context)
     api = context["helpers"][0]
     patch = context["helpers"][2]
     recorder: RecordingClient = context["client"]
@@ -1865,25 +1864,7 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     if group_heals:
         context.setdefault("seed_heals", []).extend(group_heals)
 
-    # Open the seeded direct conversation on the device.
-    row_node = patch.named_conversation_row(_ui_nodes(context), "Binh")
-    if row_node is None:
-        raise EnvironmentFailure("seed An↔Binh conversation is not visible in the device inbox")
-    ui.tap_node(row_node)
-    _wait_ui_node(
-        context,
-        lambda node: _rid_ends(node, "messageInput"),
-        "the seeded direct conversation did not open its composer",
-    )
-
     from realtime_probe import FrameReader
-
-    ws_url = recorder.base_url.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
-    factory = context.get("frame_reader_factory") or FrameReader
-    reader = factory(ws_url, binh["accessToken"])
-    context["frame_reader"] = reader
-    reader.subscribe(f"/topic/conversations.{conversation_id}")
-    reader.subscribe(f"/topic/conversations.{group_id}")
 
     tag = uuid.uuid4().hex[:8]
     msg_a = "sj-ia-" + tag          # reaction + reply target
@@ -1906,7 +1887,36 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     ids: dict[str, str] = {}
     result: dict[str, Any] = {}
     primary_error: Exception | None = None
+    settings_to_restore: list[str] = []
     try:
+        # Read receipts require both accounts to have the preference enabled.
+        # Start the app after setup so its SettingsRepository reads the same value.
+        for actor in (an, binh):
+            token = actor["accessToken"]
+            seen = _user_settings(recorder, token).get("showSeen")
+            if not isinstance(seen, bool):
+                raise EnvironmentFailure("seed account is missing its showSeen setting")
+            if not seen:
+                settings_to_restore.append(token)
+                _patch_settings(recorder, token, {"showSeen": True})
+        if an["accessToken"] in settings_to_restore and not context.get("reset_app_data"):
+            _offline_force_stop(context)
+        _prepare_seeded_an(context)
+
+        row_node = patch.named_conversation_row(_ui_nodes(context), "Binh")
+        if row_node is None:
+            raise EnvironmentFailure("seed An↔Binh conversation is not visible in the device inbox")
+        ui.tap_node(row_node)
+        _wait_ui_node(context, lambda node: _rid_ends(node, "messageInput"),
+                      "the seeded direct conversation did not open its composer")
+
+        ws_url = recorder.base_url.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
+        factory = context.get("frame_reader_factory") or FrameReader
+        reader = factory(ws_url, binh["accessToken"])
+        context["frame_reader"] = reader
+        reader.subscribe(f"/topic/conversations.{conversation_id}")
+        reader.subscribe(f"/topic/conversations.{group_id}")
+
         # --- send + react 👍 ---
         _chat_send_text(context, msg_a)
         a_rest = _history_item_by_content(recorder, binh["accessToken"], conversation_id, msg_a)
@@ -2157,13 +2167,23 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
                     cleanup_errors.append(f"HTTP {deleted.status}")
             except Exception as error:
                 cleanup_errors.append(type(error).__name__)
+        for token in settings_to_restore:
+            try:
+                _patch_settings(recorder, token, {"showSeen": False})
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
+        if an["accessToken"] in settings_to_restore:
+            try:
+                _offline_force_stop(context)
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
         if cleanup_errors:
             context["cleanup_errors"] = cleanup_errors
     if primary_error is not None:
         raise primary_error
     if context.get("cleanup_errors"):
-        raise HarnessError("one or more unique chat-interactions messages could not be soft-deleted")
-    result["cleanup"] = "unique direct and group messages soft-deleted"
+        raise HarnessError("chat-interactions cleanup could not restore the fixture")
+    result["cleanup"] = "unique messages soft-deleted and read receipt settings restored"
     return result
 
 
@@ -3411,6 +3431,10 @@ def run_archive_preferences(row: JourneyRow, context: dict[str, Any]) -> dict[st
         result["mute"] = "muted forever caller-side; peer unaffected"
 
         _open_chat_menu(context, _PREF_MENU_UNMUTE)
+        _wait_ui_node(context, lambda node: _rid_ends(node, "alertTitle")
+                      and node.text.strip() in _PREF_MENU_MUTE,
+                      "the mute dialog did not open from the unmute entry")
+        _tap_dialog_item(context, _PREF_MENU_UNMUTE, "the mute dialog did not offer Unmute")
         _wait_inbox_entry(
             recorder, an["accessToken"], conversation_id,
             lambda entry: entry is not None and entry.get("muted") is False,
@@ -4508,8 +4532,10 @@ def _screen_size(context: dict[str, Any]) -> tuple[int, int]:
         return cached
     size = (320, 640)
     try:
-        out = context["device"].shell("wm", "size")
-        match = re.search(r"(\d+)x(\d+)", out or "")
+        out = context["device"].shell("wm", "size") or ""
+        match = re.search(r"(?m)^Override size:\s*(\d+)x(\d+)", out)
+        if match is None:
+            match = re.search(r"(\d+)x(\d+)", out)
         if match:
             size = (int(match.group(1)), int(match.group(2)))
     except Exception:
@@ -8003,7 +8029,8 @@ def _require_disposable_phone(phone: str) -> str:
 
 
 def _new_disposable_phone() -> str:
-    return _require_disposable_phone(f"+8499{uuid.uuid4().int % 10_000_000:07d}")
+    # Keep the complete supported mobile prefix and randomize only the subscriber number.
+    return _require_disposable_phone(f"+84993{uuid.uuid4().int % 1_000_000:06d}")
 
 
 def _new_disposable_email() -> str:
@@ -9519,7 +9546,13 @@ def _auth_reader_factory(context: dict[str, Any]) -> Any:
     if str(DEVICE_DIR) not in sys.path:
         sys.path.insert(0, str(DEVICE_DIR))
     from realtime_probe import FrameReader
-    return FrameReader
+
+    def open_reader(url: str, token: str) -> Any:
+        # The native client does not send an Origin header. The barrier uses a
+        # different loopback port from its upstream WebSocket server.
+        return FrameReader(url, token, native_client=True)
+
+    return open_reader
 
 
 def _auth_note(scenarios: list[dict[str, Any]], name: str, evidence: str) -> None:
@@ -9539,10 +9572,9 @@ def _auth_login_with_rate_limit_backoff(client: Any, phone: str,
     """POST /auth/login, retrying once after a bounded 429 backoff.
 
     Serial board runs push the per-phone login limiter over the edge; the
-    server answers HTTP 429 with error.details.retryAfterSeconds. Sleep
-    exactly that long and retry ONCE when the hint is present and at most
-    the bound; a second 429, a missing hint, or a larger hint is returned
-    to the caller so the rate limit surfaces, never masked.
+    server answers HTTP 429 with error.details.retryAfterSeconds. Wait the
+    hinted time plus its fractional-second rounding allowance within the
+    bound, then retry once. A second 429 or invalid hint remains visible.
     """
     response = _auth_login_once(client, phone, password)
     if response.status == 429:
@@ -9552,7 +9584,7 @@ def _auth_login_with_rate_limit_backoff(client: Any, phone: str,
         except (TypeError, ValueError):
             retry_after = 0
         if 1 <= retry_after <= _AUTH_LOGIN_BACKOFF_MAX_SECONDS:
-            time.sleep(retry_after)
+            time.sleep(min(retry_after + 1, _AUTH_LOGIN_BACKOFF_MAX_SECONDS))
             response = _auth_login_once(client, phone, password)
     return response
 
@@ -9574,8 +9606,8 @@ def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
     _auth_note(scenarios, "register",
                "201 with a token pair; duplicate phone rejected with HTTP 409")
 
-    def login(password: str) -> dict[str, Any]:
-        response = _auth_login_with_rate_limit_backoff(client, phone, password)
+    def login(password: str, *, actor_phone: str = phone) -> dict[str, Any]:
+        response = _auth_login_with_rate_limit_backoff(client, actor_phone, password)
         _expect_status(response, {200}, "auth login")
         data = response.json() or {}
         if not data.get("accessToken") or not data.get("refreshToken"):
@@ -9618,33 +9650,51 @@ def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
     _expect_status(out, {204}, "logout")
     _expect_status(client.get("/api/v1/users/me", token=session["accessToken"]),
                    {401}, "logout access token rejection")
-    _expect_status(client.post("/api/v1/auth/refresh",
-                               body={"refreshToken": session["refreshToken"]}),
-                   {401}, "logout refresh token rejection")
+    _expect_status(client.get("/api/v1/users/me", token=concurrent["accessToken"]),
+                   {401}, "concurrent access token cutoff after logout")
     survived = client.post("/api/v1/auth/refresh",
                            body={"refreshToken": concurrent["refreshToken"]})
     _expect_status(survived, {200},
                    "concurrent-session refresh after single logout")
+    surviving_session = survived.json() or {}
+    if not surviving_session.get("accessToken") or not surviving_session.get("refreshToken"):
+        raise ProductFailure("concurrent-session refresh did not return a token pair")
     me = client.get("/api/v1/users/me",
-                    token=(survived.json() or {}).get("accessToken"))
+                    token=surviving_session.get("accessToken"))
     _expect_status(me, {200}, "users/me after the concurrent session rotated")
+    # Check reuse after proving that plain logout preserved the other lineage.
+    reused = client.post("/api/v1/auth/refresh",
+                         body={"refreshToken": session["refreshToken"]})
+    _expect_status(reused, {401}, "logout refresh token rejection")
+    if ((reused.json() or {}).get("error") or {}).get("code") != "TOKEN_REUSED":
+        raise ProductFailure("logged-out refresh token was rejected without TOKEN_REUSED")
+    _expect_status(client.post("/api/v1/auth/refresh",
+                               body={"refreshToken": surviving_session["refreshToken"]}),
+                   {401}, "concurrent refresh token rejection after reuse")
     _auth_note(scenarios, "logout",
-               "204; the logged-out session's access and refresh tokens are "
-               "rejected while a concurrent session recovers by rotating its "
-               "kept refresh token")
+               "204 and both existing access tokens are rejected. The concurrent "
+               "session refreshes successfully until the logged-out refresh token "
+               "is submitted again and the family is revoked")
 
-    # Logout-all must kill every session, not only the one that called it.
-    session = login(DISPOSABLE_PASSWORD)
-    concurrent = login(DISPOSABLE_PASSWORD)
-    out = client.post("/api/v1/auth/logout-all", token=session["accessToken"])
-    _expect_status(out, {204}, "logout-all")
-    for label, dead in (("issuing session", session),
-                        ("concurrent session", concurrent)):
-        _expect_status(client.get("/api/v1/users/me", token=dead["accessToken"]),
-                       {401}, f"logout-all {label} access token rejection")
+    def check_logout_all(issuer: dict[str, Any], concurrent: dict[str, Any],
+                         check_concurrent: bool) -> None:
+        out = client.post("/api/v1/auth/logout-all", token=issuer["accessToken"])
+        _expect_status(out, {204}, "logout-all")
+        for label, session in (("issuing session", issuer), ("concurrent session", concurrent)):
+            _expect_status(client.get("/api/v1/users/me", token=session["accessToken"]),
+                           {401}, f"logout-all {label} access token rejection")
+        label, dead = ("concurrent session", concurrent) if check_concurrent else ("issuing session", issuer)
         _expect_status(client.post("/api/v1/auth/refresh",
                                    body={"refreshToken": dead["refreshToken"]}),
                        {401}, f"logout-all {label} refresh token rejection")
+
+    # Strict reuse can close every remaining lineage. Test each first refresh on its own account.
+    check_logout_all(login(DISPOSABLE_PASSWORD), login(DISPOSABLE_PASSWORD), True)
+    extra_phone = _new_disposable_phone()
+    extra = _register_disposable(client, extra_phone, "Journey Logout All")
+    accounts.append({"label": "logout-all", "phone": extra_phone,
+                     "password": DISPOSABLE_PASSWORD, "token": None})
+    check_logout_all(extra, login(DISPOSABLE_PASSWORD, actor_phone=extra_phone), False)
     _auth_note(scenarios, "logout-all",
                "204; both the issuing session and a concurrent second session "
                "lose their access and refresh tokens")

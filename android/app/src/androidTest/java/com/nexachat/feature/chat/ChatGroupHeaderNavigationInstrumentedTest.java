@@ -19,6 +19,7 @@ import org.junit.runner.RunWith;
 public final class ChatGroupHeaderNavigationInstrumentedTest {
     @Test
     public void rapidGroupHeaderActivationsOpenOneDestination() {
+        String groupTitle = "Example group";
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
                 NavHostFragment host = (NavHostFragment) activity.getSupportFragmentManager()
@@ -29,8 +30,9 @@ public final class ChatGroupHeaderNavigationInstrumentedTest {
                 nav.navigate(R.id.chatFragment, args);
                 host.getChildFragmentManager().executePendingTransactions();
                 ChatFragment chat = (ChatFragment) host.getChildFragmentManager().getPrimaryNavigationFragment();
-                bindGroupHeader(chat);
+                bindGroupHeader(chat, groupTitle);
                 View toolbar = chat.requireView().findViewById(R.id.chatToolbar);
+                assertEquals(groupTitle, toolbar.getContentDescription());
                 assertTrue(toolbar.performClick());
                 assertTrue(toolbar.performClick());
                 assertEquals(R.id.groupDetailFragment, nav.getCurrentDestination().getId());
@@ -41,11 +43,12 @@ public final class ChatGroupHeaderNavigationInstrumentedTest {
         }
     }
 
-    private static void bindGroupHeader(ChatFragment chat) {
+    private static void bindGroupHeader(ChatFragment chat, String groupTitle) {
         try {
-            Method bind = ChatFragment.class.getDeclaredMethod("bindGroupInfoShortcut", boolean.class);
+            Method bind = ChatFragment.class.getDeclaredMethod(
+                    "bindGroupInfoShortcut", boolean.class, String.class);
             bind.setAccessible(true);
-            bind.invoke(chat, true);
+            bind.invoke(chat, true, groupTitle);
         } catch (ReflectiveOperationException failure) {
             throw new AssertionError(failure);
         }
