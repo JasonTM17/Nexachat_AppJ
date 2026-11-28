@@ -286,7 +286,10 @@ function setStatus(element, key, info = false) {
 // either way, because it usually explains the state.
 function applySurfaceState() {
   const enabled = surfaceState === 'enabled';
-  els.unavailablePanel.hidden = enabled;
+  // 'loading' keeps every panel hidden too: the unavailable card only
+  // appears once the config resolves to a terminal off state, so the
+  // boot window never flashes a misleading empty notice.
+  els.unavailablePanel.hidden = enabled || surfaceState === 'loading';
   if (!enabled) {
     setStatus(els.unavailableBody, surfaceState === 'disabled' ? 'socialDisabled'
       : surfaceState === 'unavailable' ? 'configUnavailable' : '');

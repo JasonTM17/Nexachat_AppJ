@@ -107,7 +107,10 @@ surface is open: deploy backend and static artifacts with both flags off,
 smoke the disabled/unavailable states and the admin console, enable web
 Social only after the same-origin smoke passes, and enable video separately
 after staff moderation and storage checks. Fast rollback is a flag change or
-announcement takedown, not deletion of the settings row.
+announcement takedown, not deletion of the settings row. Rolling the
+application binary back to a build without V50 is not a clean downgrade once
+the migration has run: Flyway validate-on-migrate refuses the unknown applied
+version, so a binary rollback requires a forward-fix release instead.
 
 ## Methods and examples
 
