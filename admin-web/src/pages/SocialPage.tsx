@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiException, type SocialAdminState, type SocialAnnouncement } from '../api';
 import { useI18n } from '../i18n';
 import {
@@ -54,6 +54,11 @@ export default function SocialPage() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
 
+  // Mirror of the in-progress form state so async conflict reloads compare
+  // against what the admin is editing right now, not a stale render closure.
+  const formRef = useRef({ draftForm, webEnabled, videoEnabled });
+  formRef.current = { draftForm, webEnabled, videoEnabled };
+
   const updateSettings = useCallback((next: SocialAdminState) => {
     setState(next);
     setWebEnabled(next.webEnabled);
@@ -66,18 +71,30 @@ export default function SocialPage() {
     setDraftForm({ titleVi: draft.titleVi, bodyVi: draft.bodyVi, titleEn: draft.titleEn, bodyEn: draft.bodyEn });
   }, [updateSettings]);
 
+  // Conflict reloads must never throw away input the admin is still
+  // editing. Per field: whenever the local value differs from the pre-
+  // mutation baseline it carries admin intent and is kept; untouched fields
+  // adopt the authoritative server value so the console never drifts stale.
   const load = useCallback((before?: SocialAdminState) => {
     setFailed(false);
     api<SocialAdminState>('/api/v1/admin/social/settings')
       .then((next) => {
-        if (before && sameDraft(before.draft, next.draft)) {
-          updateSettings(next);
-        } else {
+        if (!before) {
           adopt(next);
+          return;
+        }
+        setState(next);
+        const current = formRef.current;
+        if (current.webEnabled === before.webEnabled) setWebEnabled(next.webEnabled);
+        if (current.videoEnabled === before.videoUploadsEnabled) setVideoEnabled(next.videoUploadsEnabled);
+        const baseDraft = before.draft ?? EMPTY_DRAFT;
+        if (sameDraft(current.draftForm, baseDraft)) {
+          const draft = next.draft ?? EMPTY_DRAFT;
+          setDraftForm({ titleVi: draft.titleVi, bodyVi: draft.bodyVi, titleEn: draft.titleEn, bodyEn: draft.bodyEn });
         }
       })
       .catch(() => setFailed(true));
-  }, [adopt, updateSettings]);
+  }, [adopt]);
 
   useEffect(() => {
     load();
@@ -126,7 +143,7 @@ export default function SocialPage() {
       setConflict(false);
       toast.show(t('social.cms.draftSaved'));
     } catch (err) {
-      handleMutationError(err);
+      handleMutationError(err, state);
     } finally {
       setDraftBusy(false);
     }

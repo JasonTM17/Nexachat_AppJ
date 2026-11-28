@@ -345,10 +345,35 @@ test.describe('social settings', () => {
       .getByRole('button', { name: 'Confirm' }).click();
 
     await expect(page.getByText(/Another admin saved changes first/)).toBeVisible();
-    await expect(flagRow(page, 'Web Social feed').locator('input[type="checkbox"]')).not.toBeChecked();
+    await expect(flagRow(page, 'Web Social feed').locator('input[type="checkbox"]')).toBeChecked();
     await expect(vi.locator('input')).toHaveValue('Tiêu đề đang sửa');
     await page.getByRole('button', { name: 'Save draft' }).click();
     await expect.poll(() => mock.state.draft?.titleVi).toBe('Tiêu đề đang sửa');
     expect(mock.calls[1].body).toMatchObject({ expectedRevision: 2, titleVi: 'Tiêu đề đang sửa' });
+  });
+test('a draft conflict keeps local edits even when the server draft changed', async ({ page }) => {
+    const mock = await mockSocialAdmin(page);
+    mock.state.draft = {
+      titleVi: 'Tiêu đề gốc',
+      bodyVi: 'Nội dung gốc',
+      titleEn: 'Original title',
+      bodyEn: 'Original body',
+    };
+    await page.goto('/social');
+    const vi = page.getByRole('group', { name: 'Tiếng Việt' });
+    await vi.locator('input').fill('Bản nháp của tôi');
+
+    // Another admin saves a different draft first: revision and server draft both move.
+    mock.state.draft = {
+      titleVi: 'Tiêu đề của admin khác',
+      bodyVi: 'Nội dung khác',
+      titleEn: 'Other admin title',
+      bodyEn: 'Other admin body',
+    };
+    mock.state.revision += 1;
+
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect(page.getByText(/Another admin saved changes first/)).toBeVisible();
+    await expect(vi.locator('input')).toHaveValue('Bản nháp của tôi');
   });
 });
