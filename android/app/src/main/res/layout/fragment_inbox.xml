@@ -78,8 +78,8 @@
                         android:layout_height="@dimen/min_touch_target"
                         android:background="?attr/selectableItemBackground"
                         android:contentDescription="@string/feed_entry_cd"
+                        android:nextFocusDown="@id/inboxSearchPill"
                         android:src="@drawable/ic_public"
-                        android:visibility="gone"
                         app:tint="?attr/colorOnSurfaceVariant" />
 
                     <ImageButton

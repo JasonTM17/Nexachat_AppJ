@@ -3,18 +3,41 @@
     <string name="feed_title">Public feed</string>
     <string name="feed_entry_cd">Public feed</string>
     <string name="feed_compose_title">New post</string>
+    <string name="feed_edit_post_title">Edit post</string>
     <string name="feed_compose_hint">Write a post</string>
     <string name="feed_compose_add_image">Add photo</string>
+    <string name="feed_compose_add_video">Add video</string>
     <string name="feed_compose_remove_image">Remove photo</string>
+    <string name="feed_compose_remove_video">Remove video</string>
     <string name="feed_compose_submit">Post</string>
+    <string name="feed_compose_save">Save</string>
     <string name="feed_compose_counter" translatable="false">%1$d/%2$d</string>
+    <string name="feed_compose_video_caption_required">Add a caption to post a video</string>
+    <string name="feed_video_badge">MP4 Video</string>
+    <string name="feed_video_disabled">Video uploads are currently disabled</string>
+    <string name="feed_video_too_large">Video exceeds the 4 MB limit</string>
+    <string name="feed_video_invalid_type">Choose a valid MP4 video</string>
+    <string name="feed_video_failed">Couldn\'t upload the video</string>
+    <string name="feed_video_play_error">Couldn\'t play this video</string>
+    <string name="feed_video_mute">Mute video</string>
+    <string name="feed_video_unmute">Unmute video</string>
+    <string name="feed_pause_video">Pause video</string>
     <string name="feed_empty">No posts yet</string>
     <string name="feed_empty_hint">Be the first to share something public.</string>
+    <string name="feed_empty_filtered">No matching posts</string>
+    <string name="feed_empty_filtered_hint">Try a different keyword or clear the filter.</string>
     <string name="feed_error">Couldn\'t load the feed</string>
+    <string name="feed_search_hint">Search posts…</string>
+    <string name="feed_filter_author_chip">Posts by %1$s</string>
+    <string name="feed_edited_parens">(edited)</string>
+    <string name="feed_editing_comment">Editing comment</string>
+    <string name="feed_post_edited">Post updated</string>
+    <string name="feed_comment_edited">Comment updated</string>
     <string name="feed_notice_title">Posts here are public</string>
     <string name="feed_notice_body">Anyone on NexaChat can read them.</string>
     <string name="feed_notice_ok">Got it</string>
     <string name="feed_post_deleted">Post deleted</string>
+    <string name="feed_post_delete_failed">Couldn\'t delete the post</string>
     <string name="feed_comment_deleted">Comment deleted</string>
     <string name="feed_delete_post">Delete post</string>
     <string name="feed_delete_comment">Delete comment</string>
@@ -25,6 +48,10 @@
     <string name="feed_cancel">Cancel</string>
     <string name="feed_message_author">Message author</string>
     <string name="feed_open_chat_error">Couldn&#8217;t open the chat</string>
+    <string name="feed_author_filter_posts">Filter posts by author</string>
+    <string name="feed_author_voice_call">Voice call</string>
+    <string name="feed_author_video_call">Video call</string>
+    <string name="feed_author_unavailable">Author unavailable</string>
     <string name="feed_report">Report</string>
     <string name="feed_report_sent">Report sent</string>
     <string name="feed_comment_hint">Add a comment</string>
@@ -44,6 +71,10 @@
     <plurals name="feed_comment_count">
         <item quantity="one">%d comment</item>
         <item quantity="other">%d comments</item>
+    </plurals>
+    <plurals name="feed_author_post_count">
+        <item quantity="one">%d post</item>
+        <item quantity="other">%d posts</item>
     </plurals>
     <plurals name="feed_reaction_count_cd">
         <item quantity="one">%1$s, %2$d reaction</item>

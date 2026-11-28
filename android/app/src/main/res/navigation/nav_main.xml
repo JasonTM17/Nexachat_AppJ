@@ -158,7 +158,18 @@
     <fragment
         android:id="@+id/postComposeFragment"
         android:name="com.nexachat.feature.feed.PostComposeFragment"
-        android:label="@string/feed_compose_title" />
+        android:label="@string/feed_compose_title">
+        <argument
+            android:name="editPostId"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+        <argument
+            android:name="editBody"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
 
     <fragment
         android:id="@+id/postDetailFragment"

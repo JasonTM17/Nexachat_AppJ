@@ -25,36 +25,66 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <com.nexachat.core.ui.components.AvatarView
-                android:id="@+id/postAvatar"
-                android:layout_width="@dimen/avatar_sm"
-                android:layout_height="@dimen/avatar_sm"
-                android:importantForAccessibility="no" />
-
             <LinearLayout
+                android:id="@+id/postAuthorHeader"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_sm"
                 android:layout_weight="1"
-                android:orientation="vertical">
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/min_touch_target"
+                android:orientation="horizontal">
 
-                <TextView
-                    android:id="@+id/postAuthor"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:textAppearance="?attr/textAppearanceTitleSmall"
-                    android:textColor="?attr/colorOnSurface" />
+                <com.nexachat.core.ui.components.AvatarView
+                    android:id="@+id/postAvatar"
+                    android:layout_width="@dimen/avatar_sm"
+                    android:layout_height="@dimen/avatar_sm"
+                    android:importantForAccessibility="no" />
 
-                <TextView
-                    android:id="@+id/postTime"
-                    android:layout_width="match_parent"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/postAuthor"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:textColor="?attr/colorOnSurface" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/postTime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                        <TextView
+                            android:id="@+id/postEdited"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_xs"
+                            android:text="@string/feed_edited_parens"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
 
             <ImageButton
@@ -84,6 +114,81 @@
             android:contentDescription="@string/feed_post_image_cd"
             android:scaleType="centerCrop"
             android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/postVideoContainer"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/feed_image_height"
+            android:layout_marginTop="@dimen/space_sm"
+            android:background="@drawable/bg_message_image"
+            android:visibility="gone">
+
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/postVideoPlayer"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@color/nexa_media_video_placeholder"
+                app:resize_mode="fit"
+                app:surface_type="texture_view"
+                app:use_controller="false" />
+
+            <ProgressBar
+                android:id="@+id/postVideoBuffering"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:contentDescription="@string/loading_status"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/postVideoPlayPause"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_media_play_button"
+                android:contentDescription="@string/cd_play_video"
+                android:src="@drawable/ic_play_arrow"
+                app:tint="@color/nexa_on_media_meta" />
+
+            <ImageButton
+                android:id="@+id/postVideoMute"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="@dimen/space_xs"
+                android:background="@drawable/bg_media_play_button"
+                android:contentDescription="@string/feed_video_mute"
+                android:src="@drawable/ic_volume_up"
+                app:tint="@color/nexa_on_media_meta" />
+
+            <LinearLayout
+                android:id="@+id/postVideoError"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@color/nexa_media_viewer_scrim"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="@dimen/space_md"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:text="@string/feed_video_play_error"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="@color/nexa_on_media_meta" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/postVideoRetry"
+                    style="@style/Widget.NexaChat.Button.Tonal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/action_retry" />
+            </LinearLayout>
+        </FrameLayout>
 
         <LinearLayout
             android:id="@+id/postReactions"

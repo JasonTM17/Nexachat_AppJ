@@ -9,6 +9,7 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.After;
 import org.junit.Before;
@@ -21,6 +22,7 @@ public final class PostDetailViewModelTest {
             new InstantTaskExecutorRule();
 
     private FakeFeedRepository repository;
+    private FeedSyncBus syncBus;
     private PostDetailViewModel viewModel;
 
     @Before public void setUp() {
@@ -28,7 +30,8 @@ public final class PostDetailViewModelTest {
         RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         RxAndroidPlugins.setMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         repository = new FakeFeedRepository();
-        viewModel = new PostDetailViewModel(repository);
+        syncBus = new FeedSyncBus();
+        viewModel = new PostDetailViewModel(repository, syncBus);
     }
 
     @After public void tearDown() {
@@ -119,6 +122,88 @@ public final class PostDetailViewModelTest {
         assertEquals(2, state().getPost().commentCount());
         assertEquals(PostDetailViewModel.Outcome.COMMENT_SENT, outcome());
         assertFalse(state().isSending());
+    }
+
+    @Test public void editingOwnCommentUpdatesBodyAndEditedAt() {
+        viewModel.load("post-1");
+        repository.getPostCalls.get(0).onSuccess(post("post-1", 1));
+        FeedRepository.Comment own = ownComment("comment-1", "before");
+        repository.listCommentsCalls.get(0).onSuccess(
+                new FeedRepository.CommentPage(List.of(own), null));
+
+        viewModel.startEditComment(own);
+        assertEquals("comment-1", state().getEditingComment().id());
+
+        viewModel.sendComment("  after  ");
+        assertEquals(1, repository.editCommentCalls.size());
+        assertEquals("comment-1", repository.editCommentIds.get(0));
+        assertEquals("after", repository.editCommentBodies.get(0));
+
+        FeedRepository.Comment edited = new FeedRepository.Comment(
+                "comment-1",
+                "post-1",
+                own.author(),
+                "after",
+                own.createdAt(),
+                "2026-02-25T05:40:00Z",
+                true);
+        repository.editCommentCalls.get(0).onSuccess(edited);
+
+        assertNull(state().getEditingComment());
+        assertEquals("after", state().getComments().get(0).body());
+        assertEquals("2026-02-25T05:40:00Z", state().getComments().get(0).editedAt());
+        assertEquals(PostDetailViewModel.Outcome.COMMENT_EDITED, outcome());
+    }
+
+    @Test public void cancelEditCommentClearsBannerState() {
+        viewModel.load("post-1");
+        repository.getPostCalls.get(0).onSuccess(post("post-1", 1));
+        FeedRepository.Comment own = ownComment("comment-1", "before");
+        repository.listCommentsCalls.get(0).onSuccess(
+                new FeedRepository.CommentPage(List.of(own), null));
+
+        viewModel.startEditComment(own);
+        assertEquals(own, state().getEditingComment());
+
+        viewModel.cancelEditComment();
+        assertNull(state().getEditingComment());
+    }
+
+    @Test public void detailMutationsPublishSyncEventsForFeedList() {
+        List<FeedSyncBus.Event> events = new ArrayList<>();
+        var sub = syncBus.observe().subscribe(events::add);
+
+        loadPostWithComments(null);
+        events.clear();
+
+        viewModel.toggleReaction("\uD83D\uDC4D");
+        repository.setReactionCalls.get(0).onSuccess(
+                List.of(new FeedRepository.Reaction("\uD83D\uDC4D", 1, true)));
+        assertTrue(events.stream().anyMatch(e -> e instanceof FeedSyncBus.PostUpdated));
+
+        viewModel.deletePost();
+        repository.deletePostCalls.get(0).onComplete();
+        assertTrue(events.stream().anyMatch(e -> e instanceof FeedSyncBus.PostDeleted));
+        sub.dispose();
+    }
+
+    @Test public void syncBusPostUpdatedRefreshesDetailPost() {
+        loadPostWithComments(null);
+        FeedRepository.Post updated = new FeedRepository.Post(
+                "post-1",
+                new FeedRepository.Author("author-1", "An", null),
+                "edited body",
+                null,
+                null,
+                "2026-02-25T05:33:20Z",
+                "2026-02-25T05:45:00Z",
+                1,
+                List.of(),
+                true);
+        syncBus.publish(new FeedSyncBus.PostUpdated(updated));
+
+        assertEquals("edited body", state().getPost().body());
+        assertEquals("2026-02-25T05:45:00Z", state().getPost().editedAt());
     }
 
     @Test public void aFailedCommentReportsFailureAndClearsSending() {
@@ -381,5 +466,15 @@ public final class PostDetailViewModelTest {
                 "hello",
                 "2026-02-25T05:34:20Z",
                 false);
+    }
+
+    private static FeedRepository.Comment ownComment(String id, String body) {
+        return new FeedRepository.Comment(
+                id,
+                "post-1",
+                new FeedRepository.Author("author-1", "An", null),
+                body,
+                "2026-02-25T05:34:20Z",
+                true);
     }
 }

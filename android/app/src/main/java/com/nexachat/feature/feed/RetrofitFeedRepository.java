@@ -36,6 +36,7 @@ public final class RetrofitFeedRepository implements FeedRepository {
     /** The server accepts these for a feed image; anything else is refused before the upload. */
     private static final Set<String> ALLOWED_IMAGE_MIME =
             Set.of("image/jpeg", "image/png", "image/webp");
+    private static final String VIDEO_MIME = "video/mp4";
 
     private final FeedApi api;
     private final Context context;
@@ -55,16 +56,32 @@ public final class RetrofitFeedRepository implements FeedRepository {
     }
 
     @Override
-    public Single<PostPage> listPosts(int limit, @Nullable String cursor) {
-        return operationTracker.track(requiredBody(api.listPosts(limit, cursor)).map(page -> {
-            List<Post> items = new ArrayList<>(page.getItems().size());
-            for (FeedPostDto row : page.getItems()) {
-                if (row.getId() != null) {
-                    items.add(toPost(row));
-                }
-            }
-            return new PostPage(List.copyOf(items), page.getNextCursor());
-        }));
+    public Single<PostPage> listPosts(
+            int limit,
+            @Nullable String cursor,
+            @Nullable String authorId,
+            @Nullable String q) {
+        String normalizedQ = FeedRules.normalizeSearchQuery(q);
+        return operationTracker.track(
+                requiredBody(api.listPosts(limit, cursor, authorId, normalizedQ)).map(page -> {
+                    List<Post> items = new ArrayList<>(page.getItems().size());
+                    for (FeedPostDto row : page.getItems()) {
+                        if (row.getId() != null) {
+                            items.add(toPost(row));
+                        }
+                    }
+                    return new PostPage(List.copyOf(items), page.getNextCursor());
+                }));
+    }
+
+    @Override
+    public Single<AuthorProfile> getAuthorProfile(@NonNull String authorId) {
+        return operationTracker.track(requiredBody(api.getAuthorProfile(authorId)).map(dto ->
+                new AuthorProfile(
+                        dto.getUserId() == null ? authorId : dto.getUserId(),
+                        dto.getDisplayName(),
+                        dto.getAvatarUrl(),
+                        dto.resolvedPostCount())));
     }
 
     @Override
@@ -74,10 +91,20 @@ public final class RetrofitFeedRepository implements FeedRepository {
 
     @Override
     public Single<Post> createPost(
-            @Nullable String body, @Nullable String imageId, @NonNull String clientPostId) {
+            @Nullable String body,
+            @Nullable String imageId,
+            @Nullable String videoId,
+            @NonNull String clientPostId) {
         return operationTracker.track(requiredBody(
-                        api.createPost(new FeedCreatePostRequest(body, imageId, clientPostId)))
+                        api.createPost(new FeedCreatePostRequest(body, imageId, videoId, clientPostId)))
                 .map(RetrofitFeedRepository::toPost));
+    }
+
+    @Override
+    public Single<Post> editPost(@NonNull String postId, @NonNull String body) {
+        return operationTracker.track(
+                requiredBody(api.editPost(postId, new FeedEditPostRequest(body)))
+                        .map(RetrofitFeedRepository::toPost));
     }
 
     @Override
@@ -119,6 +146,13 @@ public final class RetrofitFeedRepository implements FeedRepository {
     }
 
     @Override
+    public Single<Comment> editComment(@NonNull String commentId, @NonNull String body) {
+        return operationTracker.track(
+                requiredBody(api.editComment(commentId, new FeedEditCommentRequest(body)))
+                        .map(row -> toComment(row, row.getPostId() == null ? "" : row.getPostId())));
+    }
+
+    @Override
     public Completable deleteComment(@NonNull String commentId) {
         return operationTracker.track(emptyBody(api.deleteComment(commentId)));
     }
@@ -147,8 +181,30 @@ public final class RetrofitFeedRepository implements FeedRepository {
                 });
     }
 
+    @Override
+    public Single<UploadedVideo> uploadVideo(@NonNull Uri uri) {
+        return Single.fromCallable(() -> prepareVideo(uri))
+                .subscribeOn(Schedulers.io())
+                .flatMap(part -> requiredBody(api.uploadVideo(part)))
+                .map(dto -> {
+                    if (dto.getVideoId() == null) {
+                        throw new FeedApiException(200, "EMPTY_RESPONSE");
+                    }
+                    return new UploadedVideo(
+                            dto.getVideoId(),
+                            dto.getUrl(),
+                            dto.getMimeType());
+                });
+    }
+
+    @Override
+    public Single<SocialConfig> getSocialConfig() {
+        return operationTracker.track(requiredBody(api.getSocialConfig()).map(dto ->
+                new SocialConfig(dto.isWebEnabled(), dto.isVideoUploadsEnabled())));
+    }
+
     private PreparedImage prepare(@NonNull Uri uri) throws IOException {
-        byte[] original = readBounded(uri);
+        byte[] original = readBounded(uri, MAX_IMAGE_BYTES, "picked image");
         String declared = context.getContentResolver().getType(uri);
         String mime = declared == null ? "image/jpeg" : declared.toLowerCase(Locale.ROOT);
         ImageCompressor.Result optimized;
@@ -171,10 +227,29 @@ public final class RetrofitFeedRepository implements FeedRepository {
                 temporary);
     }
 
-    private byte[] readBounded(@NonNull Uri uri) throws IOException {
+    private MultipartBody.Part prepareVideo(@NonNull Uri uri) throws IOException {
+        String declared = context.getContentResolver().getType(uri);
+        if (declared != null && !FeedRules.isMp4Mime(declared)) {
+            throw new FeedApiException(415, "MIME_NOT_ALLOWED");
+        }
+        byte[] bytes;
+        try {
+            bytes = readBounded(uri, FeedRules.MAX_VIDEO_BYTES, "picked video");
+        } catch (FileTooLargeException tooLarge) {
+            throw new FeedApiException(413, "FILE_TOO_LARGE");
+        }
+        if (!FeedRules.hasIsoBmffFtypBox(bytes)) {
+            throw new FeedApiException(415, "MIME_NOT_ALLOWED");
+        }
+        RequestBody body = RequestBody.create(bytes, MediaType.parse(VIDEO_MIME));
+        return MultipartBody.Part.createFormData(PART_FILE, "clip.mp4", body);
+    }
+
+    private byte[] readBounded(@NonNull Uri uri, long maxBytes, @NonNull String label)
+            throws IOException {
         try (InputStream input = context.getContentResolver().openInputStream(uri)) {
             if (input == null) {
-                throw new IOException("picked image is unreadable");
+                throw new IOException(label + " is unreadable");
             }
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[READ_BUFFER];
@@ -182,8 +257,8 @@ public final class RetrofitFeedRepository implements FeedRepository {
             int read;
             while ((read = input.read(chunk)) != -1) {
                 total += read;
-                if (total > MAX_IMAGE_BYTES) {
-                    throw new IOException("picked image is too large");
+                if (total > maxBytes) {
+                    throw new FileTooLargeException(label + " is too large");
                 }
                 buffer.write(chunk, 0, read);
             }
@@ -203,7 +278,9 @@ public final class RetrofitFeedRepository implements FeedRepository {
                 toAuthor(dto.getAuthor()),
                 dto.getBody(),
                 toImage(dto.getImage()),
+                toVideo(dto.getVideo()),
                 dto.getCreatedAt(),
+                dto.getEditedAt(),
                 dto.resolvedCommentCount(),
                 toReactions(dto.getReactions()),
                 dto.isMine());
@@ -216,6 +293,7 @@ public final class RetrofitFeedRepository implements FeedRepository {
                 toAuthor(dto.getAuthor()),
                 dto.getBody(),
                 dto.getCreatedAt(),
+                dto.getEditedAt(),
                 dto.isMine());
     }
 
@@ -231,6 +309,14 @@ public final class RetrofitFeedRepository implements FeedRepository {
             return null;
         }
         return new Image(dto.getUrl(), dto.resolvedWidth(), dto.resolvedHeight(), dto.getMimeType());
+    }
+
+    @Nullable
+    private static Video toVideo(@Nullable FeedVideoRefDto dto) {
+        if (dto == null || dto.getUrl() == null) {
+            return null;
+        }
+        return new Video(dto.getUrl(), dto.getMimeType());
     }
 
     private static List<Reaction> toReactions(List<FeedReactionDto> rows) {
@@ -271,6 +357,12 @@ public final class RetrofitFeedRepository implements FeedRepository {
             }
             return Completable.error(((ApiResult.NetworkError<?>) result).getCause());
         });
+    }
+
+    private static final class FileTooLargeException extends IOException {
+        FileTooLargeException(String message) {
+            super(message);
+        }
     }
 
     /** One prepared multipart upload plus the cache file that must be removed afterwards. */

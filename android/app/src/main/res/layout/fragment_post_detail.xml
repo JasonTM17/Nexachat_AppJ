@@ -10,7 +10,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"
-        android:minHeight="?attr/actionBarSize"
+        android:minHeight="@dimen/app_bar_min_height"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
@@ -22,12 +22,13 @@
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/detailList"
-        android:contentDescription="@string/cd_clickable_list_of_posts"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"
+        android:contentDescription="@string/cd_clickable_list_of_posts"
+        android:paddingTop="@dimen/space_sm"
         android:paddingBottom="@dimen/space_sm"
-        app:layout_constraintBottom_toTopOf="@id/detailComposer"
+        app:layout_constraintBottom_toTopOf="@id/detailEditBanner"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/detailToolbar" />
@@ -36,7 +37,7 @@
         android:id="@+id/detailLoading"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@id/detailComposer"
+        app:layout_constraintBottom_toTopOf="@id/detailEditBanner"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/detailToolbar" />
@@ -46,51 +47,112 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/detailComposer"
+        app:layout_constraintBottom_toTopOf="@id/detailEditBanner"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/detailToolbar" />
 
     <LinearLayout
+        android:id="@+id/detailEditBanner"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurfaceContainerLow"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="@dimen/space_sm"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/detailComposer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <View
+            android:layout_width="3dp"
+            android:layout_height="match_parent"
+            android:background="?attr/colorPrimary" />
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="@dimen/space_sm"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_edit"
+            app:tint="?attr/colorPrimary" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_sm"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/detailEditLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/feed_editing_comment"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorPrimary" />
+
+            <TextView
+                android:id="@+id/detailEditPreview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/detailCancelEdit"
+            android:layout_width="@dimen/min_touch_target"
+            android:layout_height="@dimen/min_touch_target"
+            android:background="?attr/selectableItemBackground"
+            android:contentDescription="@string/cd_cancel_edit"
+            android:src="@drawable/ic_close"
+            app:tint="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/detailComposer"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
+        android:background="@drawable/bg_chat_composer"
         android:gravity="bottom"
+        android:minHeight="@dimen/composer_min_height"
         android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="@dimen/space_sm"
+        android:paddingHorizontal="@dimen/space_sm"
+        android:paddingVertical="@dimen/space_xs"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/detailInputLayout"
-            style="@style/Widget.NexaChat.TextInputLayout"
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/detailInput"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="@dimen/space_xs"
             android:layout_weight="1"
-            android:hint="@string/feed_comment_hint">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/detailInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:imeOptions="flagNoExtractUi"
-                android:inputType="textCapSentences|textMultiLine"
-                android:maxLength="500"
-                android:maxLines="4"
-                android:textColor="?attr/colorOnSurface" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:background="@drawable/bg_composer_field"
+            android:gravity="start|center_vertical"
+            android:hint="@string/feed_comment_hint"
+            android:imeOptions="flagNoExtractUi"
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLength="500"
+            android:maxLines="4"
+            android:minHeight="@dimen/min_touch_target"
+            android:paddingHorizontal="@dimen/bubble_content_inset"
+            android:paddingVertical="@dimen/space_sm"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurface"
+            android:textColorHint="?attr/colorOnSurfaceVariant" />
 
         <ImageButton
             android:id="@+id/detailSend"
             android:layout_width="@dimen/min_touch_target"
             android:layout_height="@dimen/min_touch_target"
-            android:layout_marginStart="@dimen/space_sm"
-            android:background="?attr/selectableItemBackground"
+            android:background="@drawable/bg_send_button"
             android:contentDescription="@string/feed_comment_send"
+            android:padding="@dimen/list_item_padding_vertical"
             android:src="@drawable/ic_send"
-            app:tint="?attr/colorPrimary" />
+            app:tint="@color/brand_on_fill" />
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

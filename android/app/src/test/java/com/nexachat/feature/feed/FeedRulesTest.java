@@ -17,6 +17,13 @@ public final class FeedRulesTest {
         assertNull(FeedRules.normalize("   \n\t "));
     }
 
+    @Test public void normalizeSearchQueryTrimsAndCapsAtMaxLength() {
+        assertNull(FeedRules.normalizeSearchQuery("   "));
+        assertEquals("xin chào", FeedRules.normalizeSearchQuery("  xin chào  "));
+        assertEquals(FeedRules.MAX_SEARCH_LENGTH,
+                FeedRules.normalizeSearchQuery("x".repeat(150)).length());
+    }
+
     @Test public void lengthCountsTheTrimmedBody() {
         assertEquals(0, FeedRules.length(null));
         assertEquals(0, FeedRules.length("   "));
@@ -29,6 +36,20 @@ public final class FeedRulesTest {
         assertTrue(FeedRules.canSubmitPost("hello", false));
         assertTrue(FeedRules.canSubmitPost(null, true));
         assertTrue(FeedRules.canSubmitPost("   ", true));
+    }
+
+    @Test public void aVideoPostRequiresANonBlankCaption() {
+        assertFalse(FeedRules.canSubmitPost(null, false, true));
+        assertFalse(FeedRules.canSubmitPost("   ", false, true));
+        assertTrue(FeedRules.canSubmitPost("caption", false, true));
+        assertFalse(FeedRules.canSubmitPost("a".repeat(FeedRules.MAX_POST_LENGTH + 1), false, true));
+    }
+
+    @Test public void editingAPostRequiresANonBlankCaptionWithinLimit() {
+        assertFalse(FeedRules.canSubmitEditedPost(null));
+        assertFalse(FeedRules.canSubmitEditedPost("   "));
+        assertTrue(FeedRules.canSubmitEditedPost("updated"));
+        assertFalse(FeedRules.canSubmitEditedPost("a".repeat(FeedRules.MAX_POST_LENGTH + 1)));
     }
 
     @Test public void aPostBodyMustFitTheServerLimit() {
@@ -59,6 +80,19 @@ public final class FeedRulesTest {
         assertTrue(FeedRules.isRateLimited(new FeedApiException(429, null)));
         assertTrue(FeedRules.isRateLimited(new FeedApiException(400, "RATE_LIMITED")));
         assertFalse(FeedRules.isRateLimited(new FeedApiException(404, "POST_NOT_FOUND")));
+    }
+
+    @Test public void videoErrorMatchersRecognizeServerCodes() {
+        assertTrue(FeedRules.isSocialFeatureDisabled(
+                new FeedApiException(403, "SOCIAL_FEATURE_DISABLED")));
+        assertFalse(FeedRules.isSocialFeatureDisabled(new FeedApiException(403, "FORBIDDEN")));
+        assertTrue(FeedRules.isFileTooLarge(new FeedApiException(413, "FILE_TOO_LARGE")));
+        assertTrue(FeedRules.isMimeNotAllowed(new FeedApiException(415, "MIME_NOT_ALLOWED")));
+        assertTrue(FeedRules.isMp4Mime("video/mp4"));
+        assertTrue(FeedRules.isMp4Mime("VIDEO/MP4"));
+        assertFalse(FeedRules.isMp4Mime("video/webm"));
+        assertTrue(FeedRules.hasIsoBmffFtypBox(new byte[]{0, 0, 0, 20, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}));
+        assertFalse(FeedRules.hasIsoBmffFtypBox(new byte[]{0, 0, 0, 1}));
     }
 
     @Test public void hasReactionReadsOnlyTheCallersOwnReaction() {

@@ -15,11 +15,18 @@ final class FakeFeedRepository implements FeedRepository {
 
     final List<SingleSubject<PostPage>> listPostsCalls = new ArrayList<>();
     final List<String> listPostsCursors = new ArrayList<>();
+    final List<String> listPostsAuthorIds = new ArrayList<>();
+    final List<String> listPostsQueries = new ArrayList<>();
+    final List<SingleSubject<AuthorProfile>> getAuthorProfileCalls = new ArrayList<>();
     final List<SingleSubject<Post>> getPostCalls = new ArrayList<>();
     final List<SingleSubject<Post>> createPostCalls = new ArrayList<>();
     final List<String> createPostBodies = new ArrayList<>();
     final List<String> createPostImageIds = new ArrayList<>();
+    final List<String> createPostVideoIds = new ArrayList<>();
     final List<String> createPostClientIds = new ArrayList<>();
+    final List<SingleSubject<Post>> editPostCalls = new ArrayList<>();
+    final List<String> editPostIds = new ArrayList<>();
+    final List<String> editPostBodies = new ArrayList<>();
     final List<CompletableSubject> deletePostCalls = new ArrayList<>();
     final List<SingleSubject<List<Reaction>>> setReactionCalls = new ArrayList<>();
     final List<String> setReactionEmoji = new ArrayList<>();
@@ -29,39 +36,75 @@ final class FakeFeedRepository implements FeedRepository {
     final List<SingleSubject<Comment>> addCommentCalls = new ArrayList<>();
     final List<String> addCommentBodies = new ArrayList<>();
     final List<String> addCommentClientIds = new ArrayList<>();
+    final List<SingleSubject<Comment>> editCommentCalls = new ArrayList<>();
+    final List<String> editCommentIds = new ArrayList<>();
+    final List<String> editCommentBodies = new ArrayList<>();
     final List<CompletableSubject> deleteCommentCalls = new ArrayList<>();
     final List<SingleSubject<UploadedImage>> uploadImageCalls = new ArrayList<>();
+    final List<SingleSubject<UploadedVideo>> uploadVideoCalls = new ArrayList<>();
+    final List<SingleSubject<SocialConfig>> getSocialConfigCalls = new ArrayList<>();
 
-    @Override public Single<PostPage> listPosts(int limit, @Nullable String cursor) {
+    @Override
+    public Single<PostPage> listPosts(
+            int limit,
+            @Nullable String cursor,
+            @Nullable String authorId,
+            @Nullable String q) {
         SingleSubject<PostPage> call = SingleSubject.create();
         listPostsCalls.add(call);
         listPostsCursors.add(cursor);
+        listPostsAuthorIds.add(authorId);
+        listPostsQueries.add(q);
         return call;
     }
 
-    @Override public Single<Post> getPost(@NonNull String postId) {
+    @Override
+    public Single<AuthorProfile> getAuthorProfile(@NonNull String authorId) {
+        SingleSubject<AuthorProfile> call = SingleSubject.create();
+        getAuthorProfileCalls.add(call);
+        return call;
+    }
+
+    @Override
+    public Single<Post> getPost(@NonNull String postId) {
         SingleSubject<Post> call = SingleSubject.create();
         getPostCalls.add(call);
         return call;
     }
 
-    @Override public Single<Post> createPost(
-            @Nullable String body, @Nullable String imageId, @NonNull String clientPostId) {
+    @Override
+    public Single<Post> createPost(
+            @Nullable String body,
+            @Nullable String imageId,
+            @Nullable String videoId,
+            @NonNull String clientPostId) {
         SingleSubject<Post> call = SingleSubject.create();
         createPostCalls.add(call);
         createPostBodies.add(body);
         createPostImageIds.add(imageId);
+        createPostVideoIds.add(videoId);
         createPostClientIds.add(clientPostId);
         return call;
     }
 
-    @Override public Completable deletePost(@NonNull String postId) {
+    @Override
+    public Single<Post> editPost(@NonNull String postId, @NonNull String body) {
+        SingleSubject<Post> call = SingleSubject.create();
+        editPostCalls.add(call);
+        editPostIds.add(postId);
+        editPostBodies.add(body);
+        return call;
+    }
+
+    @Override
+    public Completable deletePost(@NonNull String postId) {
         CompletableSubject call = CompletableSubject.create();
         deletePostCalls.add(call);
         return call;
     }
 
-    @Override public Single<List<Reaction>> setReaction(
+    @Override
+    public Single<List<Reaction>> setReaction(
             @NonNull String postId, @NonNull String emoji, boolean active) {
         SingleSubject<List<Reaction>> call = SingleSubject.create();
         setReactionCalls.add(call);
@@ -70,7 +113,8 @@ final class FakeFeedRepository implements FeedRepository {
         return call;
     }
 
-    @Override public Single<CommentPage> listComments(
+    @Override
+    public Single<CommentPage> listComments(
             @NonNull String postId, int limit, @Nullable String cursor) {
         SingleSubject<CommentPage> call = SingleSubject.create();
         listCommentsCalls.add(call);
@@ -78,7 +122,8 @@ final class FakeFeedRepository implements FeedRepository {
         return call;
     }
 
-    @Override public Single<Comment> addComment(
+    @Override
+    public Single<Comment> addComment(
             @NonNull String postId, @NonNull String body, @NonNull String clientCommentId) {
         SingleSubject<Comment> call = SingleSubject.create();
         addCommentCalls.add(call);
@@ -87,15 +132,40 @@ final class FakeFeedRepository implements FeedRepository {
         return call;
     }
 
-    @Override public Completable deleteComment(@NonNull String commentId) {
+    @Override
+    public Single<Comment> editComment(@NonNull String commentId, @NonNull String body) {
+        SingleSubject<Comment> call = SingleSubject.create();
+        editCommentCalls.add(call);
+        editCommentIds.add(commentId);
+        editCommentBodies.add(body);
+        return call;
+    }
+
+    @Override
+    public Completable deleteComment(@NonNull String commentId) {
         CompletableSubject call = CompletableSubject.create();
         deleteCommentCalls.add(call);
         return call;
     }
 
-    @Override public Single<UploadedImage> uploadImage(@NonNull Uri uri) {
+    @Override
+    public Single<UploadedImage> uploadImage(@NonNull Uri uri) {
         SingleSubject<UploadedImage> call = SingleSubject.create();
         uploadImageCalls.add(call);
+        return call;
+    }
+
+    @Override
+    public Single<UploadedVideo> uploadVideo(@NonNull Uri uri) {
+        SingleSubject<UploadedVideo> call = SingleSubject.create();
+        uploadVideoCalls.add(call);
+        return call;
+    }
+
+    @Override
+    public Single<SocialConfig> getSocialConfig() {
+        SingleSubject<SocialConfig> call = SingleSubject.create();
+        getSocialConfigCalls.add(call);
         return call;
     }
 }

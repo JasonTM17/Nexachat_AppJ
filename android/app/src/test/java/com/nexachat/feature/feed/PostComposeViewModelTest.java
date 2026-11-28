@@ -11,6 +11,8 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -22,6 +24,7 @@ public final class PostComposeViewModelTest {
             new InstantTaskExecutorRule();
 
     private FakeFeedRepository repository;
+    private FeedSyncBus syncBus;
     private PostComposeViewModel viewModel;
 
     @Before public void setUp() {
@@ -29,7 +32,8 @@ public final class PostComposeViewModelTest {
         RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         RxAndroidPlugins.setMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         repository = new FakeFeedRepository();
-        viewModel = new PostComposeViewModel(repository);
+        syncBus = new FeedSyncBus();
+        viewModel = new PostComposeViewModel(repository, syncBus);
     }
 
     @After public void tearDown() {
@@ -41,6 +45,7 @@ public final class PostComposeViewModelTest {
         assertFalse(state().canSubmit());
         assertEquals(0, state().getLength());
         assertNull(state().getImage());
+        assertNull(state().getVideo());
     }
 
     @Test public void textEnablesSubmitAndCountsTrimmedCharacters() {
@@ -64,6 +69,35 @@ public final class PostComposeViewModelTest {
         assertTrue(state().canSubmit());
     }
 
+    @Test public void aVideoRequiresANonBlankCaption() {
+        Uri video = mock(Uri.class);
+        viewModel.setVideo(video);
+
+        assertFalse(state().canSubmit());
+
+        viewModel.setBody("watch this");
+        assertTrue(state().canSubmit());
+
+        viewModel.setBody("   ");
+        assertFalse(state().canSubmit());
+    }
+
+    @Test public void pickingVideoClearsImageAndViceVersa() {
+        Uri image = mock(Uri.class);
+        Uri video = mock(Uri.class);
+
+        viewModel.setImage(image);
+        assertEquals(image, state().getImage());
+
+        viewModel.setVideo(video);
+        assertNull(state().getImage());
+        assertEquals(video, state().getVideo());
+
+        viewModel.setImage(image);
+        assertNull(state().getVideo());
+        assertEquals(image, state().getImage());
+    }
+
     @Test public void clearingTheBodyWithAnImageKeepsSubmitEnabled() {
         viewModel.setImage(mock(Uri.class));
         viewModel.setBody("hello");
@@ -83,6 +117,7 @@ public final class PostComposeViewModelTest {
         assertEquals(1, repository.createPostCalls.size());
         assertEquals("hello", repository.createPostBodies.get(0));
         assertNull(repository.createPostImageIds.get(0));
+        assertNull(repository.createPostVideoIds.get(0));
         assertTrue(repository.uploadImageCalls.isEmpty());
     }
 
@@ -131,6 +166,90 @@ public final class PostComposeViewModelTest {
         assertEquals(1, repository.createPostCalls.size());
         assertEquals("image-1", repository.createPostImageIds.get(0));
         assertEquals("hello", repository.createPostBodies.get(0));
+    }
+
+    @Test public void retryingAfterCreateFailureReusesCachedUploadedImageId() {
+        viewModel.setImage(mock(Uri.class));
+        viewModel.setBody("hello");
+
+        viewModel.submit();
+        repository.uploadImageCalls.get(0).onSuccess(
+                new FeedRepository.UploadedImage("image-1", "https://cdn/1.jpg", 10, 10, "image/jpeg"));
+        repository.createPostCalls.get(0).onError(new IllegalStateException("network"));
+
+        viewModel.submit();
+
+        assertEquals("should not re-upload cached image", 1, repository.uploadImageCalls.size());
+        assertEquals(2, repository.createPostCalls.size());
+        assertEquals("image-1", repository.createPostImageIds.get(1));
+    }
+
+    @Test public void retryingAfterCreateFailureReusesCachedUploadedVideoId() {
+        viewModel.setVideo(mock(Uri.class));
+        viewModel.setBody("video caption");
+
+        viewModel.submit();
+        assertEquals(1, repository.uploadVideoCalls.size());
+        repository.uploadVideoCalls.get(0).onSuccess(
+                new FeedRepository.UploadedVideo("video-1", "/api/v1/feed/videos/video-1", "video/mp4"));
+        assertEquals(1, repository.createPostCalls.size());
+        assertEquals("video-1", repository.createPostVideoIds.get(0));
+
+        repository.createPostCalls.get(0).onError(new IllegalStateException("network"));
+        viewModel.submit();
+
+        assertEquals("should not re-upload cached video", 1, repository.uploadVideoCalls.size());
+        assertEquals(2, repository.createPostCalls.size());
+        assertEquals("video-1", repository.createPostVideoIds.get(1));
+    }
+
+    @Test public void videoUploadsDisabledFlagBlocksVideoSubmitCleanly() {
+        repository.getSocialConfigCalls.get(0).onSuccess(new FeedRepository.SocialConfig(true, false));
+        assertFalse(state().isVideoUploadsEnabled());
+
+        viewModel.setVideo(mock(Uri.class));
+        viewModel.setBody("clip");
+        viewModel.submit();
+
+        assertTrue(repository.uploadVideoCalls.isEmpty());
+        assertEquals(PostComposeViewModel.Outcome.VIDEO_DISABLED, outcome());
+    }
+
+    @Test public void videoUploadErrorsMapToSpecificOutcomes() {
+        viewModel.setVideo(mock(Uri.class));
+        viewModel.setBody("clip");
+
+        viewModel.submit();
+        repository.uploadVideoCalls.get(0).onError(new FeedApiException(413, "FILE_TOO_LARGE"));
+        assertEquals(PostComposeViewModel.Outcome.VIDEO_TOO_LARGE, outcome());
+
+        viewModel.submit();
+        repository.uploadVideoCalls.get(1).onError(new FeedApiException(415, "MIME_NOT_ALLOWED"));
+        assertEquals(PostComposeViewModel.Outcome.VIDEO_INVALID_TYPE, outcome());
+    }
+
+    @Test public void editModeCallsEditPostAndPublishesToSyncBus() {
+        List<FeedSyncBus.Event> events = new ArrayList<>();
+        var sub = syncBus.observe().subscribe(events::add);
+
+        viewModel.startEdit("post-1", "original");
+        assertTrue(state().isEditMode());
+        assertTrue(state().canSubmit());
+
+        viewModel.setBody("  updated body  ");
+        viewModel.submit();
+
+        assertEquals(1, repository.editPostCalls.size());
+        assertEquals("post-1", repository.editPostIds.get(0));
+        assertEquals("updated body", repository.editPostBodies.get(0));
+
+        FeedRepository.Post updated = post("post-1");
+        repository.editPostCalls.get(0).onSuccess(updated);
+
+        assertEquals(PostComposeViewModel.Outcome.EDITED, outcome());
+        assertEquals(1, events.size());
+        assertTrue(events.get(0) instanceof FeedSyncBus.PostUpdated);
+        sub.dispose();
     }
 
     @Test public void aFailedUploadNeverCreatesThePost() {

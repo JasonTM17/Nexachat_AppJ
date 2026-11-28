@@ -3,18 +3,41 @@
     <string name="feed_title">Bảng tin công khai</string>
     <string name="feed_entry_cd">Bảng tin công khai</string>
     <string name="feed_compose_title">Bài viết mới</string>
+    <string name="feed_edit_post_title">Chỉnh sửa bài viết</string>
     <string name="feed_compose_hint">Viết bài</string>
     <string name="feed_compose_add_image">Thêm ảnh</string>
+    <string name="feed_compose_add_video">Thêm video</string>
     <string name="feed_compose_remove_image">Bỏ ảnh</string>
+    <string name="feed_compose_remove_video">Bỏ video</string>
     <string name="feed_compose_submit">Đăng</string>
+    <string name="feed_compose_save">Lưu</string>
     <string name="feed_compose_counter" translatable="false">%1$d/%2$d</string>
+    <string name="feed_compose_video_caption_required">Thêm chú thích để đăng video</string>
+    <string name="feed_video_badge">Video MP4</string>
+    <string name="feed_video_disabled">Tải lên video hiện đang tắt</string>
+    <string name="feed_video_too_large">Video vượt quá giới hạn 4 MB</string>
+    <string name="feed_video_invalid_type">Hãy chọn video MP4 hợp lệ</string>
+    <string name="feed_video_failed">Không tải được video lên</string>
+    <string name="feed_video_play_error">Không phát được video này</string>
+    <string name="feed_video_mute">Tắt tiếng video</string>
+    <string name="feed_video_unmute">Bật tiếng video</string>
+    <string name="feed_pause_video">Tạm dừng video</string>
     <string name="feed_empty">Chưa có bài viết nào</string>
     <string name="feed_empty_hint">Hãy là người đầu tiên đăng bài công khai.</string>
+    <string name="feed_empty_filtered">Không có bài viết phù hợp</string>
+    <string name="feed_empty_filtered_hint">Thử từ khóa khác hoặc xóa bộ lọc.</string>
     <string name="feed_error">Không tải được bảng tin</string>
+    <string name="feed_search_hint">Tìm kiếm bài viết…</string>
+    <string name="feed_filter_author_chip">Bài viết của %1$s</string>
+    <string name="feed_edited_parens">(đã chỉnh sửa)</string>
+    <string name="feed_editing_comment">Đang sửa bình luận</string>
+    <string name="feed_post_edited">Đã cập nhật bài viết</string>
+    <string name="feed_comment_edited">Đã cập nhật bình luận</string>
     <string name="feed_notice_title">Bài viết ở đây là công khai</string>
     <string name="feed_notice_body">Mọi người trên NexaChat đều đọc được.</string>
     <string name="feed_notice_ok">Đã hiểu</string>
     <string name="feed_post_deleted">Đã xoá bài viết</string>
+    <string name="feed_post_delete_failed">Không xoá được bài viết</string>
     <string name="feed_comment_deleted">Đã xoá bình luận</string>
     <string name="feed_delete_post">Xoá bài viết</string>
     <string name="feed_delete_comment">Xoá bình luận</string>
@@ -25,6 +48,10 @@
     <string name="feed_cancel">Huỷ</string>
     <string name="feed_message_author">Nhắn tin cho tác giả</string>
     <string name="feed_open_chat_error">Không mở được cuộc trò chuyện</string>
+    <string name="feed_author_filter_posts">Lọc bài viết theo tác giả</string>
+    <string name="feed_author_voice_call">Gọi thoại</string>
+    <string name="feed_author_video_call">Gọi video</string>
+    <string name="feed_author_unavailable">Không tìm thấy tác giả</string>
     <string name="feed_report">Báo cáo</string>
     <string name="feed_report_sent">Đã gửi báo cáo</string>
     <string name="feed_comment_hint">Viết bình luận</string>
@@ -43,6 +70,9 @@
     <string name="feed_comment_count_zero">Chưa có bình luận</string>
     <plurals name="feed_comment_count">
         <item quantity="other">%d bình luận</item>
+    </plurals>
+    <plurals name="feed_author_post_count">
+        <item quantity="other">%d bài viết</item>
     </plurals>
     <plurals name="feed_reaction_count_cd">
         <item quantity="other">%1$s, %2$d cảm xúc</item>

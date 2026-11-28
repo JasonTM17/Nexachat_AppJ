@@ -10,12 +10,22 @@ import com.squareup.moshi.Json;
 public final class FeedCreatePostRequest {
     @Json(name = "body") @Nullable private final String body;
     @Json(name = "imageId") @Nullable private final String imageId;
+    @Json(name = "videoId") @Nullable private final String videoId;
     @Json(name = "clientPostId") private final String clientPostId;
 
     public FeedCreatePostRequest(
             @Nullable String body, @Nullable String imageId, String clientPostId) {
+        this(body, imageId, null, clientPostId);
+    }
+
+    public FeedCreatePostRequest(
+            @Nullable String body,
+            @Nullable String imageId,
+            @Nullable String videoId,
+            String clientPostId) {
         this.body = body;
         this.imageId = imageId;
+        this.videoId = videoId;
         this.clientPostId = clientPostId;
     }
 }

@@ -9,10 +9,11 @@ public final class FeedCommentDto {
     @Nullable private final FeedAuthorDto author;
     @Nullable private final String body;
     @Nullable private final String createdAt;
+    @Nullable private final String editedAt;
     @Nullable private final Boolean mine;
 
     public FeedCommentDto() {
-        this(null, null, null, null, null, null);
+        this(null, null, null, null, null, null, null);
     }
 
     public FeedCommentDto(
@@ -22,11 +23,23 @@ public final class FeedCommentDto {
             @Nullable String body,
             @Nullable String createdAt,
             @Nullable Boolean mine) {
+        this(id, postId, author, body, createdAt, null, mine);
+    }
+
+    public FeedCommentDto(
+            @Nullable String id,
+            @Nullable String postId,
+            @Nullable FeedAuthorDto author,
+            @Nullable String body,
+            @Nullable String createdAt,
+            @Nullable String editedAt,
+            @Nullable Boolean mine) {
         this.id = id;
         this.postId = postId;
         this.author = author;
         this.body = body;
         this.createdAt = createdAt;
+        this.editedAt = editedAt;
         this.mine = mine;
     }
 
@@ -39,6 +52,8 @@ public final class FeedCommentDto {
     @Nullable public String getBody() { return body; }
 
     @Nullable public String getCreatedAt() { return createdAt; }
+
+    @Nullable public String getEditedAt() { return editedAt; }
 
     public boolean isMine() { return Boolean.TRUE.equals(mine); }
 }

@@ -8,6 +8,7 @@ import retrofit2.http.Body;
 import retrofit2.http.DELETE;
 import retrofit2.http.GET;
 import retrofit2.http.Multipart;
+import retrofit2.http.PATCH;
 import retrofit2.http.POST;
 import retrofit2.http.PUT;
 import retrofit2.http.Part;
@@ -23,13 +24,22 @@ public interface FeedApi {
     @GET("api/v1/feed/posts")
     Call<FeedPostPageDto> listPosts(
             @Query("limit") int limit,
-            @Query("cursor") @Nullable String cursor);
+            @Query("cursor") @Nullable String cursor,
+            @Query("authorId") @Nullable String authorId,
+            @Query("q") @Nullable String q);
+
+    @GET("api/v1/feed/authors/{id}")
+    Call<FeedAuthorProfileDto> getAuthorProfile(@Path("id") String authorId);
 
     @POST("api/v1/feed/posts")
     Call<FeedPostDto> createPost(@Body FeedCreatePostRequest body);
 
     @GET("api/v1/feed/posts/{id}")
     Call<FeedPostDto> getPost(@Path("id") String postId);
+
+    @PATCH("api/v1/feed/posts/{id}")
+    Call<FeedPostDto> editPost(
+            @Path("id") String postId, @Body FeedEditPostRequest body);
 
     @DELETE("api/v1/feed/posts/{id}")
     Call<ResponseBody> deletePost(@Path("id") String postId);
@@ -52,10 +62,21 @@ public interface FeedApi {
     Call<FeedCommentDto> createComment(
             @Path("id") String postId, @Body FeedCreateCommentRequest body);
 
+    @PATCH("api/v1/feed/comments/{id}")
+    Call<FeedCommentDto> editComment(
+            @Path("id") String commentId, @Body FeedEditCommentRequest body);
+
     @DELETE("api/v1/feed/comments/{id}")
     Call<ResponseBody> deleteComment(@Path("id") String commentId);
 
     @Multipart
     @POST("api/v1/feed/images")
     Call<FeedImageUploadDto> uploadImage(@Part MultipartBody.Part file);
+
+    @Multipart
+    @POST("api/v1/feed/videos")
+    Call<FeedVideoUploadDto> uploadVideo(@Part MultipartBody.Part file);
+
+    @GET("api/social/v1/config")
+    Call<FeedSocialConfigDto> getSocialConfig();
 }

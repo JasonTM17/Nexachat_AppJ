@@ -15,12 +15,17 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
 
-/** Flat comment rows under a post; the menu only appears on the caller's own comments. */
+/**
+ * Flat comment cards under a post: header-aligned author + time + edited label,
+ * author tap target, and overflow menu shown on every comment.
+ */
 public final class CommentAdapter extends ListAdapter<FeedRepository.Comment, CommentAdapter.Holder> {
 
-    /** What the list does when a comment menu is tapped. */
+    /** What the list does when a comment menu or author header is tapped. */
     public interface Listener {
         void onCommentMenu(@NonNull FeedRepository.Comment comment, @NonNull View anchor);
+
+        default void onOpenAuthor(@NonNull FeedRepository.Author author, boolean isMine) { }
     }
 
     private static final DiffUtil.ItemCallback<FeedRepository.Comment> DIFF =
@@ -64,10 +69,15 @@ public final class CommentAdapter extends ListAdapter<FeedRepository.Comment, Co
         holder.avatar.setName(author);
         holder.avatar.setAvatarUrl(comment.author().avatarUrl());
         holder.avatar.setOnlineStatus(null);
-        holder.body.setText(comment.body() == null ? "" : comment.body());
         holder.time.setText(relativeTime(context, comment.createdAt()));
-        holder.menu.setVisibility(comment.mine() ? View.VISIBLE : View.GONE);
+        boolean edited = comment.editedAt() != null && !comment.editedAt().isBlank();
+        holder.edited.setVisibility(edited ? View.VISIBLE : View.GONE);
+        holder.body.setText(comment.body() == null ? "" : comment.body());
+        holder.menu.setVisibility(View.VISIBLE);
         holder.menu.setOnClickListener(anchor -> listener.onCommentMenu(comment, anchor));
+        holder.authorHeader.setContentDescription(author);
+        holder.authorHeader.setOnClickListener(
+                ignored -> listener.onOpenAuthor(comment.author(), comment.mine()));
         holder.itemView.setContentDescription(context.getString(
                 R.string.feed_comment_cd, author, comment.body() == null ? "" : comment.body()));
     }
@@ -85,18 +95,22 @@ public final class CommentAdapter extends ListAdapter<FeedRepository.Comment, Co
     }
 
     static final class Holder extends RecyclerView.ViewHolder {
+        final View authorHeader;
         final AvatarView avatar;
         final TextView author;
-        final TextView body;
         final TextView time;
+        final TextView edited;
+        final TextView body;
         final ImageButton menu;
 
         Holder(@NonNull View itemView) {
             super(itemView);
+            authorHeader = itemView.findViewById(R.id.commentAuthorHeader);
             avatar = itemView.findViewById(R.id.commentAvatar);
             author = itemView.findViewById(R.id.commentAuthor);
-            body = itemView.findViewById(R.id.commentBody);
             time = itemView.findViewById(R.id.commentTime);
+            edited = itemView.findViewById(R.id.commentEdited);
+            body = itemView.findViewById(R.id.commentBody);
             menu = itemView.findViewById(R.id.commentMenu);
         }
     }

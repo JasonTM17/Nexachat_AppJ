@@ -1,84 +1,167 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/feedToolbar"
-        android:layout_width="0dp"
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/feedAppBar"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"
-        android:minHeight="?attr/actionBarSize"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:navigationContentDescription="@string/cd_back"
-        app:navigationIcon="@drawable/ic_arrow_back"
-        app:title="@string/feed_title"
-        app:titleTextAppearance="?attr/textAppearanceTitleLarge"
-        app:titleTextColor="?attr/colorOnSurface" />
+        app:elevation="0dp"
+        app:liftOnScroll="true">
 
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/feedRefresh"
-        android:contentDescription="@string/cd_pull_to_refresh"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/feedToolbar">
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/feedToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/colorSurface"
+            android:minHeight="@dimen/app_bar_min_height"
+            app:layout_scrollFlags="scroll|enterAlways|snap"
+            app:navigationContentDescription="@string/cd_back"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:title="@string/feed_title"
+            app:titleTextAppearance="?attr/textAppearanceTitleLarge"
+            app:titleTextColor="?attr/colorOnSurface" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/feedList"
-            android:contentDescription="@string/cd_clickable_list_of_posts"
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/feedSearchCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_xs"
+            android:layout_marginBottom="@dimen/space_sm"
+            android:minHeight="@dimen/min_touch_target"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+            app:cardCornerRadius="@dimen/corner_full"
+            app:cardElevation="0dp"
+            app:layout_scrollFlags="scroll|enterAlways|snap"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/min_touch_target"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/space_md"
+                android:paddingEnd="@dimen/space_xs">
+
+                <ImageView
+                    android:id="@+id/feedSearchIcon"
+                    android:layout_width="@dimen/icon_size_sm"
+                    android:layout_height="@dimen/icon_size_sm"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_search"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+                <EditText
+                    android:id="@+id/feedSearchInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_inset"
+                    android:layout_weight="1"
+                    android:background="@android:color/transparent"
+                    android:hint="@string/feed_search_hint"
+                    android:imeOptions="actionSearch|flagNoExtractUi"
+                    android:inputType="text"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:singleLine="true"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textColorHint="?attr/colorOnSurfaceVariant" />
+
+                <ImageButton
+                    android:id="@+id/feedSearchClear"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackground"
+                    android:contentDescription="@string/cd_clear_search"
+                    android:src="@drawable/ic_close"
+                    android:visibility="gone"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:id="@+id/feedAuthorFilterRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingBottom="@dimen/space_sm"
+            android:visibility="gone"
+            app:layout_scrollFlags="scroll|enterAlways|snap">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/feedAuthorFilterChip"
+                style="@style/Widget.NexaChat.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checkable="false"
+                app:checkedIconVisible="false"
+                app:chipBackgroundColor="?attr/colorPrimaryContainer"
+                app:chipStrokeWidth="0dp"
+                app:closeIcon="@drawable/ic_close"
+                app:closeIconTint="?attr/colorOnPrimaryContainer"
+                app:closeIconVisible="true"
+                android:textColor="?attr/colorOnPrimaryContainer" />
+        </LinearLayout>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/feedRefresh"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingHorizontal="@dimen/space_md"
-            android:paddingTop="@dimen/space_sm"
-            android:paddingBottom="@dimen/fab_clearance" />
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+            android:contentDescription="@string/cd_pull_to_refresh">
 
-    <com.nexachat.core.ui.components.LoadingStateView
-        android:id="@+id/feedLoading"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/feedToolbar" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/feedList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:contentDescription="@string/cd_clickable_list_of_posts"
+                android:paddingHorizontal="@dimen/space_md"
+                android:paddingTop="@dimen/space_sm"
+                android:paddingBottom="@dimen/fab_clearance" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-    <com.nexachat.core.ui.components.EmptyStateView
-        android:id="@+id/feedEmpty"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/feedToolbar" />
+        <com.nexachat.core.ui.components.LoadingStateView
+            android:id="@+id/feedLoading"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
 
-    <com.nexachat.core.ui.components.ErrorStateView
-        android:id="@+id/feedError"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/feedToolbar" />
+        <com.nexachat.core.ui.components.EmptyStateView
+            android:id="@+id/feedEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <com.nexachat.core.ui.components.ErrorStateView
+            android:id="@+id/feedError"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/feedCompose"
         style="@style/Widget.NexaChat.FloatingActionButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
         android:layout_margin="@dimen/space_md"
         android:contentDescription="@string/feed_compose_title"
         android:src="@drawable/ic_edit_compose"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-</androidx.constraintlayout.widget.ConstraintLayout>
+        app:backgroundTint="@color/stitch_fab_fill"
+        app:tint="@color/brand_on_fill" />
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

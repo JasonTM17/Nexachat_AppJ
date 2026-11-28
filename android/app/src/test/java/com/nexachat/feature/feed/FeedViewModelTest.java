@@ -21,6 +21,7 @@ public final class FeedViewModelTest {
             new InstantTaskExecutorRule();
 
     private FakeFeedRepository repository;
+    private FeedSyncBus syncBus;
     private FeedViewModel viewModel;
 
     @Before public void setUp() {
@@ -28,7 +29,8 @@ public final class FeedViewModelTest {
         RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         RxAndroidPlugins.setMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         repository = new FakeFeedRepository();
-        viewModel = new FeedViewModel(repository);
+        syncBus = new FeedSyncBus();
+        viewModel = new FeedViewModel(repository, syncBus);
     }
 
     @After public void tearDown() {
@@ -193,7 +195,7 @@ public final class FeedViewModelTest {
         assertFalse(state().hasMore());
     }
 
-    @Test public void deleteRemovesTheRowAtOnce() {
+    @Test public void deleteEmitsSuccessOnlyWhenServerCompletes() {
         repository.listPostsCalls.get(0).onSuccess(new FeedRepository.PostPage(
                 List.of(post("post-1"), post("post-2")), null));
 
@@ -201,16 +203,68 @@ public final class FeedViewModelTest {
 
         assertEquals(List.of("post-2"), ids(state().getItems()));
         assertEquals(1, repository.deletePostCalls.size());
+        assertNull(viewModel.getOutcome().getValue());
+
+        repository.deletePostCalls.get(0).onComplete();
+        assertEquals(FeedViewModel.Outcome.POST_DELETED, viewModel.getOutcome().getValue());
     }
 
-    @Test public void aRefusedDeleteReloadsTheList() {
+    @Test public void aRefusedDeleteReloadsTheListAndReportsFailure() {
         repository.listPostsCalls.get(0).onSuccess(new FeedRepository.PostPage(
                 List.of(post("post-1"), post("post-2")), null));
 
         viewModel.deletePost("post-1");
         repository.deletePostCalls.get(0).onError(new IllegalStateException("forbidden"));
 
+        assertEquals(FeedViewModel.Outcome.POST_DELETE_FAILED, viewModel.getOutcome().getValue());
         assertEquals(2, repository.listPostsCalls.size());
+    }
+
+    @Test public void searchAndAuthorFilterForwardParamsAndPersistAcrossLoadMore() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1")), "cursor-1"));
+
+        viewModel.setAuthorFilter("author-2", "Binh");
+        assertEquals("author-2", repository.listPostsAuthorIds.get(1));
+        assertNull(repository.listPostsQueries.get(1));
+        assertTrue(state().hasActiveFilter());
+
+        viewModel.setSearchQuery("  xin chào  ");
+        assertEquals("author-2", repository.listPostsAuthorIds.get(2));
+        assertEquals("xin chào", repository.listPostsQueries.get(2));
+
+        repository.listPostsCalls.get(2).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-2")), "cursor-2"));
+        viewModel.loadMore();
+
+        assertEquals("cursor-2", repository.listPostsCursors.get(3));
+        assertEquals("author-2", repository.listPostsAuthorIds.get(3));
+        assertEquals("xin chào", repository.listPostsQueries.get(3));
+    }
+
+    @Test public void syncBusUpdatesAndDeletesPostsInPlace() {
+        repository.listPostsCalls.get(0).onSuccess(new FeedRepository.PostPage(
+                List.of(post("post-1"), post("post-2")), null));
+
+        FeedRepository.Post edited = new FeedRepository.Post(
+                "post-1",
+                new FeedRepository.Author("author-1", "An", null),
+                "edited body",
+                null,
+                null,
+                "2026-02-25T05:33:20Z",
+                "2026-02-25T05:35:00Z",
+                4,
+                List.of(new FeedRepository.Reaction("\u2764\uFE0F", 1, true)),
+                true);
+        syncBus.publish(new FeedSyncBus.PostUpdated(edited));
+
+        assertEquals("edited body", state().getItems().get(0).body());
+        assertEquals("2026-02-25T05:35:00Z", state().getItems().get(0).editedAt());
+        assertEquals(4, state().getItems().get(0).commentCount());
+
+        syncBus.publish(new FeedSyncBus.PostDeleted("post-2"));
+        assertEquals(List.of("post-1"), ids(state().getItems()));
     }
 
     @Test public void aReactionFlipsBeforeTheServerAnswers() {

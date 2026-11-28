@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_sheet_surface"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/space_md"
+    android:paddingBottom="@dimen/space_lg">
+
+    <include layout="@layout/include_sheet_handle" />
+
+    <com.nexachat.core.ui.components.AvatarView
+        android:id="@+id/authorProfileAvatar"
+        android:layout_width="@dimen/avatar_lg"
+        android:layout_height="@dimen/avatar_lg"
+        android:layout_marginTop="@dimen/space_sm"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/authorProfileName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_inset"
+        android:gravity="center"
+        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+        android:textColor="?attr/colorOnSurface" />
+
+    <TextView
+        android:id="@+id/authorProfilePostCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:background="@drawable/bg_feed_reaction_pill_mine"
+        android:paddingHorizontal="@dimen/space_inset"
+        android:paddingVertical="@dimen/space_xs"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="?attr/colorOnPrimaryContainer"
+        android:visibility="gone" />
+
+    <ProgressBar
+        android:id="@+id/authorProfileProgress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:contentDescription="@string/loading_status"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/authorProfileError"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:accessibilityLiveRegion="polite"
+        android:gravity="center"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorError"
+        android:visibility="gone" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/authorProfileFilter"
+        style="@style/Widget.NexaChat.Button.Tonal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_md"
+        android:minHeight="@dimen/min_touch_target"
+        android:text="@string/feed_author_filter_posts"
+        app:icon="@drawable/ic_tune_filter" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/authorProfileMessage"
+        style="@style/Widget.NexaChat.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:minHeight="@dimen/min_touch_target"
+        android:text="@string/action_message"
+        android:visibility="gone"
+        app:icon="@drawable/ic_chat_bubble_outline" />
+
+    <LinearLayout
+        android:id="@+id/authorProfileCallRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/authorProfileVoiceCall"
+            style="@style/Widget.NexaChat.Button.Outlined"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/feed_author_voice_call"
+            app:icon="@drawable/ic_call" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/authorProfileVideoCall"
+            style="@style/Widget.NexaChat.Button.Outlined"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_sm"
+            android:layout_weight="1"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/feed_author_video_call"
+            app:icon="@drawable/ic_videocam" />
+    </LinearLayout>
+</LinearLayout>

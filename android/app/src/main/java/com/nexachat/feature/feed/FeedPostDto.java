@@ -9,13 +9,15 @@ public final class FeedPostDto {
     @Nullable private final FeedAuthorDto author;
     @Nullable private final String body;
     @Nullable private final FeedImageRefDto image;
+    @Nullable private final FeedVideoRefDto video;
     @Nullable private final String createdAt;
+    @Nullable private final String editedAt;
     @Nullable private final Integer commentCount;
     @Nullable private final List<FeedReactionDto> reactions;
     @Nullable private final Boolean mine;
 
     public FeedPostDto() {
-        this(null, null, null, null, null, null, null, null);
+        this(null, null, null, null, null, null, null, null, null, null);
     }
 
     public FeedPostDto(
@@ -27,11 +29,27 @@ public final class FeedPostDto {
             @Nullable Integer commentCount,
             @Nullable List<FeedReactionDto> reactions,
             @Nullable Boolean mine) {
+        this(id, author, body, image, null, createdAt, null, commentCount, reactions, mine);
+    }
+
+    public FeedPostDto(
+            @Nullable String id,
+            @Nullable FeedAuthorDto author,
+            @Nullable String body,
+            @Nullable FeedImageRefDto image,
+            @Nullable FeedVideoRefDto video,
+            @Nullable String createdAt,
+            @Nullable String editedAt,
+            @Nullable Integer commentCount,
+            @Nullable List<FeedReactionDto> reactions,
+            @Nullable Boolean mine) {
         this.id = id;
         this.author = author;
         this.body = body;
         this.image = image;
+        this.video = video;
         this.createdAt = createdAt;
+        this.editedAt = editedAt;
         this.commentCount = commentCount;
         this.reactions = reactions;
         this.mine = mine;
@@ -45,7 +63,11 @@ public final class FeedPostDto {
 
     @Nullable public FeedImageRefDto getImage() { return image; }
 
+    @Nullable public FeedVideoRefDto getVideo() { return video; }
+
     @Nullable public String getCreatedAt() { return createdAt; }
+
+    @Nullable public String getEditedAt() { return editedAt; }
 
     public int resolvedCommentCount() {
         return commentCount == null ? 0 : Math.max(0, commentCount);

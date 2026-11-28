@@ -8,14 +8,17 @@ import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.core.widget.TextViewCompat;
+import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
@@ -26,15 +29,19 @@ import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.ui.components.AvatarView;
 import java.util.List;
 
-/** Public feed rows: author, body, optional image, reaction pills and the comment count. */
+/**
+ * Public feed rows: author header, edited badge, optional image or Media3 video player,
+ * reaction pills, and comment count.
+ */
 public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdapter.Holder> {
 
-    /** What the list does when a row is opened, reacted to or its menu is tapped. */
+    /** What the list does when a row, author, reaction, or menu is tapped. */
     public interface Listener {
         void onOpenPost(@NonNull FeedRepository.Post post);
 
@@ -43,6 +50,8 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         void onPostMenu(@NonNull FeedRepository.Post post, @NonNull View anchor);
 
         void onReactionTap(@NonNull FeedRepository.Post post, @NonNull String emoji);
+
+        default void onOpenAuthor(@NonNull FeedRepository.Author author, boolean isMine) { }
     }
 
     private static final DiffUtil.ItemCallback<FeedRepository.Post> DIFF =
@@ -63,10 +72,17 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
             };
 
     private final Listener listener;
+    @Nullable private final FeedVideoController videoController;
 
     public PostAdapter(@NonNull Listener listener) {
+        this(listener, null);
+    }
+
+    public PostAdapter(
+            @NonNull Listener listener, @Nullable FeedVideoController videoController) {
         super(DIFF);
         this.listener = listener;
+        this.videoController = videoController;
     }
 
     @NonNull
@@ -87,6 +103,8 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         holder.avatar.setAvatarUrl(post.author().avatarUrl());
         holder.avatar.setOnlineStatus(null);
         holder.time.setText(relativeTime(context, post.createdAt()));
+        boolean edited = post.editedAt() != null && !post.editedAt().isBlank();
+        holder.edited.setVisibility(edited ? View.VISIBLE : View.GONE);
 
         String body = post.body();
         boolean hasBody = body != null && !body.isBlank();
@@ -96,6 +114,7 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         }
 
         bindImage(holder.image, post.image());
+        bindVideo(holder, post);
         bindReactions(holder, post);
 
         holder.comments.setText(post.commentCount() == 0
@@ -104,6 +123,8 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
                         post.commentCount(), post.commentCount()));
         holder.comments.setOnClickListener(ignored -> listener.onOpenPost(post));
         holder.itemView.setOnClickListener(ignored -> listener.onOpenPost(post));
+        holder.authorHeader.setOnClickListener(
+                ignored -> listener.onOpenAuthor(post.author(), post.mine()));
         holder.react.setOnClickListener(ignored -> listener.onReact(post));
         holder.menu.setOnClickListener(anchor -> listener.onPostMenu(post, anchor));
     }
@@ -111,6 +132,11 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
     @Override
     public void onViewRecycled(@NonNull Holder holder) {
         Glide.with(holder.image).clear(holder.image);
+        if (videoController != null) {
+            videoController.onRecycled(holder, holder.videoPlayer);
+        } else {
+            holder.videoPlayer.setPlayer(null);
+        }
         super.onViewRecycled(holder);
     }
 
@@ -122,6 +148,7 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
             image.setVisibility(View.GONE);
             return;
         }
+        image.setClipToOutline(true);
         image.setVisibility(View.VISIBLE);
         Glide.with(image)
                 .load(absolute)
@@ -153,6 +180,28 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
                 .into(image);
     }
 
+    private void bindVideo(@NonNull Holder holder, @NonNull FeedRepository.Post post) {
+        FeedRepository.Video video = post.video();
+        String absolute = video == null ? null : AppConfig.absoluteMediaUrl(video.url());
+        if (absolute == null || videoController == null) {
+            holder.videoPlayer.setPlayer(null);
+            holder.videoContainer.setVisibility(View.GONE);
+            return;
+        }
+        holder.videoContainer.setVisibility(View.VISIBLE);
+        videoController.bind(
+                holder,
+                post.id(),
+                absolute,
+                holder.videoContainer,
+                holder.videoPlayer,
+                holder.videoPlayPause,
+                holder.videoMute,
+                holder.videoBuffering,
+                holder.videoError,
+                holder.videoRetry);
+    }
+
     private void bindReactions(@NonNull Holder holder, @NonNull FeedRepository.Post post) {
         holder.reactions.removeAllViews();
         List<FeedRepository.Reaction> reactions = post.reactions();
@@ -174,6 +223,10 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
                 0, context.getResources().getDimensionPixelSize(R.dimen.space_sm) - inset);
         holder.reactions.setLayoutParams(rowParams);
         int horizontal = context.getResources().getDimensionPixelSize(R.dimen.space_sm);
+        int mineColor = MaterialColors.getColor(
+                holder.itemView, com.google.android.material.R.attr.colorOnPrimaryContainer);
+        int otherColor = MaterialColors.getColor(
+                holder.itemView, com.google.android.material.R.attr.colorOnSurfaceVariant);
         for (int i = 0; i < reactions.size(); i++) {
             FeedRepository.Reaction reaction = reactions.get(i);
             TextView pill = new TextView(context);
@@ -183,6 +236,7 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
                     R.plurals.feed_reaction_count_cd,
                     reaction.count(), reaction.emoji(), reaction.count()));
             TextViewCompat.setTextAppearance(pill, R.style.TextAppearance_NexaChat_LabelMedium);
+            pill.setTextColor(reaction.mine() ? mineColor : otherColor);
             pill.setGravity(Gravity.CENTER);
             pill.setMinHeight(pillHeight + 2 * inset);
             Drawable look = ContextCompat.getDrawable(context, reaction.mine()
@@ -214,11 +268,20 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
     }
 
     static final class Holder extends RecyclerView.ViewHolder {
+        final View authorHeader;
         final AvatarView avatar;
         final TextView author;
         final TextView time;
+        final TextView edited;
         final TextView body;
         final ImageView image;
+        final FrameLayout videoContainer;
+        final PlayerView videoPlayer;
+        final ProgressBar videoBuffering;
+        final ImageButton videoPlayPause;
+        final ImageButton videoMute;
+        final View videoError;
+        final MaterialButton videoRetry;
         final LinearLayout reactions;
         final MaterialButton react;
         final MaterialButton comments;
@@ -226,11 +289,20 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
 
         Holder(@NonNull View itemView) {
             super(itemView);
+            authorHeader = itemView.findViewById(R.id.postAuthorHeader);
             avatar = itemView.findViewById(R.id.postAvatar);
             author = itemView.findViewById(R.id.postAuthor);
             time = itemView.findViewById(R.id.postTime);
+            edited = itemView.findViewById(R.id.postEdited);
             body = itemView.findViewById(R.id.postBody);
             image = itemView.findViewById(R.id.postImage);
+            videoContainer = itemView.findViewById(R.id.postVideoContainer);
+            videoPlayer = itemView.findViewById(R.id.postVideoPlayer);
+            videoBuffering = itemView.findViewById(R.id.postVideoBuffering);
+            videoPlayPause = itemView.findViewById(R.id.postVideoPlayPause);
+            videoMute = itemView.findViewById(R.id.postVideoMute);
+            videoError = itemView.findViewById(R.id.postVideoError);
+            videoRetry = itemView.findViewById(R.id.postVideoRetry);
             reactions = itemView.findViewById(R.id.postReactions);
             react = itemView.findViewById(R.id.postReact);
             comments = itemView.findViewById(R.id.postComments);

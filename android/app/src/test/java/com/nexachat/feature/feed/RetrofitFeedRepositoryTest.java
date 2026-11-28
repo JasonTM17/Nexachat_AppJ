@@ -1,6 +1,7 @@
 package com.nexachat.feature.feed;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -35,7 +36,9 @@ public final class RetrofitFeedRepositoryTest {
     private static final String POST_JSON = "{\"id\":\"post-1\",\"author\":{\"id\":\"author-1\","
             + "\"displayName\":\"An\",\"avatarUrl\":\"https://cdn/a.jpg\"},\"body\":\"hello\","
             + "\"image\":{\"url\":\"https://cdn/p.jpg\",\"width\":800,\"height\":600,"
-            + "\"mimeType\":\"image/jpeg\"},\"createdAt\":\"2026-02-25T05:33:20Z\","
+            + "\"mimeType\":\"image/jpeg\"},\"video\":{\"url\":\"/api/v1/feed/videos/v-1\","
+            + "\"mimeType\":\"video/mp4\"},\"createdAt\":\"2026-02-25T05:33:20Z\","
+            + "\"editedAt\":\"2026-02-25T05:40:00Z\","
             + "\"commentCount\":3,\"reactions\":[{\"emoji\":\"\\uD83D\\uDC4D\",\"count\":4,"
             + "\"mine\":true},{\"emoji\":\"\\u2764\\uFE0F\",\"count\":0,\"mine\":false}],"
             + "\"mine\":true}";
@@ -60,7 +63,7 @@ public final class RetrofitFeedRepositoryTest {
         FeedPostPageDto page = new FeedPostPageDto(
                 List.of(postDto("post-1"), postDto(null), postDto("post-2")), "cursor-1");
         Call<FeedPostPageDto> call = success(page);
-        when(api.listPosts(20, null)).thenReturn(call);
+        when(api.listPosts(20, null, null, null)).thenReturn(call);
 
         FeedRepository.PostPage result = repository.listPosts(20, null).blockingGet();
 
@@ -69,7 +72,32 @@ public final class RetrofitFeedRepositoryTest {
         assertEquals("cursor-1", result.nextCursor());
     }
 
-    @Test public void getPostMapsAuthorImageAndNonZeroReactions() {
+    @Test public void listPostsForwardsAuthorIdAndTrimmedQuery() {
+        FeedPostPageDto page = new FeedPostPageDto(List.of(postDto("post-1")), null);
+        Call<FeedPostPageDto> call = success(page);
+        when(api.listPosts(20, "c-1", "author-2", "xin chào")).thenReturn(call);
+
+        FeedRepository.PostPage result =
+                repository.listPosts(20, "c-1", "author-2", "  xin chào  ").blockingGet();
+
+        assertEquals(1, result.items().size());
+        verify(api).listPosts(20, "c-1", "author-2", "xin chào");
+    }
+
+    @Test public void getAuthorProfileMapsFields() {
+        Call<FeedAuthorProfileDto> call = success(
+                new FeedAuthorProfileDto("u-1", "An", "/avatars/1.jpg", 7L));
+        when(api.getAuthorProfile("u-1")).thenReturn(call);
+
+        FeedRepository.AuthorProfile profile = repository.getAuthorProfile("u-1").blockingGet();
+
+        assertEquals("u-1", profile.userId());
+        assertEquals("An", profile.displayName());
+        assertEquals("/avatars/1.jpg", profile.avatarUrl());
+        assertEquals(7L, profile.postCount());
+    }
+
+    @Test public void getPostMapsAuthorImageVideoEditedAtAndNonZeroReactions() {
         Call<FeedPostDto> call = success(parsePost(POST_JSON));
         when(api.getPost("post-1")).thenReturn(call);
 
@@ -81,6 +109,9 @@ public final class RetrofitFeedRepositoryTest {
         assertEquals("hello", post.body());
         assertEquals("https://cdn/p.jpg", post.image().url());
         assertEquals(800, post.image().width());
+        assertEquals("/api/v1/feed/videos/v-1", post.video().url());
+        assertEquals("video/mp4", post.video().mimeType());
+        assertEquals("2026-02-25T05:40:00Z", post.editedAt());
         assertEquals(3, post.commentCount());
         assertTrue(post.mine());
         assertEquals(List.of(new FeedRepository.Reaction("\uD83D\uDC4D", 4, true)),
@@ -94,6 +125,8 @@ public final class RetrofitFeedRepositoryTest {
         FeedRepository.Post post = repository.getPost("post-1").blockingGet();
 
         assertNull(post.image());
+        assertNull(post.video());
+        assertNull(post.editedAt());
         assertNull(post.author().id());
         assertTrue(post.reactions().isEmpty());
     }
@@ -113,6 +146,104 @@ public final class RetrofitFeedRepositoryTest {
         assertTrue(wire, wire.contains("\"body\":\"hello\""));
         assertTrue(wire, wire.contains("\"imageId\":\"image-1\""));
         assertTrue(wire, wire.contains("\"clientPostId\":\"client-1\""));
+    }
+
+    @Test public void createPostWithVideoIdSendsVideoIdField() {
+        Call<FeedPostDto> call = success(postDto("post-1"));
+        when(api.createPost(any())).thenReturn(call);
+
+        repository.createPost("caption", null, "video-1", "client-2").blockingGet();
+
+        ArgumentCaptor<FeedCreatePostRequest> sent =
+                ArgumentCaptor.forClass(FeedCreatePostRequest.class);
+        verify(api).createPost(sent.capture());
+        String wire = json(sent.getValue());
+        assertTrue(wire, wire.contains("\"body\":\"caption\""));
+        assertTrue(wire, wire.contains("\"videoId\":\"video-1\""));
+        assertTrue(wire, wire.contains("\"clientPostId\":\"client-2\""));
+    }
+
+    @Test public void editPostAndEditCommentMapEditedAt() {
+        FeedPostDto editedPost = new FeedPostDto(
+                "post-1", null, "updated", null, null,
+                "2026-02-25T05:33:20Z", "2026-02-25T05:35:00Z", 0, List.of(), true);
+        Call<FeedPostDto> postCall = success(editedPost);
+        when(api.editPost(eq("post-1"), any())).thenReturn(postCall);
+
+        FeedRepository.Post postResult = repository.editPost("post-1", "updated").blockingGet();
+        assertEquals("updated", postResult.body());
+        assertEquals("2026-02-25T05:35:00Z", postResult.editedAt());
+
+        FeedCommentDto editedComment = new FeedCommentDto(
+                "c-1", "post-1", null, "updated c",
+                "2026-02-25T05:34:00Z", "2026-02-25T05:36:00Z", true);
+        Call<FeedCommentDto> commentCall = success(editedComment);
+        when(api.editComment(eq("c-1"), any())).thenReturn(commentCall);
+
+        FeedRepository.Comment commentResult =
+                repository.editComment("c-1", "updated c").blockingGet();
+        assertEquals("updated c", commentResult.body());
+        assertEquals("2026-02-25T05:36:00Z", commentResult.editedAt());
+    }
+
+    @Test public void getSocialConfigMapsFlags() {
+        Call<FeedSocialConfigDto> call = success(new FeedSocialConfigDto(true, false));
+        when(api.getSocialConfig()).thenReturn(call);
+
+        FeedRepository.SocialConfig config = repository.getSocialConfig().blockingGet();
+
+        assertTrue(config.webEnabled());
+        assertFalse(config.videoUploadsEnabled());
+    }
+
+    @Test public void uploadVideoValidatesMp4HeaderAndUploads() throws Exception {
+        Uri uri = mock(Uri.class);
+        byte[] ftypMp4 = new byte[]{0, 0, 0, 20, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+        when(resolver.openInputStream(uri)).thenReturn(new ByteArrayInputStream(ftypMp4));
+        when(resolver.getType(uri)).thenReturn("video/mp4");
+        Call<FeedVideoUploadDto> call = success(
+                new FeedVideoUploadDto("video-1", "/api/v1/feed/videos/video-1", "video/mp4"));
+        when(api.uploadVideo(any())).thenReturn(call);
+
+        FeedRepository.UploadedVideo uploaded = repository.uploadVideo(uri).blockingGet();
+
+        assertEquals("video-1", uploaded.videoId());
+        assertEquals("/api/v1/feed/videos/video-1", uploaded.url());
+        assertEquals("video/mp4", uploaded.mimeType());
+    }
+
+    @Test public void uploadVideoRejectsNonMp4MimeBeforeReading() {
+        Uri uri = mock(Uri.class);
+        when(resolver.getType(uri)).thenReturn("video/webm");
+
+        try {
+            repository.uploadVideo(uri).blockingGet();
+            fail("expected FeedApiException 415");
+        } catch (FeedApiException expected) {
+            assertEquals(415, expected.getStatus());
+            assertEquals("MIME_NOT_ALLOWED", expected.getCode());
+            verify(api, never()).uploadVideo(any());
+        }
+    }
+
+    @Test public void uploadVideoRejectsOversizedFileWith413() throws Exception {
+        Uri uri = mock(Uri.class);
+        byte[] tooBig = new byte[(int) FeedRules.MAX_VIDEO_BYTES + 1];
+        tooBig[4] = 'f';
+        tooBig[5] = 't';
+        tooBig[6] = 'y';
+        tooBig[7] = 'p';
+        when(resolver.getType(uri)).thenReturn("video/mp4");
+        when(resolver.openInputStream(uri)).thenReturn(new ByteArrayInputStream(tooBig));
+
+        try {
+            repository.uploadVideo(uri).blockingGet();
+            fail("expected FeedApiException 413");
+        } catch (FeedApiException expected) {
+            assertEquals(413, expected.getStatus());
+            assertEquals("FILE_TOO_LARGE", expected.getCode());
+            verify(api, never()).uploadVideo(any());
+        }
     }
 
     @Test public void setReactionPicksAddOrRemove() {

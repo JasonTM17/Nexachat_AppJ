@@ -10,7 +10,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"
-        android:minHeight="?attr/actionBarSize"
+        android:minHeight="@dimen/app_bar_min_height"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
@@ -33,9 +33,9 @@
     </com.google.android.material.appbar.MaterialToolbar>
 
     <androidx.core.widget.NestedScrollView
-        android:contentDescription="@string/cd_clickable_scrollable_attachments"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:contentDescription="@string/cd_clickable_scrollable_attachments"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -74,6 +74,17 @@
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
+            <TextView
+                android:id="@+id/composeVideoCaptionNote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:accessibilityLiveRegion="polite"
+                android:text="@string/feed_compose_video_caption_required"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorPrimary"
+                android:visibility="gone" />
+
             <FrameLayout
                 android:id="@+id/composeImageFrame"
                 android:layout_width="match_parent"
@@ -103,23 +114,92 @@
                     app:tint="?attr/colorOnSurface" />
             </FrameLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/composeAddImage"
-                style="@style/Widget.NexaChat.Button.Outlined"
-                android:layout_width="wrap_content"
+            <FrameLayout
+                android:id="@+id/composeVideoFrame"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/feed_image_height"
+                android:layout_marginTop="@dimen/space_md"
+                android:background="@drawable/bg_message_image"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/composeVideoThumb"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@color/nexa_media_video_placeholder"
+                    android:importantForAccessibility="no"
+                    android:scaleType="centerCrop" />
+
+                <TextView
+                    android:id="@+id/composeVideoBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="@dimen/space_sm"
+                    android:background="@drawable/bg_message_image_meta"
+                    android:paddingHorizontal="@dimen/space_sm"
+                    android:paddingVertical="@dimen/space_xs"
+                    android:text="@string/feed_video_badge"
+                    android:textAppearance="?attr/textAppearanceLabelSmall"
+                    android:textColor="@color/nexa_on_media_meta" />
+
+                <ImageButton
+                    android:id="@+id/composeVideoRemove"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="@dimen/space_xs"
+                    android:background="@drawable/bg_streak_flame_disc"
+                    android:contentDescription="@string/feed_compose_remove_video"
+                    android:src="@drawable/ic_close"
+                    app:tint="?attr/colorOnSurface" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:id="@+id/composeMediaActions"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
-                android:minHeight="@dimen/min_touch_target"
-                android:text="@string/feed_compose_add_image"
-                app:icon="@drawable/ic_image" />
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/composeAddImage"
+                    style="@style/Widget.NexaChat.Button.Outlined"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/feed_compose_add_image"
+                    app:icon="@drawable/ic_image" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/composeAddVideo"
+                    style="@style/Widget.NexaChat.Button.Outlined"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/feed_compose_add_video"
+                    app:icon="@drawable/ic_videocam" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/composeVideoDisabledNote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:accessibilityLiveRegion="polite"
+                android:text="@string/feed_video_disabled"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
 
             <ProgressBar
                 android:id="@+id/composeProgress"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:contentDescription="@string/loading_status"
                 android:layout_gravity="center_horizontal"
                 android:layout_marginTop="@dimen/space_md"
+                android:contentDescription="@string/loading_status"
                 android:visibility="gone" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
