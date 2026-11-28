@@ -73,6 +73,13 @@
         <h2 id="composer-title" data-i18n="composerTitle">Bài viết mới</h2>
         <label class="field-label" for="post-body" data-i18n="composerLabel">Nội dung bài viết</label>
         <textarea class="text-input post-input" id="post-body" maxlength="1000" rows="4"></textarea>
+        <label class="field-label" for="post-media" data-i18n="mediaLabel">Ảnh hoặc video</label>
+        <input class="text-input media-input" id="post-media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4">
+        <p class="muted media-help" data-i18n="mediaHelp">JPEG, PNG, WebP hoặc MP4 tối đa 4 MiB. Ảnh có thể đăng một mình; video cần kèm nội dung chú thích.</p>
+        <div class="media-selected" id="media-selected" hidden>
+          <span class="media-name" id="media-name"></span>
+          <button class="icon-text-button" id="media-remove" type="button" data-i18n="mediaRemove">Gỡ tệp</button>
+        </div>
         <div class="composer-row">
           <span class="muted" id="post-counter">0/1000</span>
           <button class="button button-primary" id="post-submit" type="button" data-i18n="postButton">Đăng bài</button>

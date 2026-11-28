@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createSocialClient, SocialSessionError } from '../../site/social/social-client.js';
-import { canonicalImageRequestPath, imageUuid } from '../../site/social/social-media.js';
+import { canonicalImageRequestPath, canonicalVideoRequestPath, imageUuid, isMediaId } from '../../site/social/social-media.js';
 
 function jsonResponse(status, payload) {
   if (status === 204) {
@@ -312,4 +312,86 @@ test('the no-JS login fallback cannot serialize credentials and hidden UI wins o
   assert.match(html, /<input class="text-input" id="login-identifier"(?!.*name=)/);
   assert.match(html, /<input class="text-input" id="login-password"(?!.*name=)/);
   assert.match(css, /\[hidden\] \{ display: none !important; \}/);
+});
+
+test('multipart FormData is sent without a manual Content-Type and preserved across a 401 replay', async () => {
+  const calls = [];
+  let uploadAttempts = 0;
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url === '/api/social/v1/session/login') {
+      return jsonResponse(200, authPayload('access-1', 'refresh-1'));
+    }
+    if (url === '/api/social/v1/session/refresh') {
+      return jsonResponse(200, authPayload('access-2', 'refresh-2'));
+    }
+    if (url === '/api/social/v1/videos') {
+      uploadAttempts += 1;
+      if (uploadAttempts === 1) {
+        return jsonResponse(401, { error: { code: 'UNAUTHORIZED' } });
+      }
+      return jsonResponse(201, {
+        imageId: '66666666-6666-6666-6666-666666666666',
+        url: '/api/social/v1/videos/66666666-6666-6666-6666-666666666666',
+        mimeType: 'video/mp4',
+      });
+    }
+    throw new Error(`unexpected URL ${url}`);
+  };
+
+  const client = await signedInClient(fetchImpl);
+  const form = new FormData();
+  form.append('file', new Blob(['fake-mp4'], { type: 'video/mp4' }), 'clip.mp4');
+  const result = await client.request('/videos', { method: 'POST', body: form });
+
+  assert.equal(result.mimeType, 'video/mp4');
+  const uploads = calls.filter((call) => call.url === '/api/social/v1/videos');
+  assert.equal(uploads.length, 2);
+  for (const call of uploads) {
+    assert.equal(call.init.body, form, 'the exact same FormData object must be reused on the replay');
+    assert.equal(call.init.headers['Content-Type'], undefined, 'the multipart boundary must come from the browser');
+    assert.equal(typeof call.init.headers.Authorization, 'string');
+  }
+  assert.equal(uploads[0].init.headers.Authorization, 'Bearer access-1');
+  assert.equal(uploads[1].init.headers.Authorization, 'Bearer access-2');
+});
+
+test('json bodies still carry an explicit Content-Type', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url === '/api/social/v1/session/login') {
+      return jsonResponse(200, authPayload('access-1', 'refresh-1'));
+    }
+    return jsonResponse(201, { id: 'post-1' });
+  };
+  const client = await signedInClient(fetchImpl);
+  await client.request('/posts', { method: 'POST', body: { body: 'hi', clientPostId: 'x' } });
+  const create = calls.find((call) => call.url === '/api/social/v1/posts');
+  assert.equal(create.init.headers['Content-Type'], 'application/json');
+  assert.equal(typeof create.init.body, 'string');
+});
+
+test('canonicalVideoRequestPath accepts only exact same-origin video paths', () => {
+  const id = '66666666-6666-6666-6666-666666666666';
+  assert.equal(canonicalVideoRequestPath(`/api/social/v1/videos/${id}`), `/videos/${id}`);
+  assert.equal(canonicalVideoRequestPath(`/api/v1/feed/videos/${id}`), `/videos/${id}`);
+  assert.equal(canonicalVideoRequestPath(`/api/social/v1/videos/${id}/extra`), null);
+  assert.equal(canonicalVideoRequestPath(`/api/social/v1/videos/${id}?x=1`), null);
+  assert.equal(canonicalVideoRequestPath(`https://evil.example/api/social/v1/videos/${id}`), null);
+  assert.equal(canonicalVideoRequestPath(`//evil.example/api/social/v1/videos/${id}`), null);
+  assert.equal(canonicalVideoRequestPath(`/api/social/v1/images/${id}`), null);
+  assert.equal(canonicalVideoRequestPath(`/api/social/v1/videos/${id.toUpperCase()}`), `/videos/${id}`);
+  assert.equal(canonicalVideoRequestPath(null), null);
+  assert.equal(canonicalVideoRequestPath(undefined), null);
+});
+
+test('isMediaId accepts only a bare UUID', () => {
+  assert.equal(isMediaId('8f80fbb6-1111-4a2b-9c3d-0123456789ab'), true);
+  assert.equal(isMediaId('8F80FBB6-1111-4A2B-9C3D-0123456789AB'), true);
+  assert.equal(isMediaId('not-a-uuid'), false);
+  assert.equal(isMediaId('8f80fbb6-1111-4a2b-9c3d-0123456789ab/extra'), false);
+  assert.equal(isMediaId(null), false);
+  assert.equal(isMediaId(undefined), false);
+  assert.equal(isMediaId(42), false);
 });

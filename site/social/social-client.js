@@ -210,7 +210,12 @@ export function createSocialClient(fetchImpl = globalThis.fetch) {
       if (signal) {
         init.signal = signal;
       }
-      if (body !== undefined) {
+      if (body instanceof FormData) {
+        // The browser mints the multipart boundary; setting Content-Type
+        // manually would drop it. The same FormData object is reused verbatim
+        // when a single 401 replay resends the request.
+        init.body = body;
+      } else if (body !== undefined) {
         headers['Content-Type'] = 'application/json';
         init.body = JSON.stringify(body);
       }

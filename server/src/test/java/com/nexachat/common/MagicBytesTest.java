@@ -316,6 +316,21 @@ class MagicBytesTest {
         assertFalse(MagicBytes.isIsoBmffUndetermined(null));
     }
 
+    @Test
+    void hasMp4VideoTrackAcceptsARealVideoAndRejectsAudioBrandlessAndJunk() throws IOException {
+        assertTrue(MagicBytes.hasMp4VideoTrack(resource("video_h264_aac_isom.mp4")));
+        assertTrue(MagicBytes.hasMp4VideoTrack(
+                concat(ftyp("isom", "isom", "iso2"), moov("vide"))));
+
+        assertFalse(MagicBytes.hasMp4VideoTrack(resource("voice_aac_isom_faststart.m4a")));
+        assertFalse(MagicBytes.hasMp4VideoTrack(ftyp("isom", "isom", "iso2")));
+        assertFalse(MagicBytes.hasMp4VideoTrack(
+                concat(ftyp("isom", "isom", "iso2"), box("moov", new byte[0]))));
+        assertFalse(MagicBytes.hasMp4VideoTrack(hex("89504E470D0A1A0A0000000D")));
+        assertFalse(MagicBytes.hasMp4VideoTrack(new byte[0]));
+        assertFalse(MagicBytes.hasMp4VideoTrack(null));
+    }
+
     private static byte[] resource(String name) throws IOException {
         try (InputStream in = MagicBytesTest.class.getResourceAsStream("/fixtures/" + name)) {
             if (in == null) {

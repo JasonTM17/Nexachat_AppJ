@@ -46,6 +46,14 @@
       "destination": "https://api.nexachat.io.vn/api/social/v1/images/:path*"
     },
     {
+      "source": "/api/social/v1/videos",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/videos"
+    },
+    {
+      "source": "/api/social/v1/videos/:path*",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/videos/:path*"
+    },
+    {
       "source": "/social",
       "destination": "/social/index.html"
     },
@@ -123,7 +131,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+          "value": "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' blob:; media-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         }
       ]
     },
