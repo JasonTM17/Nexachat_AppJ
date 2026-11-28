@@ -13,6 +13,7 @@ import com.nexachat.feed.dto.PostPageResponse;
 import com.nexachat.feed.dto.PostResponse;
 import com.nexachat.feed.dto.ReactionListResponse;
 import com.nexachat.feed.dto.ReactionSummary;
+import com.nexachat.feed.dto.VideoResponse;
 import com.nexachat.streak.StreakService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,6 +71,15 @@ public class FeedService {
 
     /** Feed images are served only through this path, never through {@code /files/**}. */
     static final String IMAGE_PATH = "/api/v1/feed/images/";
+
+    /**
+     * Feed videos are served only through this path, never through {@code /files/**}.
+     * Like images, the advertised URL uses the legacy alias: it is never behind the
+     * web kill switch, so existing videos stay readable for every client in every
+     * flag state. The canonical {@code /api/social/v1/videos} mapping still answers
+     * the same bytes for the web client, which normalizes either alias.
+     */
+    static final String VIDEO_PATH = "/api/v1/feed/videos/";
 
     /** Outcome of a create: the row plus whether this call stored it. */
     public record Result(PostResponse post, boolean created) {
@@ -132,18 +142,32 @@ public class FeedService {
     @Transactional
     public Result create(UUID authorId, CreatePostRequest request) {
         String body = normalizeBody(request.body(), MAX_BODY, "body");
-        UUID imageId = request.imageId();
-        if (body == null && imageId == null) {
+        boolean video = request.videoId() != null;
+        if (video && (request.imageId() != null || body == null)) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "A video post needs text and cannot also have an image");
+        }
+        UUID assetId = video ? request.videoId() : request.imageId();
+        if (body == null && assetId == null) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "A post needs text or an image");
         }
-        if (imageId != null) {
-            FeedStore.ImageRow image = store.findImage(imageId)
+        if (assetId != null) {
+            // One nondisclosing message per kind: missing rows, wrong owner,
+            // and image/video type confusion must not reveal which one failed.
+            String assetError = video ? "videoId is not an uploaded feed video"
+                    : "imageId is not an uploaded feed image";
+            FeedStore.ImageRow image = store.findImage(assetId)
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                            "imageId is not an uploaded feed image"));
+                            assetError));
             if (!image.ownerId().equals(authorId)) {
-                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                        "imageId is not an uploaded feed image");
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, assetError);
+            }
+            // One slot holds either kind: the image slot never binds a video
+            // and the video slot never binds a still image.
+            boolean assetIsVideo = FeedImageService.VIDEO_MIME.equals(image.mimeType());
+            if (assetIsVideo != video) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, assetError);
             }
             // An already-bound image is rejected only on a fresh insert: a
             // clientPostId replay returns the post it was bound to.
@@ -162,7 +186,7 @@ public class FeedService {
 
         Instant now = clock.instant();
         int inserted = store.insertPost(UUID.randomUUID(), authorId, request.clientPostId(),
-                body, imageId, now);
+                body, assetId, now);
         if (inserted == 0) {
             FeedStore.PostRow existing = store.findOwnPostByClientId(authorId, request.clientPostId())
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.POST_NOT_FOUND,
@@ -170,7 +194,7 @@ public class FeedService {
             return new Result(toResponse(existing, authorId,
                     store.reactionsFor(existing.id(), authorId)), false);
         }
-        if (imageId != null && store.bindImage(imageId, authorId) == 0) {
+        if (assetId != null && store.bindImage(assetId, authorId) == 0) {
             // The image was bound to another post between the check and the
             // bind; rollback keeps the one-image/one-post invariant.
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
@@ -344,9 +368,15 @@ public class FeedService {
 
     private static PostResponse toResponse(FeedStore.PostRow row, UUID viewerId,
                                            List<FeedStore.ReactionRow> reactions) {
-        ImageResponse image = row.imageId() == null ? null
+        boolean video = row.imageId() != null
+                && FeedImageService.VIDEO_MIME.equals(row.imageMime());
+        // A video occupies the same slot but is never sent as the legacy image:
+        // older clients see only the required caption, newer ones the video.
+        ImageResponse image = row.imageId() == null || video ? null
                 : new ImageResponse(IMAGE_PATH + row.imageId(), row.imageWidth(),
                         row.imageHeight(), row.imageMime());
+        VideoResponse videoDto = !video ? null
+                : new VideoResponse(VIDEO_PATH + row.imageId(), FeedImageService.VIDEO_MIME);
         List<ReactionSummary> summaries = new ArrayList<>(reactions.size());
         for (FeedStore.ReactionRow reaction : reactions) {
             summaries.add(new ReactionSummary(reaction.emoji(), reaction.count(), reaction.mine()));
@@ -354,7 +384,7 @@ public class FeedService {
         return new PostResponse(row.id(),
                 new AuthorResponse(row.authorId(), row.authorName(), row.avatarUrl()),
                 row.body(), image, row.createdAt(), row.commentCount(), summaries,
-                row.authorId().equals(viewerId));
+                row.authorId().equals(viewerId), videoDto);
     }
 
     private static CommentResponse toResponse(FeedStore.CommentRow row, UUID viewerId) {

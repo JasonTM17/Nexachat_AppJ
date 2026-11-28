@@ -14,9 +14,14 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
+import com.nexachat.core.common.Result;
+import com.nexachat.data.ContactsRepository;
 import com.nexachat.databinding.FragmentPublicFeedBinding;
 import com.nexachat.feature.safety.ReportSheetFragment;
 import dagger.hilt.android.AndroidEntryPoint;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import javax.inject.Inject;
 
 /** The public feed: newest-first posts, pull-to-refresh, paging and the first-use notice. */
@@ -28,12 +33,16 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
 
     private static final int MENU_REPORT = 1;
     private static final int MENU_DELETE = 2;
+    private static final int MENU_MESSAGE = 3;
 
     private FragmentPublicFeedBinding binding;
     private FeedViewModel viewModel;
     private PostAdapter adapter;
     private boolean loadMoreErrorShown;
+    private final CompositeDisposable chatOpens = new CompositeDisposable();
+    private boolean openingChat;
     @Inject FeedNoticeStore noticeStore;
+    @Inject ContactsRepository contactsRepository;
 
     public PublicFeedFragment() {
         super(R.layout.fragment_public_feed);
@@ -138,6 +147,8 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
         menu.getMenu().add(Menu.NONE, MENU_REPORT, 0, R.string.feed_report);
         if (post.mine()) {
             menu.getMenu().add(Menu.NONE, MENU_DELETE, 1, R.string.feed_delete_post);
+        } else {
+            menu.getMenu().add(Menu.NONE, MENU_MESSAGE, 1, R.string.feed_message_author);
         }
         menu.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == MENU_REPORT) {
@@ -149,9 +160,45 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
                 confirmDeletePost(post);
                 return true;
             }
+            if (item.getItemId() == MENU_MESSAGE) {
+                openAuthorChat(post.author().id());
+                return true;
+            }
             return false;
         });
         menu.show();
+    }
+
+    private void openAuthorChat(@Nullable String authorId) {
+        if (openingChat || binding == null || authorId == null) {
+            return;
+        }
+        openingChat = true;
+        chatOpens.add(contactsRepository.openDirectConversation(authorId, null)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    openingChat = false;
+                    if (binding == null) {
+                        return;
+                    }
+                    if (result instanceof Result.Success<?> success
+                            && success.getValue() instanceof String conversationId) {
+                        var nav = NavHostFragment.findNavController(this);
+                        if (nav.getCurrentDestination() == null
+                                || nav.getCurrentDestination().getId() != R.id.publicFeedFragment) {
+                            return;
+                        }
+                        Bundle args = new Bundle();
+                        args.putString("conversationId", conversationId);
+                        nav.navigate(R.id.chatFragment, args);
+                    } else {
+                        snackbar(R.string.feed_open_chat_error);
+                    }
+                }, error -> {
+                    openingChat = false;
+                    snackbar(R.string.feed_open_chat_error);
+                }));
     }
 
     private void confirmDeletePost(@NonNull FeedRepository.Post post) {
@@ -192,6 +239,8 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
 
     @Override
     public void onDestroyView() {
+        chatOpens.clear();
+        openingChat = false;
         binding = null;
         super.onDestroyView();
     }

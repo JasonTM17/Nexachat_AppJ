@@ -8,9 +8,11 @@ import com.nexachat.feed.dto.CommentResponse;
 import com.nexachat.feed.dto.CreateCommentRequest;
 import com.nexachat.feed.dto.CreatePostRequest;
 import com.nexachat.feed.dto.FeedImageResponse;
+import com.nexachat.feed.dto.FeedVideoResponse;
 import com.nexachat.feed.dto.PostPageResponse;
 import com.nexachat.feed.dto.PostResponse;
 import com.nexachat.feed.dto.ReactionListResponse;
+import com.nexachat.social.SocialSettingsService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -35,7 +37,8 @@ import java.time.Duration;
 import java.util.UUID;
 
 /**
- * Public-feed REST surface ({@code /api/v1/feed/**}), caller-scoped:
+ * Public-feed REST surface ({@code /api/v1/feed/**} and the canonical
+ * social alias {@code /api/social/v1/**}), caller-scoped:
  *
  * <ul>
  *   <li>{@code GET /posts?limit=&cursor=} — newest-first keyset page;</li>
@@ -51,15 +54,18 @@ import java.util.UUID;
  * </ul>
  */
 @RestController
-@RequestMapping("/api/v1/feed")
+@RequestMapping({"/api/v1/feed", "/api/social/v1"})
 public class FeedController {
 
     private final FeedService feedService;
     private final FeedImageService imageService;
+    private final SocialSettingsService socialSettings;
 
-    public FeedController(FeedService feedService, FeedImageService imageService) {
+    public FeedController(FeedService feedService, FeedImageService imageService,
+                          SocialSettingsService socialSettings) {
         this.feedService = feedService;
         this.imageService = imageService;
+        this.socialSettings = socialSettings;
     }
 
     @GetMapping("/posts")
@@ -72,6 +78,9 @@ public class FeedController {
     @PostMapping("/posts")
     public ResponseEntity<PostResponse> create(@AuthenticationPrincipal JwtPrincipal principal,
                                                @Valid @RequestBody CreatePostRequest request) {
+        if (request.videoId() != null) {
+            requireVideoUploadsEnabled();
+        }
         FeedService.Result result = feedService.create(requireUserId(principal), request);
         return ResponseEntity
                 .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
@@ -153,6 +162,40 @@ public class FeedController {
                 .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePrivate())
                 .contentLength(content.content().sizeBytes())
                 .body(new InputStreamResource(content.content().content()));
+    }
+
+    @PostMapping("/videos")
+    public ResponseEntity<FeedVideoResponse> uploadVideo(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @RequestParam("file") MultipartFile file) {
+        requireVideoUploadsEnabled();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(imageService.uploadVideo(requireUserId(principal), file));
+    }
+
+    @GetMapping("/videos/{videoId}")
+    public ResponseEntity<Resource> video(@AuthenticationPrincipal JwtPrincipal principal,
+                                          @PathVariable UUID videoId) {
+        FeedImageService.ImageContent content =
+                imageService.openVideo(requireUserId(principal), videoId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(content.image().mimeType()))
+                .header("X-Content-Type-Options", "nosniff")
+                .cacheControl(CacheControl.noStore().cachePrivate())
+                .contentLength(content.content().sizeBytes())
+                .body(new InputStreamResource(content.content().content()));
+    }
+
+    /**
+     * New video uploads and new video binds are the two mutation entry points
+     * the runtime switch gates. Both aliases route through this controller, so
+     * one check covers each; existing videos stay readable regardless.
+     */
+    private void requireVideoUploadsEnabled() {
+        if (!socialSettings.isVideoUploadsEnabled()) {
+            throw ApiException.of(ApiErrorCode.SOCIAL_FEATURE_DISABLED,
+                    "Video uploads are currently disabled");
+        }
     }
 
     private static UUID requireUserId(JwtPrincipal principal) {

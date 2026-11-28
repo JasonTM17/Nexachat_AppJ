@@ -3,6 +3,7 @@ package com.nexachat.feed;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.auth.RateLimitService;
 import com.nexachat.testutil.FeatureItSupport;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
@@ -67,6 +68,14 @@ class FeedFlowIT extends FeatureItSupport {
     }
 
     // ------------------------------------------------------------------- posts
+
+    // These suites exercise the enabled feed: the runtime Social switches
+    // ship off by default, so each test opts back in after the shared reset.
+    // The kill-switch and video-gate denial paths live in SocialSettingsFlowIT.
+    @BeforeEach
+    void enableSocial() {
+        enableSocialFeatures();
+    }
 
     @Test
     void createdPostIsReturnedWithItsAuthorAndFlags() throws Exception {
@@ -199,6 +208,41 @@ class FeedFlowIT extends FeatureItSupport {
 
         assertThat(ids(feed(viewer, ""))).doesNotContain(postId.toString());
         getAs(viewer, "/api/v1/feed/posts/" + postId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+    }
+
+    @Test
+    void canonicalSocialMappingKeepsTheLegacyFeedContract() throws Exception {
+        Actor author = newUser("Canonical Author");
+        Actor reader = newUser("Canonical Reader");
+        String clientPostId = UUID.randomUUID().toString();
+        Map<String, Object> request = Map.of("body", "canonical seam", "clientPostId", clientPostId);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/social/v1/posts"))
+                .andExpect(status().isUnauthorized());
+
+        JsonNode created = json(postAs(author, "/api/social/v1/posts", request)
+                .andExpect(status().isCreated()));
+        assertThat(created.get("author").get("id").asText()).isEqualTo(author.id().toString());
+        String postId = created.get("id").asText();
+
+        JsonNode legacyReplay = json(postAs(author, "/api/v1/feed/posts", request)
+                .andExpect(status().isOk()));
+        assertThat(legacyReplay.get("id").asText()).isEqualTo(postId);
+
+        JsonNode readerView = json(getAs(reader, "/api/social/v1/posts/" + postId)
+                .andExpect(status().isOk()));
+        assertThat(readerView.get("id").asText()).isEqualTo(postId);
+        assertThat(readerView.get("mine").asBoolean()).isFalse();
+
+        postAs(reader, "/api/v1/users/" + author.id() + "/block", null)
+                .andExpect(status().is2xxSuccessful());
+        getAs(reader, "/api/social/v1/posts/" + postId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+        getAs(reader, "/api/v1/feed/posts/" + postId)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
     }
@@ -755,4 +799,206 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
     }
+    // ------------------------------------------------------------------ videos
+
+    // feed_video_h264_64x48.mp4 is a synthetic one-second solid-color clip with
+    // no real content, regenerated deterministically with:
+    //   ffmpeg -y -f lavfi -i color=c=0x336699:s=64x48:d=1:r=10 -an -c:v libx264
+    //       -pix_fmt yuv420p -movflags +faststart -frames:v 10 feed_video_h264_64x48.mp4
+    private static byte[] videoBytes() {
+        try (java.io.InputStream in = FeedFlowIT.class.getResourceAsStream("/fixtures/feed_video_h264_64x48.mp4")) {
+            if (in == null) {
+                throw new IllegalStateException("feed video fixture missing");
+            }
+            return in.readAllBytes();
+        } catch (java.io.IOException failure) {
+            throw new IllegalStateException("Could not read feed video fixture", failure);
+        }
+    }
+
+    private ResultActions uploadVideo(Actor uploader) throws Exception {
+        return mockMvc.perform(multipart("/api/social/v1/videos")
+                .file(new MockMultipartFile("file", "clip.mp4", "video/mp4", videoBytes()))
+                .header("Authorization", bearer(uploader)));
+    }
+
+    private UUID uploadVideoId(Actor uploader) throws Exception {
+        return UUID.fromString(json(uploadVideo(uploader)
+                .andExpect(status().isCreated()).andReturn()).get("videoId").asText());
+    }
+
+    @Test
+    void videoUploadPostAndPlaybackFollowTheFeedRules() throws Exception {
+        Actor author = newUser("Video Author");
+        Actor reader = newUser("Video Reader");
+
+        MvcResult upload = uploadVideo(author).andExpect(status().isCreated()).andReturn();
+        JsonNode asset = json(upload);
+        String videoId = asset.get("videoId").asText();
+        assertThat(asset.has("imageId")).isFalse();
+        assertThat(asset.get("mimeType").asText()).isEqualTo("video/mp4");
+        assertThat(asset.get("url").asText()).isEqualTo("/api/v1/feed/videos/" + videoId);
+
+        // Unbound: the owner can read it back, nobody else can.
+        getAs(author, "/api/social/v1/videos/" + videoId).andExpect(status().isOk());
+        getAs(reader, "/api/social/v1/videos/" + videoId).andExpect(status().isNotFound());
+
+        String clientPostId = UUID.randomUUID().toString();
+        java.util.Map<String, String> payload = java.util.Map.of(
+                "body", "watch this",
+                "videoId", videoId,
+                "clientPostId", clientPostId);
+        JsonNode created = json(postAs(author, "/api/social/v1/posts", payload)
+                .andExpect(status().isCreated()).andReturn());
+        String postId = created.get("id").asText();
+        assertThat(created.get("video").get("url").asText())
+                .isEqualTo("/api/v1/feed/videos/" + videoId);
+        assertThat(created.get("video").get("mimeType").asText()).isEqualTo("video/mp4");
+        assertThat(created.get("image").isNull()).isTrue();
+        assertThat(created.get("body").asText()).isEqualTo("watch this");
+
+        // An idempotent replay returns the same row with the same video.
+        JsonNode replay = json(postAs(author, "/api/social/v1/posts", payload)
+                .andExpect(status().isOk()).andReturn());
+        assertThat(replay.get("id").asText()).isEqualTo(postId);
+        assertThat(countRows("SELECT count(*) FROM public_posts")).isEqualTo(1);
+
+        // The reader sees the caption and the canonical video but no image.
+        JsonNode feedPage = feed(reader, "?limit=5");
+        JsonNode item = feedPage.get("items").get(0);
+        assertThat(item.get("body").asText()).isEqualTo("watch this");
+        assertThat(item.get("image").isNull()).isTrue();
+        assertThat(item.get("video").get("url").asText())
+                .isEqualTo("/api/v1/feed/videos/" + videoId);
+
+        // Authenticated playback: exact bytes, video MIME, no-store.
+        getAs(reader, "/api/social/v1/videos/" + videoId)
+                .andExpect(status().isOk())
+                .andExpect(result -> {
+                    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
+                    assertThat(result.getResponse().getContentAsByteArray())
+                            .isEqualTo(videoBytes());
+                    assertThat(result.getResponse().getHeader("Cache-Control"))
+                            .contains("no-store");
+                    assertThat(result.getResponse().getHeader("X-Content-Type-Options"))
+                            .isEqualTo("nosniff");
+                    assertThat(result.getResponse().getHeader("Content-Length"))
+                            .isEqualTo(String.valueOf(videoBytes().length));
+                });
+
+        // The image route refuses the same id and vice versa.
+        getAs(reader, "/api/v1/feed/images/" + videoId).andExpect(status().isNotFound());
+
+        // A block makes the video invisible again.
+        postAs(reader, "/api/v1/users/" + author.id() + "/block", null)
+                .andExpect(status().isNoContent());
+        getAs(reader, "/api/social/v1/videos/" + videoId).andExpect(status().isNotFound());
+
+        // Anonymous callers never read a video.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/social/v1/videos/" + videoId))
+                .andExpect(status().isUnauthorized());
+
+        // Once the author deletes the post, a second independent reader who
+        // could play it before loses access with the same 404.
+        Actor secondReader = newUser("Second Video Reader");
+        getAs(secondReader, "/api/social/v1/videos/" + videoId).andExpect(status().isOk());
+        deleteAs(author, "/api/v1/feed/posts/" + postId).andExpect(status().isNoContent());
+        getAs(secondReader, "/api/social/v1/videos/" + videoId).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void imageAndVideoRoutesAreMutuallyExclusive() throws Exception {
+        Actor author = newUser("Mixed Media Author");
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                .andExpect(status().isCreated()).andReturn()).get("imageId").asText());
+
+        getAs(author, "/api/social/v1/videos/" + imageId).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void videoPostNeedsACaptionAndCannotCarryAnImage() throws Exception {
+        Actor author = newUser("Captionless Author");
+        String videoId = uploadVideoId(author).toString();
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                .andExpect(status().isCreated()).andReturn()).get("imageId").asText());
+
+        postAs(author, "/api/v1/feed/posts", java.util.Map.of(
+                "videoId", videoId, "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        postAs(author, "/api/v1/feed/posts", java.util.Map.of(
+                "body", "both kinds", "videoId", videoId, "imageId", imageId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void videoPostRejectsAnotherUsersUploadAndTypeConfusion() throws Exception {
+        Actor author = newUser("Video Owner");
+        Actor other = newUser("Video Borrower");
+        String videoId = uploadVideoId(author).toString();
+        UUID imageId = UUID.fromString(json(uploadImage(other)
+                .andExpect(status().isCreated()).andReturn()).get("imageId").asText());
+
+        // Another user's video cannot be attached.
+        postAs(other, "/api/v1/feed/posts", java.util.Map.of(
+                "body", "not mine", "videoId", videoId,
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        // A still image is not a videoId, even when it is the caller's own.
+        postAs(other, "/api/v1/feed/posts", java.util.Map.of(
+                "body", "type confusion", "videoId", imageId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        // And a video is not an imageId.
+        String ownVideoId = uploadVideoId(other).toString();
+        postAs(other, "/api/v1/feed/posts", java.util.Map.of(
+                "body", "type confusion", "imageId", ownVideoId,
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void videoUploadRejectsAudioOnlyBrandOnlyAndOversizedFiles() throws Exception {
+        Actor author = newUser("Bad Video Uploader");
+
+        byte[] audioOnly;
+        try (java.io.InputStream in = FeedFlowIT.class.getResourceAsStream("/fixtures/voice_aac_isom_faststart.m4a")) {
+            audioOnly = in.readAllBytes();
+        } catch (java.io.IOException failure) {
+            throw new IllegalStateException("Could not read voice fixture", failure);
+        }
+        mockMvc.perform(multipart("/api/social/v1/videos")
+                        .file(new MockMultipartFile("file", "voice.mp4", "video/mp4", audioOnly))
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.error.code").value("MIME_NOT_ALLOWED"));
+
+        // A bare ftyp brand with no moov box at all is not a video.
+        byte[] brandOnly = hex("000000186674797069736F6D0000020069736F6D617631");
+        mockMvc.perform(multipart("/api/social/v1/videos")
+                        .file(new MockMultipartFile("file", "brand.mp4", "video/mp4", brandOnly))
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.error.code").value("MIME_NOT_ALLOWED"));
+
+        // One byte over the 4 MiB video ceiling, rejected before sniffing.
+        byte[] oversized = new byte[(int) (FeedImageService.MAX_VIDEO_BYTES + 1)];
+        mockMvc.perform(multipart("/api/social/v1/videos")
+                        .file(new MockMultipartFile("file", "huge.mp4", "video/mp4", oversized))
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.error.code").value("FILE_TOO_LARGE"));
+
+        // Rejections never burned the upload quota: a valid video still passes.
+        uploadVideo(author).andExpect(status().isCreated());
+    }
+
 }

@@ -2,12 +2,17 @@ package com.nexachat.feed;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.testutil.FeatureItSupport;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +22,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * action leaves behind.
  */
 class FeedAdminFlowIT extends FeatureItSupport {
+
+    @MockitoSpyBean
+    private com.nexachat.admin.AdminAuditService auditSpy;
 
     private UUID createPost(Actor author, String body) throws Exception {
         return UUID.fromString(json(postAs(author, "/api/v1/feed/posts", Map.of(
@@ -43,6 +51,14 @@ class FeedAdminFlowIT extends FeatureItSupport {
         return countRows(
                 "SELECT count(*) FROM admin_audit_log WHERE action = ? AND target_id = ?",
                 action, targetId.toString());
+    }
+
+    // These suites exercise the enabled feed: the runtime Social switches
+    // ship off by default, so each test opts back in after the shared reset.
+    // The kill-switch and video-gate denial paths live in SocialSettingsFlowIT.
+    @BeforeEach
+    void enableSocial() {
+        enableSocialFeatures();
     }
 
     @Test
@@ -265,5 +281,140 @@ class FeedAdminFlowIT extends FeatureItSupport {
                 Map.of("reason", "spam"))
                 .andExpect(status().isForbidden());
         assertThat(auditRows("FEED_POST_HIDE", postId)).isZero();
+    }
+
+    // ------------------------------------------------------- video preview
+
+    // feed_video_h264_64x48.mp4: synthetic one-second solid-color clip; regen:
+    //   ffmpeg -f lavfi -i color=c=0x336699:s=64x48:d=1:r=10 -an -c:v libx264     //       -pix_fmt yuv420p -movflags +faststart -frames:v 10 feed_video_h264_64x48.mp4
+    private static byte[] videoBytes() {
+        try (java.io.InputStream in = FeedAdminFlowIT.class.getResourceAsStream(
+                "/fixtures/feed_video_h264_64x48.mp4")) {
+            if (in == null) {
+                throw new IllegalStateException("feed video fixture missing");
+            }
+            return in.readAllBytes();
+        } catch (java.io.IOException failure) {
+            throw new IllegalStateException("Could not read feed video fixture", failure);
+        }
+    }
+
+    private UUID uploadVideo(Actor uploader) throws Exception {
+        return UUID.fromString(json(mockMvc.perform(multipart("/api/social/v1/videos")
+                        .file(new MockMultipartFile("file", "clip.mp4", "video/mp4", videoBytes()))
+                        .header("Authorization", bearer(uploader)))
+                .andExpect(status().isCreated())).get("videoId").asText());
+    }
+
+    @Test
+    void reportedVideoIsStaffOnlyAuditedAndUnavailableAfterDelete() throws Exception {
+        Actor author = newUser("Video Report Author");
+        Actor reader = newUser("Video Report Reader");
+        Actor reporter = newUser("Video Reporter");
+        Actor moderator = withRole(newUser("Video Moderator"), "MODERATOR");
+
+        UUID videoId = uploadVideo(author);
+        UUID postId = UUID.fromString(json(postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "reported clip", "videoId", videoId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        // An ordinary reader can play it through the public route.
+        getAs(reader, "/api/social/v1/videos/" + videoId).andExpect(status().isOk());
+
+        UUID reportId = report(reporter, "POST", postId);
+        UUID commentId = createComment(reader, postId, "a comment");
+        UUID commentReportId = report(reporter, "COMMENT", commentId);
+        UUID textOnlyPostId = createPost(author, "just words");
+        UUID textReportId = report(reporter, "POST", textOnlyPostId);
+
+        // The queue flags the video report and only the video report.
+        JsonNode page = json(getAs(moderator, "/api/v1/admin/feed/reports")
+                .andExpect(status().isOk()));
+        boolean videoFlagged = false;
+        for (JsonNode item : page.get("items")) {
+            boolean hasVideo = item.get("targetHasVideo").asBoolean();
+            if (item.get("id").asText().equals(reportId.toString())) {
+                assertThat(hasVideo).isTrue();
+                videoFlagged = true;
+            } else {
+                assertThat(hasVideo).isFalse();
+            }
+        }
+        assertThat(videoFlagged).isTrue();
+
+        // Anonymous and plain users never reach the preview.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/admin/feed/reports/" + reportId + "/video"))
+                .andExpect(status().isUnauthorized());
+        postAs(reporter, "/api/v1/admin/feed/reports/" + reportId + "/video", null)
+                .andExpect(status().isForbidden());
+
+        // Unknown report, comment report, and text-only post report: 404, no audit.
+        postAs(moderator, "/api/v1/admin/feed/reports/" + UUID.randomUUID() + "/video", null)
+                .andExpect(status().isNotFound());
+        postAs(moderator, "/api/v1/admin/feed/reports/" + commentReportId + "/video", null)
+                .andExpect(status().isNotFound());
+        postAs(moderator, "/api/v1/admin/feed/reports/" + textReportId + "/video", null)
+                .andExpect(status().isNotFound());
+        assertThat(auditRows("FEED_REPORT_VIDEO_VIEW", reportId)).isZero();
+
+        // Hiding the post removes public access but staff can still preview.
+        postAs(moderator, "/api/v1/admin/feed/posts/" + postId + "/hide",
+                Map.of("reason", "review"))
+                .andExpect(status().isNoContent());
+        getAs(reader, "/api/social/v1/videos/" + videoId).andExpect(status().isNotFound());
+
+        postAs(moderator, "/api/v1/admin/feed/reports/" + reportId + "/video", null)
+                .andExpect(status().isOk())
+                .andExpect(result -> {
+                    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
+                    assertThat(result.getResponse().getContentAsByteArray())
+                            .isEqualTo(videoBytes());
+                    assertThat(result.getResponse().getHeader("Cache-Control"))
+                            .contains("no-store");
+                    assertThat(result.getResponse().getHeader("X-Content-Type-Options"))
+                            .isEqualTo("nosniff");
+                    assertThat(result.getResponse().getHeader("Content-Length"))
+                            .isEqualTo(String.valueOf(videoBytes().length));
+                });
+        assertThat(auditRows("FEED_REPORT_VIDEO_VIEW", reportId)).isEqualTo(1);
+
+        // A hidden post is invisible even to its author, so staff unhide
+        // before the author can delete it; once deleted there is nothing left
+        // to preview, and the denial is not audited as a view.
+        postAs(moderator, "/api/v1/admin/feed/posts/" + postId + "/unhide", null)
+                .andExpect(status().isNoContent());
+        deleteAs(author, "/api/v1/feed/posts/" + postId).andExpect(status().isNoContent());
+        postAs(moderator, "/api/v1/admin/feed/reports/" + reportId + "/video", null)
+                .andExpect(status().isNotFound());
+        assertThat(auditRows("FEED_REPORT_VIDEO_VIEW", reportId)).isEqualTo(1);
+    }
+
+    @Test
+    void failedAuditYieldsNoVideoBytes() throws Exception {
+        Actor author = newUser("Audit Fail Author");
+        Actor reporter = newUser("Audit Fail Reporter");
+        Actor moderator = withRole(newUser("Audit Fail Moderator"), "MODERATOR");
+
+        UUID videoId = uploadVideo(author);
+        UUID postId = UUID.fromString(json(postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "audit fail clip", "videoId", videoId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        UUID reportId = report(reporter, "POST", postId);
+
+        // The audit row is the preview grant: when it cannot be written the
+        // transaction rolls back and the storage read never happens.
+        org.mockito.Mockito.doThrow(new IllegalStateException("audit down"))
+                .when(auditSpy).record(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("FEED_REPORT_VIDEO_VIEW"),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        postAs(moderator, "/api/v1/admin/feed/reports/" + reportId + "/video", null)
+                .andExpect(status().is5xxServerError());
+        assertThat(auditRows("FEED_REPORT_VIDEO_VIEW", reportId)).isZero();
     }
 }

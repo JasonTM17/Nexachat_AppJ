@@ -27,6 +27,7 @@ public record AdminFeedReportResponse(
         String targetBody,
         boolean targetDeleted,
         boolean targetHidden,
-        Instant targetCreatedAt
+        Instant targetCreatedAt,
+        boolean targetHasVideo
 ) {
 }

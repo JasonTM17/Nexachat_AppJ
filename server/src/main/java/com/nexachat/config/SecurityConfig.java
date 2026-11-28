@@ -91,6 +91,11 @@ public class SecurityConfig {
                                 "/api/v1/auth/google",
                                 "/api/v1/auth/google/nonce").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/error").permitAll()
+                        // The Social bootstrap is anonymous by design: the page
+                        // must learn whether the surface is enabled before it
+                        // offers login. It projects flags and published copy
+                        // only, never credentials or drafts.
+                        .requestMatchers(HttpMethod.GET, "/api/social/v1/config").permitAll()
                         // WS handshake stays unauthenticated at HTTP level: the
                         // JWT travels in the STOMP CONNECT header and is checked
                         // by StompAuthChannelInterceptor, never by this filter
@@ -159,7 +164,7 @@ public class SecurityConfig {
         if (!adminOrigins.isEmpty()) {
             CorsConfiguration adminConfig = new CorsConfiguration();
             adminConfig.setAllowedOrigins(adminOrigins);
-            adminConfig.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+            adminConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
             adminConfig.setAllowedHeaders(List.of("*"));
             adminConfig.setExposedHeaders(List.of("Authorization"));
             adminConfig.setAllowCredentials(false);

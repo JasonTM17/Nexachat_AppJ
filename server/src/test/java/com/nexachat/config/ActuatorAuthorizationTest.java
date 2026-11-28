@@ -4,6 +4,7 @@ import com.nexachat.auth.AuthSecurityErrorHandler;
 import com.nexachat.auth.JwtAuthFilter;
 import com.nexachat.auth.RateLimitService;
 import com.nexachat.common.dto.JwtPrincipal;
+import com.nexachat.social.SocialSettingsService;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletRequest;
@@ -49,6 +50,8 @@ class ActuatorAuthorizationTest {
     private RateLimitService rateLimitService;
     @MockitoBean
     private ClientIpResolver clientIpResolver;
+    @MockitoBean
+    private SocialSettingsService socialSettingsService;
 
     @BeforeEach
     void configureTestDoubles() throws Exception {

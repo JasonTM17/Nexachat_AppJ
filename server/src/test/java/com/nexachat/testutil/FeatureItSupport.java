@@ -97,6 +97,23 @@ public abstract class FeatureItSupport {
                         statement.execute("SET lock_timeout = 5000");
                         try {
                             statement.execute("TRUNCATE users CASCADE");
+                            // Audit rows survive the user truncate by design
+                            // (no FK); tests count them per-case, so the log
+                            // itself must start empty for deterministic counts.
+                            statement.execute("TRUNCATE admin_audit_log");
+                            // The runtime Social switches ship disabled; every
+                            // test starts from that deterministic baseline and
+                            // opts in explicitly through enableSocialFeatures().
+                            statement.execute("""
+                                    UPDATE social_settings SET web_enabled = false,
+                                        video_uploads_enabled = false, revision = 1,
+                                        draft_title_vi = NULL, draft_body_vi = NULL,
+                                        draft_title_en = NULL, draft_body_en = NULL,
+                                        published_title_vi = NULL, published_body_vi = NULL,
+                                        published_title_en = NULL, published_body_en = NULL,
+                                        published_at = NULL
+                                    WHERE id = 1
+                                    """);
                         } finally {
                             statement.execute("SET lock_timeout = 0");
                         }
@@ -129,6 +146,12 @@ public abstract class FeatureItSupport {
         User user = userRepository.saveAndFlush(
                 User.create(ItPhoneRanges.nextPhone(getClass()), "x".repeat(60), name));
         return new Actor(user.getId(), jwtService.generateAccessToken(user), name);
+    }
+
+    /** Opts the test into the runtime-enabled Social surface (both switches on). */
+    protected void enableSocialFeatures() {
+        jdbcTemplate.update(
+                "UPDATE social_settings SET web_enabled = true, video_uploads_enabled = true WHERE id = 1");
     }
 
     /** Re-issues the user's token after a role change (the filter reads the role fresh anyway). */
@@ -195,6 +218,13 @@ public abstract class FeatureItSupport {
 
     protected ResultActions putAs(Actor actor, String path) throws Exception {
         return mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer(actor)));
+    }
+
+    protected ResultActions putAs(Actor actor, String path, Object body) throws Exception {
+        return mockMvc.perform(put(path)
+                .header(HttpHeaders.AUTHORIZATION, bearer(actor))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)));
     }
 
     protected ResultActions patchAs(Actor actor, String path, Object body) throws Exception {

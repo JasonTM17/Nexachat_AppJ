@@ -118,6 +118,7 @@ public final class ItPhoneRanges {
             Map.entry("com.nexachat.feed.FeedAdminFlowIT", "+84708"),
             Map.entry("com.nexachat.feed.FeedRetentionIT", "+84710"),
             Map.entry("com.nexachat.summary.SummaryScopeApiIT", "+84709"),
+            Map.entry("com.nexachat.social.SocialSettingsFlowIT", "+84713"),
             Map.entry("com.nexachat.scheduled.ScheduledMessageFlowIT", "+84766"),
             Map.entry("com.nexachat.scheduled.ScheduledMessageDispatchIT", "+84767"),
             Map.entry("com.nexachat.translate.TranslationSuppressionIT", "+84892"),

@@ -3,6 +3,8 @@ package com.nexachat.feed.admin;
 import com.nexachat.admin.AdminAuditService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.auth.RateLimitService;
+import com.nexachat.feed.FeedImageService;
 import com.nexachat.report.Report;
 import com.nexachat.user.User;
 import org.slf4j.Logger;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -40,6 +43,18 @@ public class AdminFeedService {
     static final int MAX_PAGE_SIZE = 100;
     static final int DEFAULT_PAGE_SIZE = 25;
 
+    /**
+     * Eligibility join for a reported post's video: the single media slot
+     * holds a bound, undeleted, in-size-limit MP4 owned by the post author.
+     * Shared verbatim by the queue listing and the preview authorization so
+     * both answer the same question.
+     */
+    private static final String POST_VIDEO_JOIN = """
+            LEFT JOIN public_images v ON v.id = p.image_id AND v.owner_id = p.author_id
+                AND v.bound_at IS NOT NULL AND p.deleted_at IS NULL
+                AND v.mime_type = :videoMime AND v.size_bytes BETWEEN 1 AND :maxVideoBytes
+            """;
+
     private static final String REPORT_COLUMNS = """
             SELECT r.id, r.target_type, r.target_id, r.reason, r.details, r.message_snapshot,
                    r.status, r.created_at, r.reporter_id, ru.display_name AS reporter_name,
@@ -50,24 +65,35 @@ public class AdminFeedService {
                        OR (c.id IS NOT NULL AND c.deleted_at IS NOT NULL) AS target_deleted,
                    (p.id IS NOT NULL AND p.hidden_at IS NOT NULL)
                        OR (c.id IS NOT NULL AND c.hidden_at IS NOT NULL) AS target_hidden,
-                   COALESCE(p.created_at, c.created_at) AS target_created_at
+                   COALESCE(p.created_at, c.created_at) AS target_created_at,
+                   v.id IS NOT NULL AS target_has_video
             FROM reports r
             JOIN users ru ON ru.id = r.reporter_id
             LEFT JOIN public_posts p ON r.target_type = 'POST' AND p.id = r.target_id
             LEFT JOIN users pu ON pu.id = p.author_id
             LEFT JOIN public_comments c ON r.target_type = 'COMMENT' AND c.id = r.target_id
             LEFT JOIN users cu ON cu.id = c.author_id
+            """ + POST_VIDEO_JOIN + """
             WHERE r.target_type IN ('POST', 'COMMENT')
             """;
 
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
     private final AdminAuditService auditService;
+    private final RateLimitService rateLimitService;
 
-    public AdminFeedService(JdbcTemplate jdbc, AdminAuditService auditService) {
+    public AdminFeedService(JdbcTemplate jdbc, AdminAuditService auditService,
+                            RateLimitService rateLimitService) {
         this.jdbc = jdbc;
         this.named = new NamedParameterJdbcTemplate(jdbc);
         this.auditService = auditService;
+        this.rateLimitService = rateLimitService;
+    }
+
+    private static MapSqlParameterSource videoParams() {
+        return new MapSqlParameterSource()
+                .addValue("videoMime", FeedImageService.VIDEO_MIME)
+                .addValue("maxVideoBytes", FeedImageService.MAX_VIDEO_BYTES);
     }
 
     /** Newest-first page of feed reports, optionally filtered by status. */
@@ -76,7 +102,7 @@ public class AdminFeedService {
         int pageNumber = Math.max(page, 0);
         int pageSize = size < 1 ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
         Report.Status filter = parseStatus(status);
-        MapSqlParameterSource params = new MapSqlParameterSource()
+        MapSqlParameterSource params = videoParams()
                 .addValue("limit", pageSize)
                 .addValue("offset", (long) pageNumber * pageSize);
         String where = filter == null ? "" : " AND r.status = :status";
@@ -198,6 +224,37 @@ public class AdminFeedService {
         log.info("Feed report {} resolved as {} by {}", reportId, target, actorId);
     }
 
+    /**
+     * Authorizes one staff preview of the video attached to a reported post
+     * and returns its storage key. The audit row <em>is</em> the preview
+     * grant: it is written in the same transaction before the key leaves the
+     * service, so a preview that cannot be audited yields no bytes. The row
+     * proves the bytes were released to staff, not that a human watched them.
+     * Hidden and already-reviewed reports stay eligible — triage often needs
+     * the video exactly then — but a deleted post or a comment/other-target
+     * report has nothing to preview.
+     */
+    @Transactional
+    public String authorizeVideoPreview(UUID actorId, User.Role actorRole, UUID reportId, String ip) {
+        var consumption = rateLimitService.tryConsume("admin:feed:video:" + actorId, 20, Duration.ofMinutes(1));
+        if (!consumption.allowed()) {
+            throw ApiException.of(ApiErrorCode.RATE_LIMITED, "Too many video preview requests",
+                    Map.of("retryAfterSeconds", consumption.retryAfterSeconds()));
+        }
+        var keys = named.queryForList("""
+                SELECT v.storage_key
+                FROM reports r
+                JOIN public_posts p ON r.target_type = 'POST' AND p.id = r.target_id
+                """ + POST_VIDEO_JOIN + """
+                WHERE r.id = :reportId AND v.id IS NOT NULL
+                """, videoParams().addValue("reportId", reportId), String.class);
+        if (keys.isEmpty()) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        auditService.record(actorId, actorRole, "FEED_REPORT_VIDEO_VIEW", "REPORT", reportId.toString(), null, null, ip);
+        return keys.getFirst();
+    }
+
     private void requireTargetExists(int updated, String table, UUID id, ApiErrorCode missing) {
         if (updated == 1) {
             return;
@@ -258,7 +315,8 @@ public class AdminFeedService {
                 rs.getString("target_body"),
                 rs.getBoolean("target_deleted"),
                 rs.getBoolean("target_hidden"),
-                instant(rs, "target_created_at"));
+                instant(rs, "target_created_at"),
+                rs.getBoolean("target_has_video"));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {

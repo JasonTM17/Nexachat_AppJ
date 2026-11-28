@@ -275,6 +275,26 @@ public final class MagicBytes {
         return kind == TrackKind.NONE || kind == TrackKind.AMBIGUOUS;
     }
 
+    /**
+     * Reports whether {@code data} is a complete ISO-BMFF file whose box tree
+     * contains at least one video track.
+     *
+     * <p>This is <em>structural</em> identification, not a codec scan: it proves
+     * the container declares a {@code vide} handler in a complete {@code moov}
+     * box, so an audio-only recording or a bare {@code ftyp} brand without a
+     * parseable movie box is rejected. It says nothing about whether the
+     * compressed streams are H.264, AAC, or playable on any device — a file
+     * can pass this check and still hold an unsupported codec.</p>
+     *
+     * @param data the whole file; may be {@code null}
+     * @return {@code true} only when a complete {@code moov} box with a video
+     *         track was found
+     */
+    public static boolean hasMp4VideoTrack(byte[] data) {
+        return data != null && data.length >= 12 && matchesAscii(data, 4, "ftyp")
+                && scanTracks(data, 0, data.length) == TrackKind.VIDEO;
+    }
+
     private static String isoBmffMime(byte[] prefix, byte[] suffix) {
         TrackKind kind = scanTracks(prefix, 0, prefix.length);
         if ((kind == TrackKind.NONE || kind == TrackKind.AMBIGUOUS)

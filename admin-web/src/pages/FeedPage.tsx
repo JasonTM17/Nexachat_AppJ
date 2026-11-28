@@ -24,6 +24,7 @@ import {
   useApiErrorMessage,
   useToast,
 } from '../components/ui';
+import { ReportVideoPreview } from '../components/ReportVideoPreview';
 
 const PAGE_SIZE = 25;
 const POLL_MS = 60_000;
@@ -274,6 +275,9 @@ export default function FeedPage() {
                           >
                             {t(open ? 'feed.collapse' : 'feed.expand')}
                           </button>
+                        )}
+                        {r.targetHasVideo && !r.targetDeleted && (
+                          <ReportVideoPreview key={r.id} reportId={r.id} />
                         )}
                         {/* Low-priority columns are dropped on narrow
                             screens; repeat their data here so phones lose

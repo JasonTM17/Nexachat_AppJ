@@ -23,6 +23,8 @@
     <string name="feed_delete_body">It disappears for everyone.</string>
     <string name="feed_delete_confirm">Delete</string>
     <string name="feed_cancel">Cancel</string>
+    <string name="feed_message_author">Message author</string>
+    <string name="feed_open_chat_error">Couldn&#8217;t open the chat</string>
     <string name="feed_report">Report</string>
     <string name="feed_report_sent">Report sent</string>
     <string name="feed_comment_hint">Add a comment</string>
