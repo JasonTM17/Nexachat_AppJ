@@ -17,13 +17,21 @@ export class SocialSessionError extends Error {
   }
 }
 
-function validApiPath(path) {
+function isSafeRelativePath(path) {
   return typeof path === 'string'
     && path.startsWith('/')
     && !path.startsWith('//')
     && !path.includes('..')
     && !path.includes(String.fromCharCode(92))
     && !/\s/.test(path);
+}
+
+function validApiPath(path) {
+  return isSafeRelativePath(path);
+}
+
+function validFilePath(path) {
+  return isSafeRelativePath(path) && path.startsWith('/api/v1/files/');
 }
 
 async function readPayload(response, asBlob) {
@@ -224,10 +232,7 @@ export function createSocialClient(fetchImpl = globalThis.fetch) {
     return refreshInFlight;
   }
 
-  async function request(path, { method = 'GET', body, signal, asBlob = false } = {}) {
-    if (!validApiPath(path)) {
-      throw new TypeError('Social API paths must be relative same-origin paths beneath the API prefix');
-    }
+  async function authorizedRequest(fullUrl, { method = 'GET', body, signal, asBlob = false } = {}) {
     const activeGeneration = generation;
     assertFresh(activeGeneration);
 
@@ -257,7 +262,7 @@ export function createSocialClient(fetchImpl = globalThis.fetch) {
         headers['Content-Type'] = 'application/json';
         init.body = JSON.stringify(body);
       }
-      return fetchImpl(`${API}${path}`, init);
+      return fetchImpl(fullUrl, init);
     };
 
     let response = await send(accessToken);
@@ -273,6 +278,20 @@ export function createSocialClient(fetchImpl = globalThis.fetch) {
     const payload = await parseResponse(response, asBlob);
     assertFresh(activeGeneration);
     return payload;
+  }
+
+  async function request(path, options = {}) {
+    if (!validApiPath(path)) {
+      throw new TypeError('Social API paths must be relative same-origin paths beneath the API prefix');
+    }
+    return authorizedRequest(`${API}${path}`, options);
+  }
+
+  async function requestFile(path, { signal } = {}) {
+    if (!validFilePath(path)) {
+      throw new TypeError('File paths must be relative same-origin /api/v1/files/ paths');
+    }
+    return authorizedRequest(path, { method: 'GET', signal, asBlob: true });
   }
 
   async function logout() {
@@ -302,5 +321,5 @@ export function createSocialClient(fetchImpl = globalThis.fetch) {
     }
   }
 
-  return { login, logout, request };
+  return { login, logout, request, requestFile };
 }

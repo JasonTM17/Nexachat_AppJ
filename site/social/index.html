@@ -6,7 +6,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#733f68">
   <title>NexaChat Social — Bảng tin</title>
-  <meta name="description" content="NexaChat Social là bảng tin công khai cho tài khoản NexaChat: đăng bài, ảnh, bình luận, cảm xúc và báo cáo trên cùng một miền.">
+  <meta name="description" content="NexaChat Social là bảng tin công khai cho tài khoản NexaChat: đăng bài, ảnh, video, bình luận, chỉnh sửa, tìm kiếm, cảm xúc và báo cáo trên cùng một miền.">
   <link rel="canonical" href="https://nexachat.io.vn/social/">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="vi_VN">
@@ -29,23 +29,49 @@
   <a class="skip-link" href="#main" data-i18n="skip">Bỏ qua đến nội dung</a>
 
   <header class="social-header">
-    <a class="brand" href="/" aria-label="NexaChat">
-      <svg class="brand__mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
-      <span>NexaChat</span>
-    </a>
-    <nav class="header-actions" aria-label="Ngôn ngữ / Language">
-      <button class="lang-button" id="lang-vi-button" type="button" lang="vi" aria-pressed="true">VI</button>
-      <button class="lang-button" id="lang-en-button" type="button" lang="en" aria-pressed="false">EN</button>
-      <a class="header-link" id="download-link" href="/download.html#lang-vi" data-i18n="android">Tải Android</a>
-    </nav>
+    <div class="header-brand-group">
+      <a class="brand" href="/" aria-label="NexaChat">
+        <span class="brand__plate" aria-hidden="true">
+          <svg class="brand__mark" viewBox="0 0 108 108" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
+        </span>
+        <span class="brand__name">NexaChat</span>
+      </a>
+      <span class="brand__badge">SOCIAL</span>
+    </div>
+
+    <div class="header-right">
+      <div class="header-session" id="session-panel" hidden>
+        <span class="header-user-pill" id="session-user-pill">
+          <span class="header-user-avatar" id="session-avatar"></span>
+          <span class="header-user-name" id="session-user"></span>
+        </span>
+        <button class="button button-secondary header-signout" id="logout-button" type="button" data-i18n="signout">Đăng xuất</button>
+      </div>
+      <nav class="header-actions" aria-label="Ngôn ngữ và giao diện / Language and theme">
+        <button class="lang-button" id="lang-vi-button" type="button" lang="vi" aria-pressed="true">VI</button>
+        <button class="lang-button" id="lang-en-button" type="button" lang="en" aria-pressed="false">EN</button>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false" aria-label="Chuyển giao diện sáng hoặc tối">
+          <svg class="theme-icon" id="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M21 14.6A8.4 8.4 0 0 1 9.4 3 6.8 6.8 0 1 0 21 14.6z"/>
+          </svg>
+          <svg class="theme-icon" id="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false" hidden>
+            <circle cx="12" cy="12" r="4" fill="currentColor"/>
+            <g stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/>
+            </g>
+          </svg>
+        </button>
+        <a class="header-link" id="download-link" href="/download.html#lang-vi" data-i18n="android">Tải Android</a>
+      </nav>
+    </div>
   </header>
 
   <main id="main" class="social-layout" tabindex="-1">
     <section class="feed-column" aria-labelledby="social-title">
-      <div class="hero-copy">
+      <div class="hero-copy" id="hero-copy">
         <p class="eyebrow" data-i18n="eyebrow">Bảng tin NexaChat</p>
         <h1 id="social-title" data-i18n="title">Chia sẻ công khai với tài khoản NexaChat của bạn.</h1>
-        <p class="lead" id="social-lead" data-i18n="lead">Đăng bài, ảnh đã có, bình luận và cảm xúc. Bài viết hiển thị với mọi tài khoản NexaChat và không được mã hóa đầu cuối.</p>
+        <p class="lead" id="social-lead" data-i18n="lead">Đăng bài, ảnh hoặc video, bình luận, chỉnh sửa, tìm kiếm và cảm xúc. Bài viết hiển thị với mọi tài khoản NexaChat và không được mã hóa đầu cuối.</p>
       </div>
 
       <section class="card announcement-card" id="announcement-card" aria-labelledby="announcement-title" hidden>
@@ -71,29 +97,44 @@
         <p class="status-message" id="login-status" role="alert"></p>
       </section>
 
-      <section class="card session-card" id="session-panel" aria-labelledby="session-title" hidden>
-        <div>
-          <h2 id="session-title" data-i18n="sessionTitle">Phiên đăng nhập</h2>
-          <p class="muted" id="session-user"></p>
-        </div>
-        <button class="button button-secondary" id="logout-button" type="button" data-i18n="signout">Đăng xuất</button>
-      </section>
-
       <section class="card composer-card" id="composer-panel" aria-labelledby="composer-title" hidden>
-        <h2 id="composer-title" data-i18n="composerTitle">Bài viết mới</h2>
-        <label class="field-label" for="post-body" data-i18n="composerLabel">Nội dung bài viết</label>
-        <textarea class="text-input post-input" id="post-body" maxlength="1000" rows="4"></textarea>
-        <label class="field-label" for="post-media" data-i18n="mediaLabel">Ảnh hoặc video</label>
-        <input class="text-input media-input" id="post-media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4">
-        <p class="muted media-help" id="media-help" data-i18n="mediaHelp">JPEG, PNG, WebP hoặc MP4 tối đa 4 MiB. Ảnh có thể đăng một mình; video cần kèm nội dung chú thích.</p>
+        <div class="composer-head">
+          <div class="composer-identity">
+            <span class="composer-avatar" id="composer-avatar"></span>
+            <div>
+              <h2 id="composer-title" data-i18n="composerTitle">Bài viết mới</h2>
+              <p class="muted composer-author-name" id="composer-author-name"></p>
+            </div>
+          </div>
+          <span class="tonal-chip" data-i18n="publicBadge">Công khai · Không E2EE</span>
+        </div>
+
+        <label class="field-label sr-only" for="post-body" data-i18n="composerLabel">Nội dung bài viết</label>
+        <textarea class="text-input post-input" id="post-body" maxlength="1000" rows="3"></textarea>
+
         <div class="media-selected" id="media-selected" hidden>
-          <span class="media-name" id="media-name"></span>
+          <div class="media-preview-thumb" id="media-preview-thumb"></div>
+          <div class="media-preview-meta">
+            <span class="media-name" id="media-name"></span>
+            <span class="media-size muted" id="media-size"></span>
+          </div>
           <button class="icon-text-button" id="media-remove" type="button" data-i18n="mediaRemove">Gỡ tệp</button>
         </div>
+
         <div class="composer-row">
-          <span class="muted" id="post-counter">0/1000</span>
-          <button class="button button-primary" id="post-submit" type="button" data-i18n="postButton">Đăng bài</button>
+          <div class="composer-tools">
+            <label class="media-picker-pill" for="post-media">
+              <svg class="media-picker-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path fill="currentColor" d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6h-1.5v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6H16.5z"/>
+              </svg>
+              <span data-i18n="mediaPicker">Đính kèm tệp</span>
+              <input class="text-input media-input" id="post-media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4">
+            </label>
+            <span class="muted post-counter" id="post-counter">0/1000</span>
+          </div>
+          <button class="button button-primary composer-submit" id="post-submit" type="button" data-i18n="postButton">Đăng bài</button>
         </div>
+        <p class="muted media-help" id="media-help" data-i18n="mediaHelp">JPEG, PNG, WebP hoặc MP4 tối đa 4 MiB. Ảnh có thể đăng một mình; video cần kèm nội dung chú thích.</p>
         <p class="disclosure" data-i18n="disclosure">Bài viết hiển thị với mọi tài khoản NexaChat và không được mã hóa.</p>
         <p class="status-message" id="composer-status" role="alert"></p>
       </section>
@@ -103,6 +144,21 @@
           <h2 id="feed-title" data-i18n="feedTitle">Bảng tin</h2>
           <button class="icon-text-button" id="refresh-button" type="button" data-i18n="refresh" hidden>Làm mới</button>
         </div>
+
+        <div class="feed-toolbar" id="feed-toolbar">
+          <div class="search-field-wrap">
+            <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/>
+            </svg>
+            <input class="text-input search-input" id="feed-search-input" type="search" maxlength="100" autocomplete="off" aria-label="Tìm kiếm bài viết">
+            <button class="icon-text-button search-clear-btn" id="feed-search-clear" type="button" hidden aria-label="Xóa tìm kiếm">×</button>
+          </div>
+          <div class="active-filter-chip" id="author-filter-chip" hidden>
+            <span class="active-filter-label" id="author-filter-label"></span>
+            <button class="active-filter-clear" id="author-filter-clear" type="button" aria-label="Bỏ lọc theo tác giả">×</button>
+          </div>
+        </div>
+
         <p class="status-message" id="feed-status" aria-live="polite"></p>
         <div id="feed-list" class="feed-list"></div>
         <button class="button button-secondary load-more" id="load-more-button" type="button" data-i18n="loadMore" hidden>Tải thêm</button>
@@ -110,11 +166,11 @@
     </section>
 
     <aside class="context-panel" aria-labelledby="context-title">
-      <section class="card">
+      <section class="card context-card">
         <h2 id="context-title" data-i18n="contextTitle">Ai xem được bảng tin?</h2>
         <p data-i18n="contextBody">Mọi tài khoản NexaChat đều có thể đọc bài viết công khai. Nội dung ở đây không phải tin nhắn riêng tư và không được mã hóa đầu cuối.</p>
       </section>
-      <section class="card">
+      <section class="card context-card">
         <h2 data-i18n="chatTitle">Trò chuyện riêng</h2>
         <p data-i18n="chatBody">Nhắn tin riêng vẫn nằm trong ứng dụng Android NexaChat. Trang này không cung cấp trò chuyện trên trình duyệt.</p>
         <a class="button button-secondary link-button" id="open-chat-link" href="/download.html#lang-vi" data-i18n="openChat">Tải NexaChat cho Android</a>
@@ -134,11 +190,31 @@
         <option value="SCAM" data-i18n="reasonScam">Lừa đảo</option>
         <option value="OTHER" data-i18n="reasonOther">Khác</option>
       </select>
+      <label class="field-label" for="report-details" data-i18n="reportDetailsLabel">Chi tiết bổ sung (không bắt buộc)</label>
+      <textarea class="text-input report-details-input" id="report-details" maxlength="500" rows="3"></textarea>
+      <span class="muted report-details-counter" id="report-details-counter">0/500</span>
       <div class="dialog-actions">
         <button class="button button-secondary" id="report-cancel" type="button" data-i18n="cancel">Hủy</button>
         <button class="button button-primary" id="report-submit" type="button" data-i18n="reportSubmit">Gửi báo cáo</button>
       </div>
       <p class="status-message" id="report-status" role="alert"></p>
+    </section>
+  </dialog>
+
+  <dialog class="report-dialog author-dialog" id="author-dialog" aria-labelledby="author-dialog-title">
+    <section class="card report-card author-profile-card">
+      <div class="author-profile-head">
+        <div class="author-profile-avatar" id="author-dialog-avatar"></div>
+        <div class="author-profile-meta">
+          <h2 id="author-dialog-title"></h2>
+          <p class="muted" id="author-dialog-count"></p>
+        </div>
+      </div>
+      <p class="status-message" id="author-dialog-status" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" id="author-dialog-close" type="button" data-i18n="close">Đóng</button>
+        <button class="button button-primary" id="author-dialog-filter" type="button" data-i18n="filterByAuthor" hidden>Xem bài viết của tác giả</button>
+      </div>
     </section>
   </dialog>
 </body>

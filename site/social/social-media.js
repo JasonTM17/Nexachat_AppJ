@@ -3,6 +3,7 @@ const LEGACY_IMAGE_RE = new RegExp(`^/api/v1/feed/images/(${UUID_PATH})$`);
 const CANONICAL_IMAGE_RE = new RegExp(`^/api/social/v1/images/(${UUID_PATH})$`);
 const CANONICAL_VIDEO_RE = new RegExp(`^/api/social/v1/videos/(${UUID_PATH})$`);
 const LEGACY_VIDEO_RE = new RegExp(`^/api/v1/feed/videos/(${UUID_PATH})$`);
+const AVATAR_FILE_RE = /^\/api\/v1\/files\/[A-Za-z0-9._/-]+$/;
 
 const MEDIA_UUID_RE = new RegExp(`^${UUID_PATH}$`);
 
@@ -27,6 +28,17 @@ export function canonicalVideoRequestPath(url) {
   }
   const match = CANONICAL_VIDEO_RE.exec(url) || LEGACY_VIDEO_RE.exec(url);
   return match ? `/videos/${encodeURIComponent(match[1].toLowerCase())}` : null;
+}
+
+export function safeAvatarFilePath(url) {
+  if (typeof url !== 'string') {
+    return null;
+  }
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.includes('..') || trimmed.includes('//') || trimmed.includes('\\') || /\s/.test(trimmed)) {
+    return null;
+  }
+  return AVATAR_FILE_RE.test(trimmed) ? trimmed : null;
 }
 
 export function imageUuid(url) {

@@ -81,3 +81,15 @@ test('loading documents defer init until DOMContentLoaded', () => {
   const els = runJoinPage({ pathname: `/join/${VALID_TOKEN}`, readyState: 'loading' });
   assert.equal(els['invite-valid'].hasAttribute('hidden'), false);
 });
+
+test('join/index.html places /social/ navigation inside footer nav, outside #app-fallback', () => {
+  const html = readFileSync(new URL('../../site/join/index.html', import.meta.url), 'utf8');
+  const fallbackMatch = html.match(/<p\b[^>]*\bid="app-fallback"[^>]*>([\s\S]*?)<\/p>/);
+  assert.ok(fallbackMatch, '#app-fallback must exist');
+  assert.equal(fallbackMatch[1].includes('/social/'), false, '#app-fallback must not contain /social/ links');
+
+  const footerNavMatch = html.match(/<footer\b[^>]*>[\s\S]*?<nav\b[^>]*>([\s\S]*?)<\/nav>[\s\S]*?<\/footer>/);
+  assert.ok(footerNavMatch, '<footer><nav> must exist');
+  assert.match(footerNavMatch[1], /<a\b[^>]*href="\/social\/"[^>]*lang="vi"/);
+  assert.match(footerNavMatch[1], /<a\b[^>]*href="\/social\/#lang-en"[^>]*lang="en"/);
+});

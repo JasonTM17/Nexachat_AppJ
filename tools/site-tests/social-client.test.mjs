@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createSocialClient, SocialSessionError } from '../../site/social/social-client.js';
-import { canonicalImageRequestPath, canonicalVideoRequestPath, imageUuid, isMediaId } from '../../site/social/social-media.js';
+import { canonicalImageRequestPath, canonicalVideoRequestPath, imageUuid, isMediaId, safeAvatarFilePath } from '../../site/social/social-media.js';
 
 function jsonResponse(status, payload) {
   if (status === 204) {
@@ -394,4 +394,35 @@ test('isMediaId accepts only a bare UUID', () => {
   assert.equal(isMediaId(null), false);
   assert.equal(isMediaId(undefined), false);
   assert.equal(isMediaId(42), false);
+});
+
+test('safeAvatarFilePath and requestFile allow only safe relative /api/v1/files/ paths', async () => {
+  assert.equal(
+    safeAvatarFilePath('/api/v1/files/avatars/11111111-1111-1111-1111-111111111111.png'),
+    '/api/v1/files/avatars/11111111-1111-1111-1111-111111111111.png',
+  );
+  for (const bad of [
+    'https://evil.example/a.png',
+    '//evil.example/a.png',
+    '/api/v1/files/../secret',
+    '/api/social/v1/images/11111111-1111-1111-1111-111111111111',
+    '',
+    null,
+  ]) {
+    assert.equal(safeAvatarFilePath(bad), null, String(bad));
+  }
+
+  const calls = [];
+  const client = await signedInClient(async (url, init) => {
+    calls.push({ url, init });
+    if (url === '/api/social/v1/session/login') {
+      return jsonResponse(200, authPayload('access-1', 'refresh-1'));
+    }
+    return new Response(new Blob(['png'], { type: 'image/png' }), { status: 200 });
+  });
+  const blob = await client.requestFile('/api/v1/files/avatars/test.png');
+  assert.equal(blob.type, 'image/png');
+  assert.equal(calls[1].url, '/api/v1/files/avatars/test.png');
+  assert.equal(calls[1].init.headers.Authorization, 'Bearer access-1');
+  await assert.rejects(() => client.requestFile('/api/v1/users/me'), TypeError);
 });
