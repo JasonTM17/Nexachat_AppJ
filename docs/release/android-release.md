@@ -137,6 +137,11 @@ Verify the signed APK package, version and certificate using `aapt` and
 Check the supplied SHA-256 for each file. The stable APK alias must have the
 same bytes as the versioned APK.
 
+The bilingual website download page reads the repository's public latest stable
+release endpoint and links the displayed tag to its APK and checksum. The page
+uses the GitHub latest aliases until both assets are confirmed, including when
+JavaScript or release metadata is unavailable.
+
 On Windows, compare the downloaded APK with its checksum file:
 
 ```powershell

@@ -122,6 +122,15 @@
       ]
     },
     {
+      "source": "/download.html",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'none'; style-src 'self'; script-src 'self'; connect-src https://api.github.com/repos/JasonTM17/Nexachat_AppJ/releases/latest; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        }
+      ]
+    },
+    {
       "source": "/api/social/v1/(.*)",
       "headers": [
         {

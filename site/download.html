@@ -21,6 +21,7 @@
   <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
+  <script defer src="/download.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
@@ -38,9 +39,9 @@
         </h1>
         <p class="lead">Tệp cài đặt APK chính thức cho thiết bị Android.</p>
         <div class="page-actions">
-          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk" aria-label="Tải tệp APK NexaChat mới nhất">Tải APK NexaChat</a>
+          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk" data-release-link="apk" aria-label="Tải tệp APK NexaChat mới nhất">Tải APK NexaChat</a>
         </div>
-        <p class="install-hint">Phiên bản mới nhất: <strong>v1.2.22</strong> — tháng 11/2026 · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest">Trang phát hành</a> · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases">Nhật ký thay đổi</a></p>
+        <p class="install-hint"><span data-release-version-label hidden>Phiên bản ổn định <strong data-release-version></strong> · </span><a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest" data-release-link="notes">Trang phát hành</a> · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases">Nhật ký thay đổi</a></p>
 
         <h2>Yêu cầu hệ thống</h2>
         <p>Hệ điều hành tối thiểu: <strong>Android 8.0 (API 26)</strong> trở lên.</p>
@@ -57,7 +58,7 @@
         </ol>
 
         <h2>Kiểm tra tính toàn vẹn (SHA-256)</h2>
-        <p>Mỗi bản phát hành có tệp <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk.sha256"><code>nexachat-latest.apk.sha256</code></a> chứa mã băm SHA-256 của APK. Việc kiểm tra là tùy chọn nhưng nên thực hiện.</p>
+        <p>Mỗi bản phát hành có tệp <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk.sha256" data-release-link="checksum"><code>nexachat-latest.apk.sha256</code></a> chứa mã băm SHA-256 của APK. Việc kiểm tra là tùy chọn nhưng nên thực hiện.</p>
         <p><strong>Trên chính điện thoại:</strong> tải và mở tệp <code>.sha256</code>, sao chép chuỗi 64 ký tự hex đầu tiên, rồi dùng một công cụ kiểm tra checksum đáng tin cậy trên điện thoại để tính SHA-256 của APK đã tải. Hai chuỗi phải khớp hoàn toàn; nếu khác, hãy xóa APK và tải lại từ trang này.</p>
         <p><strong>Nâng cao trên máy tính (tùy chọn):</strong> đặt APK và tệp <code>.sha256</code> trong cùng một thư mục, rồi chạy lệnh phù hợp:</p>
         <p>Trên Linux hoặc macOS:</p>
@@ -77,9 +78,9 @@
         </h1>
         <p class="lead">Official APK installation package for Android devices.</p>
         <div class="page-actions">
-          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk" aria-label="Download the latest NexaChat APK">Download NexaChat APK</a>
+          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk" data-release-link="apk" aria-label="Download the latest NexaChat APK">Download NexaChat APK</a>
         </div>
-        <p class="install-hint">Latest version: <strong>v1.2.22</strong> — November 2026 · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest">Release page</a> · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases">Changelog</a></p>
+        <p class="install-hint"><span data-release-version-label hidden>Stable version <strong data-release-version></strong> · </span><a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest" data-release-link="notes">Release page</a> · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases">Changelog</a></p>
 
         <h2>System requirements</h2>
         <p>Minimum operating system: <strong>Android 8.0 (API 26)</strong> or newer.</p>
@@ -96,7 +97,7 @@
         </ol>
 
         <h2>SHA-256 checksum verification</h2>
-        <p>Every release includes <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk.sha256"><code>nexachat-latest.apk.sha256</code></a>, which contains the APK's SHA-256 checksum. Verification is optional but recommended.</p>
+        <p>Every release includes <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk.sha256" data-release-link="checksum"><code>nexachat-latest.apk.sha256</code></a>, which contains the APK's SHA-256 checksum. Verification is optional but recommended.</p>
         <p><strong>On the phone itself:</strong> download and open the small <code>.sha256</code> file, copy the first 64 hexadecimal characters, then use a checksum utility you trust on the phone to calculate the downloaded APK's SHA-256. The two strings must match exactly; if they differ, delete the APK and download it again from this page.</p>
         <p><strong>Optional advanced desktop check:</strong> place the APK and the <code>.sha256</code> file in the same directory, then run the appropriate command:</p>
         <p>On Linux or macOS:</p>
