@@ -222,7 +222,7 @@ export default function FeedPage() {
         />
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap feed-table">
             <table>
               <thead>
                 <tr>
@@ -240,6 +240,7 @@ export default function FeedPage() {
                   const open = expanded.has(r.id);
                   const body = r.messageSnapshot ?? r.targetBody;
                   const text = body ?? '—';
+                  const longBody = text.length > 60;
                   const targetState: FeedTargetState = r.targetDeleted
                     ? 'DELETED'
                     : r.targetHidden
@@ -255,8 +256,8 @@ export default function FeedPage() {
                           <Chip tone={STATE_TONE[targetState]}>{t(STATE_KEY[targetState])}</Chip>
                         </div>
                         <div
-                          className={open ? 'snippet' : 'truncate'}
-                          title={open ? undefined : text}
+                          className={open ? 'snippet feed-report-text' : longBody ? 'truncate' : 'feed-report-text'}
+                          title={!open && longBody ? text : undefined}
                         >
                           {text}
                         </div>
@@ -265,7 +266,7 @@ export default function FeedPage() {
                             {r.details}
                           </div>
                         )}
-                        {body && (text.length > 60 || r.details) && (
+                        {body && (longBody || r.details) && (
                           <button
                             className="btn ghost sm"
                             aria-expanded={open}

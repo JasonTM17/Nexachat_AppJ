@@ -51,6 +51,14 @@ public interface RagMessageIndex {
         return admittedOnly(lexicalCandidates(conversationId, terms, limit), admittedFrom);
     }
 
+    /** At most two distinct senders with the requested name and eligible, admitted text. */
+    List<UUID> findEligibleSpeakerIds(UUID conversationId, Instant admittedFrom, String displayName);
+
+    List<RagMessage> recentMessagesBySpeaker(UUID conversationId, UUID senderId, int limit, Instant admittedFrom);
+
+    List<RagMessage> lexicalCandidatesBySpeaker(
+            UUID conversationId, UUID senderId, List<String> terms, int limit, Instant admittedFrom);
+
     /**
      * Eligible messages in the bounded sequence neighborhood around {@code centerSeq},
      * oldest first. Used when ranked lexical evidence lies outside the recent window.

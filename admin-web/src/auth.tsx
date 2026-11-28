@@ -72,9 +72,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (identifier: string, password: string) => {
     await apiLogin(identifier, password);
-    const res = await api<MeResponse>('/api/v1/admin/me');
-    setMe(res);
-    return res;
+    try {
+      const res = await api<MeResponse>('/api/v1/admin/me');
+      setMe(res);
+      return res;
+    } catch (error) {
+      tokenStore.clear();
+      throw error;
+    }
   }, []);
 
   const signOut = useCallback(() => {
