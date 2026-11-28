@@ -819,6 +819,10 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
 
     private void assertRoleSuccess(Route route, RoleFixtures fixtures, Registered actor) throws Exception {
         var result = mockMvc.perform(roleRequest(route, fixtures, actor)).andReturn();
+        if (isSummaryPath(route.path())) {
+            assertResponse(result, route, 400, "TOO_FEW_MESSAGES");
+            return;
+        }
         int expectedStatus = expectedRoleSuccessStatus(route);
         if (expectedStatus == 0) {
             assertThat(result.getResponse().getStatus())
@@ -871,10 +875,8 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             if (route.path().endsWith("/polls") && route.method().equals("POST")) return 201;
             if (route.path().endsWith("/reminders") && route.method().equals("POST")) return 201;
             if (route.path().endsWith("/scheduled-messages") && route.method().equals("POST")) return 201;
-            if (route.method().equals("POST") && !route.path().endsWith("/ask")
-                    && !route.path().endsWith("/summary")) return 204;
+            if (route.method().equals("POST") && !route.path().endsWith("/ask")) return 204;
             if (route.path().endsWith("/ask")) return 200;
-            if (route.path().endsWith("/summary")) return 400;
             if (route.path().endsWith("/ai-opt-out")) return 200;
             if (route.path().endsWith("/e2ee")) return 200;
         }
@@ -1012,13 +1014,17 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             return Map.of("emoji", "👍");
         }
         if (route.method().equals("POST") && path.endsWith("/ask")) return Map.of("question", "role probe");
-        if (route.method().equals("POST") && path.endsWith("/summary")) {
+        if (route.method().equals("POST") && isSummaryPath(path)) {
             return Map.of("scope", "LAST_N", "limit", 5);
         }
         if (route.path().equals("/api/v1/users/me") && route.method().equals("DELETE")) {
             return Map.of("password", "wrong-role-probe");
         }
         return null;
+    }
+
+    private static boolean isSummaryPath(String path) {
+        return path.endsWith("/summary") || path.endsWith("/summary/local");
     }
 
     private static Registered actorForMemberRoute(Route route, RoleFixtures fixtures) {

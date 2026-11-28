@@ -19,6 +19,13 @@ The local engine selects and labels existing messages; it does not generate new 
 
 `POST /api/v1/conversations/{id}/summary` (members only)
 
+`POST /api/v1/conversations/{id}/summary/local` uses the same request,
+membership checks, rate limits and response shape. It uses the built-in
+extractive engine even when the account permits AI. A local refresh only
+regenerates the extractive result. Android keeps this choice through scope
+changes, retries and rotation, with a separate cache for the local route.
+Android treats a missing or redirected local route as unavailable.
+
 ```json
 { "scope": "UNREAD|LAST_N|TODAY", "limit": 50, "language": "AUTO|VI|EN", "refresh": false }
 ```
@@ -237,9 +244,9 @@ NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize p
 
 3. **Tier 2: Cloud LLM Tier (`LLM` / OpenAI-compatible, Gemini tested)**
    - Configured via `NEXACHAT_SUMMARY_LLM_*` (e.g. Gemini OpenAI-compatible base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, model `gemini-3.1-flash-lite`).
-   - Preferred when the summary task is complex; an explicit "Regenerate / Refresh"
-     keeps the request on an LLM tier rather than the built-in local engine. Refresh
-     never selects cloud over the local-server model.
+   - On the default summary route, a complex task or explicit "Regenerate / Refresh"
+     can use an LLM tier when permitted by consent and provider settings. The local
+     route always uses the built-in extractive engine.
    - Escalation trigger thresholds (configured via `NEXACHAT_SUMMARY_COMPLEXITY_*`):
      - Window message count $\ge 12$ messages (default `min-messages: 12`).
      - Window total length $\ge 1500$ characters (default `min-chars: 1500`).

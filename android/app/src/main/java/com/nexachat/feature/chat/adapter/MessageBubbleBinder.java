@@ -215,6 +215,7 @@ public final class MessageBubbleBinder {
     private static int errorLabel(@NonNull android.content.Context context,
             @Nullable String code) {
         if ("RATE_LIMITED".equals(code)) return R.string.translation_error_rate_limited;
+        if ("TIMEOUT".equals(code)) return R.string.translation_error_timeout;
         if ("NETWORK".equals(code) || "NETWORK_ERROR".equals(code))
             return R.string.translation_error_offline;
         return R.string.translation_error_generic;

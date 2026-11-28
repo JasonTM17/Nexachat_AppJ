@@ -663,6 +663,9 @@ class MembershipGuardMatrixIT extends SecurityITBase {
         ops.put("rest-077", member("rest-077", "POST",
                 "/api/v1/conversations/{conversationId}/summary",
                 Map.of("scope", "LAST_N", "limit", 5)));
+        ops.put("rest-186", member("rest-186", "POST",
+                "/api/v1/conversations/{conversationId}/summary/local",
+                Map.of("scope", "LAST_N", "limit", 5)));
         ops.put("rest-085", member("rest-085", "PUT",
                 "/api/v1/conversations/{conversationId}/ai-opt-out"));
         ops.put("rest-086", member("rest-086", "PUT",

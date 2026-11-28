@@ -120,6 +120,12 @@ public class AskService {
                     AskReason.CONSENT_REQUIRED, true, RETRY_AFTER_TRANSIENT_SECONDS,
                     execution.response().evidenceOmitted(), attempted);
         }
+        if (execution.speaker() != null && (!memberRepository.findJoinedAt(execution.conversationId(), userId)
+                .filter(execution.speaker().admittedFrom()::equals).isPresent()
+                || !retrievalService.speakerUnchanged(execution.conversationId(), execution.speaker()))) {
+            stats.recordNotFound();
+            return contextChangedResponse(execution.response().contextOmitted(), llmAttempted(execution.response()));
+        }
         return execution.response();
     }
 
@@ -209,12 +215,33 @@ public class AskService {
             List<AskPriorTurn> priorTurns,
             RagQuestionCache.ContextSnapshot context,
             AskDeadline deadline) {
+        AskSpeakerLookup namedLookup = AskSpeakerLookup.parse(question);
+        AskSpeakerLookup.Binding speaker = null;
+        if (namedLookup != null) {
+            if (deadline.expired()) {
+                stats.recordNotFound();
+                return new AskExecution(consentSnapshot, timeoutResponse(contextOmitted, false), conversationId, context);
+            }
+            UUID resolved = namedLookup.ambiguous() ? null
+                    : retrievalService.findSpeaker(conversationId, admittedFrom, namedLookup.name());
+            if (deadline.expired() || resolved == null) {
+                stats.recordNotFound();
+                AskResponse response = deadline.expired() ? timeoutResponse(contextOmitted, false)
+                        : AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE, false, null, false, false);
+                return new AskExecution(consentSnapshot, response, conversationId, context);
+            }
+            speaker = new AskSpeakerLookup.Binding(namedLookup.name(), resolved, admittedFrom);
+        }
+        AskSpeakerLookup.Binding binding = speaker;
+        String evidenceQuestion = namedLookup == null ? question : namedLookup.question();
+        List<AskPriorTurn> evidenceHistory = namedLookup == null ? priorTurns : List.of();
         AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot,
-                admittedFrom, context);
+                admittedFrom, context, binding == null ? null : binding.senderId());
         AskResponse response = computeOnce(key, contextOmitted, deadline, () -> compute(
-                conversationId, userId, question, language, questionHash, consentSnapshot, contextOmitted,
-                admittedFrom, priorTurns, context, deadline));
-        return new AskExecution(consentSnapshot, response, conversationId, context);
+                conversationId, userId, evidenceQuestion, language, questionHash, consentSnapshot, contextOmitted,
+                admittedFrom, evidenceHistory, context, deadline, binding));
+        return new AskExecution(consentSnapshot, response, conversationId, context,
+                response.mode() == AskMode.NOT_FOUND ? null : binding);
     }
 
     /** Single-flight: the first caller for a key computes and concurrent callers receive that result. */
@@ -287,11 +314,12 @@ public class AskService {
             Instant admittedFrom,
             List<AskPriorTurn> priorTurns,
             RagQuestionCache.ContextSnapshot context,
-            AskDeadline deadline) {
+            AskDeadline deadline,
+            AskSpeakerLookup.Binding speaker) {
         AskResponse completed = null;
         try {
             completed = computeWithin(conversationId, userId, question, language, questionHash,
-                    consentSnapshot, contextOmitted, admittedFrom, priorTurns, context, deadline);
+                    consentSnapshot, contextOmitted, admittedFrom, priorTurns, context, deadline, speaker);
             if (deadline != null) {
                 deadline.check();
             }
@@ -314,14 +342,17 @@ public class AskService {
             Instant admittedFrom,
             List<AskPriorTurn> priorTurns,
             RagQuestionCache.ContextSnapshot context,
-            AskDeadline deadline) {
+            AskDeadline deadline,
+            AskSpeakerLookup.Binding speaker) {
         check(deadline);
         boolean consented = consentSnapshot.consented();
         // Cached answers are shared per conversation and may cite or paraphrase content from
         // before this member's admission, so a late or returning member always recomputes.
-        boolean sharedCacheVisible = !retrievalService.hasContentBeforeAdmission(conversationId, admittedFrom);
-        RagEmbeddingService.EmbeddingOutcome questionEmbedding =
-                embeddingService.embedQuestion(userId, question, consented, deadline);
+        // Profile renames are outside the message revision. Skip answer replay and storage for named lookups.
+        boolean sharedCacheVisible = speaker == null && !retrievalService.hasContentBeforeAdmission(conversationId, admittedFrom);
+        RagEmbeddingService.EmbeddingOutcome questionEmbedding = speaker == null
+                ? embeddingService.embedQuestion(userId, question, consented, deadline) : null;
+        boolean requiresAnswerEvidence = speaker != null || !isBroadAggregationQuestion(question);
 
         if (consented && sharedCacheVisible) {
             Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
@@ -335,10 +366,11 @@ public class AskService {
             }
 
             double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
-            if (priorTurns.isEmpty()) {
+            if (!requiresAnswerEvidence && priorTurns.isEmpty()) {
                 for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
                         conversationId, questionEmbedding.model())) {
-                    if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
+                    if (AskMode.LLM.name().equals(candidate.ask().mode())
+                            && VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
                             && candidate.ask().expectedContentVersion() == context.revision()
                             && candidate.ask().language() == language
                             && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
@@ -349,12 +381,12 @@ public class AskService {
             }
         }
 
-        boolean lookupLike = isLookupLike(question);
-        boolean requiresAnswerEvidence = !isBroadAggregationQuestion(question);
+        boolean lookupLike = speaker != null || isLookupLike(question);
         check(deadline);
-        RetrievalResult retrieval = retrievalService.retrieve(
+        RetrievalResult retrieval = speaker == null ? retrievalService.retrieve(
                 conversationId, userId, question, language, consented, admittedFrom,
-                requiresAnswerEvidence, deadline);
+                requiresAnswerEvidence, deadline) : retrievalService.retrieveForSpeaker(
+                conversationId, userId, question, language, consented, speaker, deadline);
         boolean evidenceOmitted = contextOmitted && retrieval.optedOutEvidenceOverlap();
         if (retrieval.isEmpty()) {
             stats.recordNotFound();
@@ -367,7 +399,14 @@ public class AskService {
                     false, null, evidenceOmitted, false);
         }
 
-        ExtractiveSelection extractive = selectExtractive(question, language, retrieval);
+        if (requiresAnswerEvidence && RagExtractiveAnswerer.hasConflictingClaims(
+                question, language, retrieval.lookupCandidates(), deadline, speaker != null)) {
+            stats.recordNotFound();
+            return AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE,
+                    false, null, evidenceOmitted, false);
+        }
+
+        ExtractiveSelection extractive = selectExtractive(question, language, retrieval, speaker != null);
         if (extractive != null
                 && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()
                 && canAnswerDirectly(extractive, lookupLike)) {
@@ -378,14 +417,23 @@ public class AskService {
 
         RagLlmOutcome outcome = null;
         if (consented) {
+            if (speaker != null && !retrievalService.speakerUnchanged(conversationId, speaker)) {
+                stats.recordNotFound();
+                return contextChangedResponse(contextOmitted, false);
+            }
             check(deadline);
-            outcome = llmAnswerService.answerDetailed(
+            outcome = speaker == null ? llmAnswerService.answerDetailed(
                     userId, conversationId, question, language, retrieval.context(), retrieval.messages(),
-                    priorTurns, deadline);
+                    priorTurns, deadline) : llmAnswerService.answerSpeakerQuote(
+                    userId, conversationId, question, language, retrieval.context(), retrieval.messages(), deadline);
             if (outcome.status() == RagLlmOutcome.Status.ANSWER && outcome.answer() != null) {
-                RagQuestionCache.CachedAsk answer = toCachedAsk(
+                boolean citesNamedSpeaker = speaker == null || outcome.answer().citationIds().stream().allMatch(id -> {
+                    RagMessage source = retrieval.messages().get(id);
+                    return source != null && speaker.senderId().equals(source.senderId());
+                });
+                RagQuestionCache.CachedAsk answer = citesNamedSpeaker ? toCachedAsk(
                         outcome.answer(), retrieval.messages(), retrieval.context(), AskMode.LLM, language,
-                        context, question, null, true, outcome.sensitiveContentRedacted());
+                        context, question, null, true, outcome.sensitiveContentRedacted()) : null;
                 if (answer != null) {
                     saveAnswer(userId, consentSnapshot, conversationId, questionEmbedding, questionHash, answer);
                     stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(outcome.answer().provider()));
@@ -456,25 +504,36 @@ public class AskService {
     }
 
     private ExtractiveSelection selectExtractive(
-            String question, SummaryLanguage language, RetrievalResult retrieval) {
+            String question, SummaryLanguage language, RetrievalResult retrieval, boolean namedSpeaker) {
+        RagProperties.Retrieval config = properties.getRetrieval();
+        List<String> terms = RagQuestionTerms.answerTerms(question, language, config.getLexicalTermLimit());
         ExtractiveSelection firstSpan = null;
+        ExtractiveSelection exact = null;
         int limit = Math.min(3, retrieval.ranked().size());
         for (int index = 0; index < limit; index++) {
             RagMessage candidate = retrieval.ranked().get(index).message();
             RagExtractiveAnswerer.Result result = RagExtractiveAnswerer.extract(
-                    question, language, candidate, EXTRACTIVE_ANSWER_MAX_CHARS);
-            if (result == null) {
+                    question, language, terms, candidate, EXTRACTIVE_ANSWER_MAX_CHARS, namedSpeaker);
+            if (result == null || result.coverage() < config.getLexicalAnswerMinCoverage()) {
                 continue;
+            }
+            if (result.conflictingValues()) {
+                return null;
             }
             ExtractiveSelection selection = new ExtractiveSelection(candidate, result);
             if (result.exactValue()) {
-                return selection;
-            }
-            if (firstSpan == null) {
+                if (exact != null && (!exact.result().answer().equals(result.answer())
+                        || !exact.result().extraction().valueType().equals(result.extraction().valueType()))) {
+                    return null;
+                }
+                if (exact == null) {
+                    exact = selection;
+                }
+            } else if (firstSpan == null) {
                 firstSpan = selection;
             }
         }
-        return firstSpan;
+        return exact == null ? firstSpan : exact;
     }
 
     private AskResponse answerExtractive(
@@ -512,6 +571,9 @@ public class AskService {
             RagEmbeddingService.EmbeddingOutcome questionEmbedding,
             String questionHash,
             RagQuestionCache.CachedAsk answer) {
+        if (questionEmbedding == null) {
+            return;
+        }
         try {
             questionCache.saveIfConsentSnapshotMatches(userId, consentSnapshot, conversationId,
                     questionEmbedding.model(), questionHash, questionEmbedding.vector(), answer);
@@ -831,7 +893,7 @@ public class AskService {
     }
 
     static String hashInput(String question, List<AskPriorTurn> priorTurns) {
-        String normalized = RagQuestionNormalizer.normalize(question);
+        String normalized = RagQuestionNormalizer.normalizeForCache(question);
         String fingerprint = AskPriorTurns.fingerprint(priorTurns);
         if (fingerprint.isEmpty()) {
             return normalized;
@@ -858,6 +920,7 @@ public class AskService {
             SummaryLanguage language,
             SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             Instant admittedFrom,
-            RagQuestionCache.ContextSnapshot context) {
+            RagQuestionCache.ContextSnapshot context,
+            UUID namedSenderId) {
     }
 }

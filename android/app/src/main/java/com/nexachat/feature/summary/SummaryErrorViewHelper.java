@@ -74,6 +74,13 @@ public final class SummaryErrorViewHelper {
                 showRetry = false;
                 iconTintAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
                 break;
+            case LOCAL_MODE_UNAVAILABLE:
+                iconRes = R.drawable.ic_error_outline;
+                titleRes = R.string.summary_error_local_mode_unavailable;
+                descRes = null;
+                showRetry = false;
+                iconTintAttr = com.google.android.material.R.attr.colorError;
+                break;
             case NETWORK:
                 iconRes = R.drawable.ic_wifi_off;
                 titleRes = R.string.summary_error_offline;

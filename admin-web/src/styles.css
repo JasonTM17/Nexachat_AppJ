@@ -784,6 +784,7 @@ a.kpi-link:hover { border-color: var(--plum-300); }
 
 .feed-mobile-state { display: none; }
 .feed-mobile-meta { display: none; }
+.feed-report-text { overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 .status-item { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -830,6 +831,7 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   .navlink { justify-content: center; padding: 10px; }
   .navlink .label { display: none; }
   .main { padding: 16px; }
+  .topbar-actions { flex-wrap: wrap; max-width: 100%; }
 
   /* Low-priority table columns are hidden on small screens; the row drawer
      carries the full data, and the feed's inline meta block repeats its
@@ -837,6 +839,10 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   .col-lo { display: none; }
   .feed-mobile-state { display: block; margin-bottom: 6px; }
   .feed-mobile-meta { display: block; margin-top: 8px; }
+  .feed-table table { table-layout: fixed; }
+  .feed-table th.col-actions { width: 46%; }
+  .feed-table td { overflow-wrap: anywhere; }
+  .feed-table .action-row .btn { white-space: normal; text-align: center; }
 
   th, td { padding: 10px; }
   .truncate { max-width: 120px; }

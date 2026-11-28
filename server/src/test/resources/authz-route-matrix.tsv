@@ -87,6 +87,7 @@ POST	/api/v1/conversations/{conversationId}/read	CONVERSATION_MEMBER	conversatio
 POST	/api/v1/conversations/{conversationId}/reminders	CONVERSATION_MEMBER	conversation_member	rest-076
 POST	/api/v1/conversations/{conversationId}/scheduled-messages	CONVERSATION_MEMBER	conversation_member	rest-180
 POST	/api/v1/conversations/{conversationId}/summary	CONVERSATION_MEMBER	conversation_member	rest-077
+POST	/api/v1/conversations/{conversationId}/summary/local	CONVERSATION_MEMBER	conversation_member	rest-186
 POST	/api/v1/devices/token	AUTHENTICATED	authenticated_self	rest-078
 POST	/api/v1/invite-links/{token}/join	AUTHENTICATED_INVITE	authenticated_invite	rest-079
 POST	/api/v1/labels	AUTHENTICATED	authenticated_self	rest-080

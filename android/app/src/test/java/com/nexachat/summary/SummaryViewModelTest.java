@@ -28,6 +28,37 @@ import org.junit.Test;
 
 public final class SummaryViewModelTest {
     @Test
+    public void localChoiceCancelsTheOldRequestAndPersistsThroughRetryScopeAndRestoration()
+            throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepositoryTest.ControlledApi api = new SummaryRepositoryTest.ControlledApi();
+            SummaryRepository repository = new SummaryRepository(api);
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, repository);
+            viewModel.request(SummaryScope.UNREAD, null);
+            viewModel.refreshWithMode(SummaryViewModel.Mode.LOCAL);
+            assertTrue(api.calls.get(0).isCanceled());
+            api.calls.get(0).succeed(summaryResponse("stale"));
+            assertEquals(SummaryUiState.Status.LOADING, viewModel.state().getValue().getStatus());
+
+            api.calls.get(1).error(400, "{\"error\":{\"code\":\"INVALID_TIME_ZONE\"}}");
+            api.calls.get(2).succeed(summaryResponse("zone-retry"));
+            viewModel.request(SummaryScope.LAST_N, 20);
+            api.calls.get(3).succeed(summaryResponse("local-last-n"));
+            assertEquals("LOCAL", saved.get("summary_mode"));
+            assertEquals(SummaryViewModel.Mode.LOCAL, viewModel.mode());
+
+            SummaryViewModel restored = new SummaryViewModel(saved, repository);
+            assertEquals(SummaryViewModel.Mode.LOCAL, restored.mode());
+            assertEquals("local-last-n", restored.state().getValue().getSummary().getSummaryId());
+            restored.refresh();
+            assertEquals(List.of(false, true, true, true, true), api.localCalls);
+            restored.refreshWithMode(SummaryViewModel.Mode.AI);
+            assertEquals(List.of(false, true, true, true, true, false), api.localCalls);
+        }
+    }
+
+    @Test
     public void requestMovesLoadingToReadyAndRestoresFromSavedIdAndCache() throws Exception {
         try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
             AtomicInteger calls = new AtomicInteger();
