@@ -4,6 +4,7 @@ import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.engine.Tokenizer;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -95,7 +96,11 @@ final class RagExtractiveAnswerer {
             boolean namedSpeaker) {
         RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
         if (dateLookup != null) {
-            return hasConflictingDates(candidates, deadline, dateLookup);
+            return hasUnsettledOrConflictingDates(candidates, deadline, dateLookup);
+        }
+        RagVietnamesePlaceLookup placeLookup = RagVietnamesePlaceLookup.parse(question, language, namedSpeaker);
+        if (placeLookup != null) {
+            return hasConflictingPlaces(candidates, deadline, placeLookup);
         }
         String foldedQuestion = RagQuestionNormalizer.normalize(question);
         Matcher quantityQuestion = QUANTITY_QUESTION.matcher(foldedQuestion);
@@ -140,17 +145,48 @@ final class RagExtractiveAnswerer {
         return false;
     }
 
-    private static boolean hasConflictingDates(
+    private static boolean hasUnsettledOrConflictingDates(
             List<RagMessage> candidates, AskDeadline deadline, RagVietnameseDateLookup lookup) {
         String confirmed = null;
-        for (RagMessage candidate : candidates) {
+        boolean unsettled = false;
+        // Retrieval order reflects relevance. Date confirmations and withdrawals follow
+        // the conversation sequence, and then the order of sentences within each message.
+        for (RagMessage candidate : candidates.stream().sorted(Comparator.comparingLong(RagMessage::seq)).toList()) {
             deadline.check();
-            for (String statement : attributedStatements(candidate.content(), true)) {
-                for (String date : lookup.inspect(statement).values()) {
+            String content = candidate.content();
+            for (Span sentence : sentences(content)) {
+                String statement = content.substring(sentence.start(), sentence.end());
+                if (lookup.statesDateIsUnsettled(statement)) {
+                    unsettled = true;
+                    continue;
+                }
+                if (!isAttributedStatement(statement, true)) {
+                    continue;
+                }
+                RagVietnameseDateLookup.DateEvidence evidence = lookup.inspect(statement);
+                if (evidence.directlyBound()) {
+                    unsettled = false;
+                }
+                for (String date : evidence.values()) {
                     if (confirmed != null && !confirmed.equals(date)) {
                         return true;
                     }
                     confirmed = date;
+                }
+            }
+        }
+        return unsettled;
+    }
+
+    private static boolean hasConflictingPlaces(
+            List<RagMessage> candidates, AskDeadline deadline, RagVietnamesePlaceLookup lookup) {
+        Set<String> places = new LinkedHashSet<>();
+        for (RagMessage candidate : candidates) {
+            deadline.check();
+            for (String statement : attributedStatements(candidate.content())) {
+                places.addAll(lookup.places(statement));
+                if (places.size() > 1) {
+                    return true;
                 }
             }
         }
@@ -208,8 +244,9 @@ final class RagExtractiveAnswerer {
         String content = message.content();
         boolean needsSettledEvidence = needsSettledEvidence(question, language);
         RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
+        RagVietnamesePlaceLookup placeLookup = RagVietnamesePlaceLookup.parse(question, language, namedSpeaker);
         boolean attributedDate = namedSpeaker && asksForVietnameseDate(question, language);
-        Set<ValueType> requestedTypes = dateLookup == null ? requestedValueTypes(question) : Set.of();
+        Set<ValueType> requestedTypes = dateLookup == null && placeLookup == null ? requestedValueTypes(question) : Set.of();
         boolean identifierLookup = isIdentifierLookup(question, requestedTypes);
         Span best = null;
         ExactMatch exact = null;
@@ -225,7 +262,11 @@ final class RagExtractiveAnswerer {
             if (date != null && !date.usable()) {
                 continue;
             }
-            int matches = date != null && date.directlyBound() ? terms.size() : matchedTermCount(text, terms, language);
+            if (placeLookup != null && placeLookup.places(text).size() != 1) {
+                continue;
+            }
+            boolean directlyBound = placeLookup != null || date != null && date.directlyBound();
+            int matches = directlyBound ? terms.size() : matchedTermCount(text, terms, language);
             if (matches == 0 || matches < bestMatches) {
                 continue;
             }

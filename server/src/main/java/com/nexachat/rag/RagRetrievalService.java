@@ -218,14 +218,17 @@ public class RagRetrievalService {
         boolean needsSettledEvidence = RagExtractiveAnswerer.needsSettledEvidence(question, language);
         boolean attributedDate = namedSpeaker && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
         RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
+        RagVietnamesePlaceLookup placeLookup = RagVietnamesePlaceLookup.parse(question, language, namedSpeaker);
         double requiredCoverage = config.getLexicalAnswerMinCoverage();
         for (RagMessage candidate : vectorCandidates) {
             List<String> statements = namedSpeaker
                     ? RagExtractiveAnswerer.attributedStatements(candidate.content(), attributedDate, dateLookup)
                     : needsSettledEvidence ? RagExtractiveAnswerer.settledStatements(candidate.content())
                     : List.of(candidate.content());
-            boolean covered = statements.stream().anyMatch(text -> dateLookup != null && dateLookup.inspect(text).directlyBound()
-                    || hasCoverage(text, language, questionTerms, requiredCoverage));
+            boolean covered = statements.stream().anyMatch(text -> placeLookup != null
+                    ? !placeLookup.places(text).isEmpty()
+                    : dateLookup != null && dateLookup.inspect(text).directlyBound()
+                        || hasCoverage(text, language, questionTerms, requiredCoverage));
             if (!covered) {
                 continue;
             }
