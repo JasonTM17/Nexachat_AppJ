@@ -58,7 +58,7 @@
     <string name="invite_open_chat">Mở nhóm</string>
     <string name="invite_retry">Thử lại</string>
     <string name="invite_sign_in">Đăng nhập</string>
-    <string name="invite_sign_in_required">Hãy đăng nhập rồi mở lại liên kết mời này.</string>
+    <string name="invite_sign_in_required">Đăng nhập để xem lời mời vào nhóm.</string>
     <string name="invite_unavailable">Liên kết mời không còn hiệu lực.</string>
     <string name="invite_not_allowed">Không thể tham gia bằng liên kết này.</string>
     <string name="invite_rate_limited">Thử quá nhiều lần. Hãy thử lại sau.</string>

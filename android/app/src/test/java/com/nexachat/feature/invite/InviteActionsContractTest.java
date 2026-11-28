@@ -26,7 +26,7 @@ public final class InviteActionsContractTest {
 
     @Test
     public void manageScreenUsesNexaChatButtonsAndSectionHeader() throws Exception {
-        Document document = loadLayout("layout/fragment_invite_manage.xml");
+        Document document = loadXmlResource("layout/fragment_invite_manage.xml");
         Element root = document.getDocumentElement();
         for (String id : new String[] {"expiryButton", "maxUsesButton", "copyButton", "shareButton"}) {
             Element button = findById(root, id);
@@ -53,7 +53,7 @@ public final class InviteActionsContractTest {
 
     @Test
     public void joinScreenSecondariesAreTonal() throws Exception {
-        Element root = loadLayout("layout/fragment_invite_join.xml").getDocumentElement();
+        Element root = loadXmlResource("layout/fragment_invite_join.xml").getDocumentElement();
         for (String id : new String[] {"checkStatusButton", "retryButton", "signInButton"}) {
             Element button = findById(root, id);
             assertNotNull(id, button);
@@ -73,7 +73,7 @@ public final class InviteActionsContractTest {
 
     @Test
     public void joinRequestRejectIsATextAction() throws Exception {
-        Element root = loadLayout("layout/item_invite_join_request.xml").getDocumentElement();
+        Element root = loadXmlResource("layout/item_invite_join_request.xml").getDocumentElement();
         Element reject = findById(root, "rejectButton");
         assertNotNull(reject);
         assertEquals("@style/Widget.NexaChat.Button.Text", attr(reject, "style"));
@@ -83,7 +83,31 @@ public final class InviteActionsContractTest {
                 "", attr(approve, "style"));
     }
 
-    private static Document loadLayout(String relative) throws Exception {
+    @Test
+    public void englishSignInHintDescribesTheInviteReturn() throws Exception {
+        assertEquals("Sign in to view this group invitation.",
+                inviteSignInHint("values"));
+    }
+
+    @Test
+    public void vietnameseSignInHintDescribesTheInviteReturn() throws Exception {
+        assertEquals("Đăng nhập để xem lời mời vào nhóm.",
+                inviteSignInHint("values-vi"));
+    }
+
+    private static String inviteSignInHint(String directory) throws Exception {
+        Document document = loadXmlResource(directory + "/strings_invite.xml");
+        NodeList strings = document.getElementsByTagName("string");
+        for (int i = 0; i < strings.getLength(); i++) {
+            Element string = (Element) strings.item(i);
+            if ("invite_sign_in_required".equals(string.getAttribute("name"))) {
+                return string.getTextContent().trim();
+            }
+        }
+        throw new AssertionError("Missing invite sign-in guidance in " + directory);
+    }
+
+    private static Document loadXmlResource(String relative) throws Exception {
         Path[] candidates = {
             Path.of("src/main/res", relative),
             Path.of("app/src/main/res", relative),

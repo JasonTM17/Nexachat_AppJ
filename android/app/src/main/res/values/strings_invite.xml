@@ -61,7 +61,7 @@
     <string name="invite_open_chat">Open group chat</string>
     <string name="invite_retry">Try again</string>
     <string name="invite_sign_in">Sign in</string>
-    <string name="invite_sign_in_required">Sign in to open this invite, then open the link again.</string>
+    <string name="invite_sign_in_required">Sign in to view this group invitation.</string>
     <string name="invite_unavailable">This invite is unavailable.</string>
     <string name="invite_not_allowed">You can’t join using this invite.</string>
     <string name="invite_rate_limited">Too many attempts. Try again later.</string>

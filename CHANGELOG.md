@@ -6,6 +6,15 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.34] - 2026-11-28
+
+See [the release notes](docs/release-notes/v1.2.34.md).
+
+### Fixed
+
+- Group invite sign-in instructions describe the existing return to the invitation
+  after sign-in.
+
 ## [1.2.33] - 2026-11-28
 
 See [the release notes](docs/release-notes/v1.2.33.md).
