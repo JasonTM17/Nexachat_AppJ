@@ -552,6 +552,59 @@ def test_vercel_headers(vercel_data):
         else:
             log_pass("/admin rewrite target is not a team-scoped (SSO-protected) Vercel domain")
 
+    social_api_hdrs = headers_by_source.get("/api/social/v1/(.*)", {})
+    if social_api_hdrs.get("cache-control") == "private, no-store":
+        log_pass("Social API proxy responses require private no-store caching")
+    else:
+        failures.append("Missing Cache-Control: private, no-store for /api/social/v1/(.*)")
+    for cache_key in ("cdn-cache-control", "vercel-cdn-cache-control"):
+        if social_api_hdrs.get(cache_key) == "no-store":
+            log_pass(f"Social API proxy sets {cache_key}: no-store")
+        else:
+            failures.append(f"Missing {cache_key}: no-store for /api/social/v1/(.*)")
+
+    social_hdrs = headers_by_source.get("/social(.*)", {})
+    social_csp = social_hdrs.get("content-security-policy", "")
+    required_social_csp = [
+        "default-src 'none'",
+        "style-src 'self'",
+        "script-src 'self'",
+        "connect-src 'self'",
+        "img-src 'self' blob:",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+    ]
+    missing_social_csp = [d for d in required_social_csp if d not in social_csp]
+    if missing_social_csp:
+        failures.append(f"/social(.*) CSP missing directives: {missing_social_csp}")
+    else:
+        log_pass("/social(.*) has a static same-origin CSP with blob image support")
+
+    rewrite_pairs = {(r.get("source"), r.get("destination")) for r in rewrites}
+    expected_social_rewrites = {
+        ("/api/social/v1/session/login", "https://api.nexachat.io.vn/api/v1/auth/login"),
+        ("/api/social/v1/session/refresh", "https://api.nexachat.io.vn/api/v1/auth/refresh"),
+        ("/api/social/v1/session/logout", "https://api.nexachat.io.vn/api/v1/auth/logout"),
+        ("/api/social/v1/reports", "https://api.nexachat.io.vn/api/v1/reports"),
+        ("/api/social/v1/posts", "https://api.nexachat.io.vn/api/social/v1/posts"),
+        ("/api/social/v1/posts/:path*", "https://api.nexachat.io.vn/api/social/v1/posts/:path*"),
+        ("/api/social/v1/comments/:path*", "https://api.nexachat.io.vn/api/social/v1/comments/:path*"),
+        ("/api/social/v1/images", "https://api.nexachat.io.vn/api/social/v1/images"),
+        ("/api/social/v1/images/:path*", "https://api.nexachat.io.vn/api/social/v1/images/:path*"),
+    }
+    missing_rewrites = sorted(expected_social_rewrites - rewrite_pairs)
+    if missing_rewrites:
+        failures.append(f"Missing social API rewrite(s): {missing_rewrites}")
+    elif any(r.get("source") == "/api/social/v1/:path*" for r in rewrites):
+        failures.append("Social proxy must not expose arbitrary /api/social/v1/:path* backend paths")
+    else:
+        log_pass("Social API proxy is restricted to auth, reports, posts, comments and images")
+    if ("/social", "/social/index.html") in rewrite_pairs and ("/social/", "/social/index.html") in rewrite_pairs:
+        log_pass("/social and /social/ are backed by social/index.html")
+    else:
+        failures.append("Missing /social rewrite backed by social/index.html")
+
     return failures
 
 
@@ -1693,6 +1746,11 @@ def test_internal_static_links():
         "/favicon.svg",
         "/join/join.js",
         "/delete-account.js",
+        "/social/",
+        "/social/index.html",
+        "/social/social.css",
+        "/social/social-app.js",
+        "/social/social-client.js",
         "/sitemap.xml",
         "/robots.txt",
         "/privacy.html",

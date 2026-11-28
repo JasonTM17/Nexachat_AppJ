@@ -4,6 +4,8 @@ This directory contains the static site for `nexachat.io.vn`, deployed on Vercel
 
 The landing page switches language with CSS only: `/` shows Vietnamese and `/#lang-en` shows English (`:target`). Keep both panes in sync when editing copy.
 
+`/social/` is the dependency-free NexaChat Social v1 browser client. It uses the same visual language as the Android chat/call design system, same-origin `/api/social/v1` proxying, memory-only session tokens, and no third-party runtime requests. Its API/compatibility contract is documented in [docs/architecture/social-api.md](../docs/architecture/social-api.md).
+
 ## Digital Asset Links (`.well-known/assetlinks.json`)
 
 Android uses Digital Asset Links to verify App Links ownership for opening HTTPS invite links (`https://nexachat.io.vn/join/<token>`) directly in the NexaChat Android app.

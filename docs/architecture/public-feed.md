@@ -7,7 +7,9 @@ direction — the feed is **public and unencrypted by design**, the opposite of
 the E2EE direct-chat surface.
 It supports text posts with optional images, comments, and per-user emoji
 reactions. `docs/architecture/api-contract.md` lists the routes; the staff
-moderation page lives at `admin-web/` `/feed`.
+moderation page lives at `admin-web/` `/feed`. The same-domain browser Social
+v1 seam and canonical `/api/social/v1` mapping are documented in
+[docs/architecture/social-api.md](social-api.md).
 
 ## Data model (V43)
 

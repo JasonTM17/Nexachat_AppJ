@@ -23,6 +23,8 @@
     <string name="feed_delete_body">Bài viết sẽ biến mất với mọi người.</string>
     <string name="feed_delete_confirm">Xoá</string>
     <string name="feed_cancel">Huỷ</string>
+    <string name="feed_message_author">Nhắn tin cho tác giả</string>
+    <string name="feed_open_chat_error">Không mở được cuộc trò chuyện</string>
     <string name="feed_report">Báo cáo</string>
     <string name="feed_report_sent">Đã gửi báo cáo</string>
     <string name="feed_comment_hint">Viết bình luận</string>

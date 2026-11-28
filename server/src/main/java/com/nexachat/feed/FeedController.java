@@ -35,7 +35,8 @@ import java.time.Duration;
 import java.util.UUID;
 
 /**
- * Public-feed REST surface ({@code /api/v1/feed/**}), caller-scoped:
+ * Public-feed REST surface ({@code /api/v1/feed/**} and the canonical
+ * social alias {@code /api/social/v1/**}), caller-scoped:
  *
  * <ul>
  *   <li>{@code GET /posts?limit=&cursor=} — newest-first keyset page;</li>
@@ -51,7 +52,7 @@ import java.util.UUID;
  * </ul>
  */
 @RestController
-@RequestMapping("/api/v1/feed")
+@RequestMapping({"/api/v1/feed", "/api/social/v1"})
 public class FeedController {
 
     private final FeedService feedService;
