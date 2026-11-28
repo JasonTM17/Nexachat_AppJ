@@ -11,15 +11,27 @@ public record RetrievalResult(
         double bestScore,
         int inputChars,
         Map<UUID, RagMessage> messages,
-        boolean optedOutEvidenceOverlap) {
+        boolean optedOutEvidenceOverlap,
+        List<RagMessage> lookupCandidates) {
 
     public RetrievalResult {
         ranked = ranked == null ? List.of() : List.copyOf(ranked);
         context = context == null ? List.of() : List.copyOf(context);
         messages = messages == null ? Map.of() : Map.copyOf(messages);
+        lookupCandidates = lookupCandidates == null ? List.of() : List.copyOf(lookupCandidates);
     }
 
-    /** Compatibility constructor before relevance-aware omission metadata existed. */
+    public RetrievalResult(
+            List<ScoredMessage> ranked,
+            RagMessage topMessage,
+            List<RagContextItem> context,
+            double bestScore,
+            int inputChars,
+            Map<UUID, RagMessage> messages,
+            boolean optedOutEvidenceOverlap) {
+        this(ranked, topMessage, context, bestScore, inputChars, messages, optedOutEvidenceOverlap, List.of());
+    }
+
     public RetrievalResult(
             List<ScoredMessage> ranked,
             RagMessage topMessage,

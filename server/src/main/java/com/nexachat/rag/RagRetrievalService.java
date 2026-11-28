@@ -8,6 +8,7 @@ import com.nexachat.summary.engine.SummarySignals;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,19 +24,6 @@ import java.util.UUID;
 @Service
 @Profile("!test")
 public class RagRetrievalService {
-
-    /** Query-only scaffolding terms. They form the question but are not evidence about an entity. */
-    private static final Set<String> EN_QUERY_SCAFFOLD_TERMS = Set.of(
-            "about", "tell", "find", "explain", "need", "detail", "details", "remind",
-            "give", "show", "please", "exact", "exactly", "how", "much", "many",
-            "decide", "decided", "describe", "want", "know");
-    private static final Set<String> VI_QUERY_SCAFFOLD_TERMS = Set.of(
-            "gi", "nao", "biet", "giup", "xin", "can", "muon");
-    private static final List<List<String>> VI_QUERY_SCAFFOLD_PHRASES = List.of(
-            List.of("giai", "thich"), List.of("tim", "kiem"), List.of("tim", "hieu"),
-            List.of("tim", "cach"), List.of("bao", "nhieu"), List.of("chi", "tiet"),
-            List.of("vui", "long"), List.of("the", "nao"), List.of("khi", "nao"),
-            List.of("goi", "y"));
 
     private final RagMessageIndex index;
     private final RagEmbeddingService embeddings;
@@ -90,13 +78,38 @@ public class RagRetrievalService {
     public RetrievalResult retrieve(
             UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
             java.time.Instant admittedFrom, boolean requireAnswerEvidence, AskDeadline deadline) {
+        return retrieve(conversationId, userId, question, language, consented, admittedFrom,
+                requireAnswerEvidence, deadline, null);
+    }
+
+    UUID findSpeaker(UUID conversationId, Instant admittedFrom, String name) {
+        List<UUID> candidates = index.findEligibleSpeakerIds(conversationId, admittedFrom, name);
+        return candidates.size() == 1 ? candidates.getFirst() : null;
+    }
+
+    boolean speakerUnchanged(UUID conversationId, AskSpeakerLookup.Binding binding) {
+        return binding.senderId().equals(findSpeaker(conversationId, binding.admittedFrom(), binding.name()));
+    }
+
+    RetrievalResult retrieveForSpeaker(
+            UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
+            AskSpeakerLookup.Binding speaker, AskDeadline deadline) {
+        return retrieve(conversationId, userId, question, language, consented, speaker.admittedFrom(),
+                true, deadline, speaker.senderId());
+    }
+
+    private RetrievalResult retrieve(
+            UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
+            Instant admittedFrom, boolean requireAnswerEvidence, AskDeadline deadline, UUID senderId) {
         check(deadline);
         RagProperties.Retrieval config = properties.getRetrieval();
-        List<RagMessage> recent = index.recentMessages(
-                conversationId, config.getMaxCandidateMessages(), admittedFrom);
+        List<RagMessage> recent = senderId == null
+                ? index.recentMessages(conversationId, config.getMaxCandidateMessages(), admittedFrom)
+                : index.recentMessagesBySpeaker(conversationId, senderId, config.getMaxCandidateMessages(), admittedFrom);
         List<String> terms = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
-        List<RagMessage> lexicalCandidates = index.lexicalCandidates(
-                conversationId, terms, config.getLexicalCandidateLimit(), admittedFrom);
+        List<RagMessage> lexicalCandidates = senderId == null
+                ? index.lexicalCandidates(conversationId, terms, config.getLexicalCandidateLimit(), admittedFrom)
+                : index.lexicalCandidatesBySpeaker(conversationId, senderId, terms, config.getLexicalCandidateLimit(), admittedFrom);
         boolean optedOutEvidenceOverlap = requireAnswerEvidence
                 ? index.hasOptedOutLexicalCandidates(conversationId, terms, admittedFrom)
                 : index.hasOptedOutMessages(conversationId, admittedFrom);
@@ -123,7 +136,7 @@ public class RagRetrievalService {
                 userId, question, vectorCandidates, inlineEmbeddingBudget, consented, deadline);
         check(deadline);
         if (requireAnswerEvidence && !hasAnswerEvidence(
-                question, language, lexicalCandidates, vectorCandidates, embedded, config)) {
+                question, language, lexicalCandidates, vectorCandidates, embedded, config, senderId != null)) {
             return empty(optedOutEvidenceOverlap);
         }
 
@@ -154,8 +167,11 @@ public class RagRetrievalService {
         }
 
         check(deadline);
-        RagContextBuilder.ContextResult contextResult = RagContextBuilder.build(
-                ranked, recent, index, config, admittedFrom);
+        // Named lookups need complete, separately citable statements by just that speaker.
+        // Unrestricted neighbors or reply parents would defeat that boundary.
+        RagContextBuilder.ContextResult contextResult = senderId == null
+                ? RagContextBuilder.build(ranked, recent, index, config, admittedFrom)
+                : RagContextBuilder.buildSpeakerContext(ranked, recent, config, admittedFrom);
         check(deadline);
         return new RetrievalResult(
                 ranked,
@@ -164,7 +180,10 @@ public class RagRetrievalService {
                 ranked.get(0).score(),
                 contextResult.inputChars(),
                 contextResult.messages(),
-                optedOutEvidenceOverlap);
+                optedOutEvidenceOverlap,
+                // MMR deduplicates similar language, including claims that differ in their value.
+                // Keep the bounded, admitted pool for the local lookup check only.
+                requireAnswerEvidence ? fused.stream().map(ScoredMessage::message).toList() : List.of());
     }
 
     private static RetrievalResult empty(boolean optedOutEvidenceOverlap) {
@@ -186,8 +205,9 @@ public class RagRetrievalService {
             List<RagMessage> lexicalCandidates,
             List<RagMessage> vectorCandidates,
             RagEmbeddingService.RetrievalEmbeddings embedded,
-            RagProperties.Retrieval config) {
-        List<String> questionTerms = essentialQuestionTerms(question, language, config);
+            RagProperties.Retrieval config,
+            boolean namedSpeaker) {
+        List<String> questionTerms = RagQuestionTerms.answerTerms(question, language, config.getLexicalTermLimit());
         if (questionTerms.isEmpty()) {
             return false;
         }
@@ -195,16 +215,18 @@ public class RagRetrievalService {
         for (RagMessage candidate : lexicalCandidates) {
             lexicalCandidateIds.add(candidate.id());
         }
+        boolean needsSettledEvidence = RagExtractiveAnswerer.needsSettledEvidence(question, language);
+        boolean attributedDate = namedSpeaker && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
+        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
+        double requiredCoverage = config.getLexicalAnswerMinCoverage();
         for (RagMessage candidate : vectorCandidates) {
-            Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(candidate.content(), language));
-            int matched = 0;
-            for (String term : questionTerms) {
-                if (containsMatchingTerm(messageTerms, term)) {
-                    matched++;
-                }
-            }
-            double coverage = (double) matched / questionTerms.size();
-            if (coverage + 0.0000001 < config.getLexicalAnswerMinCoverage()) {
+            List<String> statements = namedSpeaker
+                    ? RagExtractiveAnswerer.attributedStatements(candidate.content(), attributedDate, dateLookup)
+                    : needsSettledEvidence ? RagExtractiveAnswerer.settledStatements(candidate.content())
+                    : List.of(candidate.content());
+            boolean covered = statements.stream().anyMatch(text -> dateLookup != null && dateLookup.inspect(text).directlyBound()
+                    || hasCoverage(text, language, questionTerms, requiredCoverage));
+            if (!covered) {
                 continue;
             }
             if (lexicalCandidateIds.contains(candidate.id())
@@ -215,36 +237,16 @@ public class RagRetrievalService {
         return false;
     }
 
-    private static List<String> essentialQuestionTerms(
-            String question, SummaryLanguage language, RagProperties.Retrieval config) {
-        String normalized = " " + RagQuestionNormalizer.normalize(question) + " ";
-        Set<String> scaffoldPhraseTokens = new HashSet<>();
-        if (language == SummaryLanguage.VI) {
-            for (List<String> phrase : VI_QUERY_SCAFFOLD_PHRASES) {
-                if (normalized.contains(" " + String.join(" ", phrase) + " ")) {
-                    scaffoldPhraseTokens.addAll(phrase);
-                }
+    private static boolean hasCoverage(
+            String text, SummaryLanguage language, List<String> questionTerms, double requiredCoverage) {
+        Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(text, language));
+        int matched = 0;
+        for (String term : questionTerms) {
+            if (containsMatchingTerm(messageTerms, term)) {
+                matched++;
             }
         }
-        List<String> extracted = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
-        List<String> essential = new java.util.ArrayList<>();
-        for (int index = 0; index < extracted.size(); index++) {
-            String term = extracted.get(index);
-            if (language != SummaryLanguage.VI && EN_QUERY_SCAFFOLD_TERMS.contains(term)
-                    || scaffoldPhraseTokens.contains(term)) {
-                continue;
-            }
-            if (language == SummaryLanguage.VI && VI_QUERY_SCAFFOLD_TERMS.contains(term)) {
-                continue;
-            }
-            if (language == SummaryLanguage.VI && index == 0 && "tim".equals(term)) {
-                continue;
-            }
-            if (!essential.contains(term)) {
-                essential.add(term);
-            }
-        }
-        return essential;
+        return (double) matched / questionTerms.size() + 0.0000001 >= requiredCoverage;
     }
 
     private static double vectorCosine(
