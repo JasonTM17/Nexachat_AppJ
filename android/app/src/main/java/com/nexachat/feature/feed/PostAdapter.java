@@ -114,7 +114,7 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         }
 
         bindImage(holder.image, post.image());
-        bindVideo(holder, post);
+        bindVideo(videoController, holder, post);
         bindReactions(holder, post);
 
         holder.comments.setText(post.commentCount() == 0
@@ -180,11 +180,18 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
                 .into(image);
     }
 
-    private void bindVideo(@NonNull Holder holder, @NonNull FeedRepository.Post post) {
+    static void bindVideo(
+            @Nullable FeedVideoController videoController,
+            @NonNull Holder holder,
+            @NonNull FeedRepository.Post post) {
         FeedRepository.Video video = post.video();
         String absolute = video == null ? null : AppConfig.absoluteMediaUrl(video.url());
         if (absolute == null || videoController == null) {
-            holder.videoPlayer.setPlayer(null);
+            if (videoController != null) {
+                videoController.onRecycled(holder, holder.videoPlayer);
+            } else {
+                holder.videoPlayer.setPlayer(null);
+            }
             holder.videoContainer.setVisibility(View.GONE);
             return;
         }

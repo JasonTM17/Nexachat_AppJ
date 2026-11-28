@@ -90,7 +90,10 @@ public final class FeedRulesTest {
         assertTrue(FeedRules.isMimeNotAllowed(new FeedApiException(415, "MIME_NOT_ALLOWED")));
         assertTrue(FeedRules.isMp4Mime("video/mp4"));
         assertTrue(FeedRules.isMp4Mime("VIDEO/MP4"));
+        assertTrue(FeedRules.isMp4Mime("video/mp4; codecs=\"avc1.42E01E, mp4a.40.2\""));
+        assertTrue(FeedRules.isMp4Mime(" application/mp4 ; charset=utf-8 "));
         assertFalse(FeedRules.isMp4Mime("video/webm"));
+        assertFalse(FeedRules.isMp4Mime("video/webm; codecs=\"vp9\""));
         assertTrue(FeedRules.hasIsoBmffFtypBox(new byte[]{0, 0, 0, 20, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}));
         assertFalse(FeedRules.hasIsoBmffFtypBox(new byte[]{0, 0, 0, 1}));
     }

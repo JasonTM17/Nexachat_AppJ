@@ -363,6 +363,98 @@ public final class FeedViewModelTest {
         assertTrue(repository.setReactionCalls.isEmpty());
     }
 
+    @Test public void postCreatedSyncEventPrependsWithoutDuplicateWhenUnfiltered() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1")), null));
+
+        FeedRepository.Post created = post("post-new");
+        syncBus.publish(new FeedSyncBus.PostCreated(created));
+        syncBus.publish(new FeedSyncBus.PostCreated(created));
+
+        assertEquals(List.of("post-new", "post-1"), ids(state().getItems()));
+    }
+
+    @Test public void forceRefreshCancelsInFlightLoadMoreAndReloadsPageOne() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1")), "cursor-1"));
+        viewModel.loadMore();
+        assertTrue(state().isLoadingMore());
+
+        viewModel.forceRefresh();
+        assertTrue(state().isRefreshing());
+        assertFalse(state().isLoadingMore());
+        assertEquals(3, repository.listPostsCalls.size());
+        assertNull(repository.listPostsCursors.get(2));
+
+        repository.listPostsCalls.get(2).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-new"), post("post-1")), null));
+        assertEquals(List.of("post-new", "post-1"), ids(state().getItems()));
+        assertFalse(state().isRefreshing());
+    }
+
+    @Test public void deletePostFailureWhileLoadMoreIsBusyRestoresRowAndReloads() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1"), post("post-2")), "cursor-1"));
+
+        viewModel.deletePost("post-1");
+        viewModel.loadMore();
+        assertTrue(state().isBusy());
+
+        repository.deletePostCalls.get(0).onError(new IllegalStateException("offline"));
+
+        assertEquals(FeedViewModel.Outcome.POST_DELETE_FAILED, viewModel.getOutcome().getValue());
+        assertEquals(List.of("post-1", "post-2"), ids(state().getItems()));
+        assertEquals(3, repository.listPostsCalls.size());
+        assertNull(repository.listPostsCursors.get(2));
+    }
+
+    @Test public void setAuthorFilterUpdatesNameWhenSameAuthorIdMatches() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1")), null));
+
+        viewModel.setAuthorFilter("author-2", null);
+        assertNull(state().getAuthorName());
+
+        viewModel.setAuthorFilter("author-2", "Binh");
+        assertEquals("Binh", state().getAuthorName());
+        assertEquals(2, repository.listPostsCalls.size());
+    }
+
+    @Test public void toggleReactionAndSyncUpdatePreserveLoadingMoreFlag() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1"), post("post-2")), "cursor-1"));
+        viewModel.loadMore();
+        assertTrue(state().isLoadingMore());
+
+        viewModel.toggleReaction("post-1", "\uD83D\uDC4D");
+        assertTrue(state().isLoadingMore());
+        assertTrue(state().isBusy());
+
+        repository.setReactionCalls.get(0).onSuccess(
+                List.of(new FeedRepository.Reaction("\uD83D\uDC4D", 1, true)));
+        assertTrue(state().isLoadingMore());
+
+        FeedRepository.Post updated = new FeedRepository.Post(
+                "post-2",
+                new FeedRepository.Author("author-1", "An", null),
+                "updated body",
+                null,
+                null,
+                "2026-02-25T05:33:20Z",
+                "2026-02-25T05:40:00Z",
+                1,
+                List.of(),
+                true);
+        syncBus.publish(new FeedSyncBus.PostUpdated(updated));
+        assertTrue(state().isLoadingMore());
+        assertEquals("updated body", state().getItems().get(1).body());
+
+        repository.listPostsCalls.get(1).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-3")), null));
+        assertFalse(state().isLoadingMore());
+        assertEquals(List.of("post-1", "post-2", "post-3"), ids(state().getItems()));
+    }
+
     private FeedViewModel.UiState state() {
         return viewModel.getUiState().getValue();
     }

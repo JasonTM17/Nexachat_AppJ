@@ -1,5 +1,6 @@
 package com.nexachat.feature.feed;
 
+import android.content.Context;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -143,7 +144,16 @@ public final class AuthorProfileSheetFragment extends NexaBottomSheetFragment {
 
     private void openChat() {
         openConversationAndRun(conversationId -> {
+            if (!isAdded() || getParentFragmentManager().isStateSaved()) {
+                return;
+            }
             var nav = NavHostFragment.findNavController(this);
+            var destination = nav.getCurrentDestination();
+            if (destination == null
+                    || (destination.getId() != R.id.publicFeedFragment
+                            && destination.getId() != R.id.postDetailFragment)) {
+                return;
+            }
             Bundle args = new Bundle();
             args.putString("conversationId", conversationId);
             dismissAllowingStateLoss();
@@ -153,9 +163,16 @@ public final class AuthorProfileSheetFragment extends NexaBottomSheetFragment {
 
     private void startCall(@NonNull CallMediaType mediaType) {
         openConversationAndRun(conversationId -> {
+            if (!isAdded() || getParentFragmentManager().isStateSaved()) {
+                return;
+            }
+            Context context = getContext();
+            if (context == null) {
+                return;
+            }
             dismissAllowingStateLoss();
             CallLauncher.start(
-                    requireContext(),
+                    context,
                     conversationId,
                     authorId,
                     resolvedName == null ? "" : resolvedName,

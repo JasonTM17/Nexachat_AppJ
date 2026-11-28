@@ -115,7 +115,9 @@ public final class FeedRules {
         if (mime == null) {
             return false;
         }
-        String normalized = mime.trim().toLowerCase(Locale.ROOT);
+        int semicolon = mime.indexOf(';');
+        String base = semicolon >= 0 ? mime.substring(0, semicolon) : mime;
+        String normalized = base.trim().toLowerCase(Locale.ROOT);
         return "video/mp4".equals(normalized) || "application/mp4".equals(normalized);
     }
 

@@ -68,4 +68,16 @@ public final class AppConfigMediaUrlTest {
     public void bareRelativePathGainsASingleSlash() {
         assertEquals(AppConfig.API_BASE_URL + "/files/a", AppConfig.absoluteMediaUrl("files/a"));
     }
+
+    @Test
+    public void trailingSlashesOnApiBaseUrlDoNotProduceDoubleSlashes() {
+        assertEquals("https://api.nexachat.io.vn/api/v1/feed/videos/v1",
+                AppConfig.absoluteMediaUrl("/api/v1/feed/videos/v1", "https://api.nexachat.io.vn/"));
+        assertEquals("https://api.nexachat.io.vn/files/a.png",
+                AppConfig.absoluteMediaUrl("files/a.png", "https://api.nexachat.io.vn///"));
+        assertEquals("https://api.nexachat.io.vn/api/v1/files/a.png",
+                AppConfig.absoluteMediaUrl(
+                        "https://api.nexachat.io.vn/api/v1/files/a.png",
+                        "https://api.nexachat.io.vn/"));
+    }
 }

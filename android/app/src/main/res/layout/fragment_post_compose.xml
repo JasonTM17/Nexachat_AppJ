@@ -108,10 +108,10 @@
                     android:layout_height="@dimen/min_touch_target"
                     android:layout_gravity="top|end"
                     android:layout_margin="@dimen/space_xs"
-                    android:background="@drawable/bg_streak_flame_disc"
+                    android:background="@drawable/bg_media_play_button"
                     android:contentDescription="@string/feed_compose_remove_image"
                     android:src="@drawable/ic_close"
-                    app:tint="?attr/colorOnSurface" />
+                    app:tint="@color/nexa_on_media_meta" />
             </FrameLayout>
 
             <FrameLayout
@@ -149,10 +149,10 @@
                     android:layout_height="@dimen/min_touch_target"
                     android:layout_gravity="top|end"
                     android:layout_margin="@dimen/space_xs"
-                    android:background="@drawable/bg_streak_flame_disc"
+                    android:background="@drawable/bg_media_play_button"
                     android:contentDescription="@string/feed_compose_remove_video"
                     android:src="@drawable/ic_close"
-                    app:tint="?attr/colorOnSurface" />
+                    app:tint="@color/nexa_on_media_meta" />
             </FrameLayout>
 
             <LinearLayout

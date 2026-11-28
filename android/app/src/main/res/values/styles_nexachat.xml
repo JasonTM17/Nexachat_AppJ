@@ -87,6 +87,7 @@
         <item name="iconPadding">@dimen/space_sm</item>
         <item name="backgroundTint">@color/nexa_filled_button_bg</item>
         <item name="android:textColor">@color/nexa_filled_button_text</item>
+        <item name="iconTint">@color/nexa_filled_button_text</item>
         <item name="rippleColor">@color/nexa_filled_button_ripple</item>
     </style>
 

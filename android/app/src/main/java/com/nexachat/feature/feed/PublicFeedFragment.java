@@ -133,7 +133,7 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
                 RESULT_POST_CREATED, getViewLifecycleOwner(),
                 (key, result) -> {
                     scrollToTopOnRefresh = true;
-                    viewModel.refresh();
+                    viewModel.forceRefresh();
                 });
         getParentFragmentManager().setFragmentResultListener(
                 RESULT_POST_EDITED, getViewLifecycleOwner(),
@@ -213,6 +213,21 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
                 && !state.getItems().isEmpty();
         if (shouldScrollTop) {
             scrollToTopOnRefresh = false;
+        }
+        if (videoController != null) {
+            String activePostId = videoController.getActivePostId();
+            if (activePostId != null) {
+                boolean stillPresent = false;
+                for (FeedRepository.Post item : state.getItems()) {
+                    if (activePostId.equals(item.id())) {
+                        stillPresent = true;
+                        break;
+                    }
+                }
+                if (!stillPresent) {
+                    videoController.stopPost(activePostId);
+                }
+            }
         }
         adapter.submitList(state.getItems(), () -> {
             if (binding == null || !shouldScrollTop) {
@@ -399,7 +414,12 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
                 .setMessage(R.string.feed_delete_body)
                 .setNegativeButton(R.string.feed_cancel, null)
                 .setPositiveButton(R.string.feed_delete_confirm,
-                        (dialog, which) -> viewModel.deletePost(post.id()))
+                        (dialog, which) -> {
+                            if (videoController != null) {
+                                videoController.stopPost(post.id());
+                            }
+                            viewModel.deletePost(post.id());
+                        })
                 .show();
     }
 

@@ -107,7 +107,7 @@ public final class FeedViewModel extends ViewModel {
         boolean isBusy() { return loading || refreshing || loadingMore; }
 
         UiState withItems(List<FeedRepository.Post> next, @Nullable String cursor) {
-            return new UiState(next, false, false, false, false, false,
+            return new UiState(next, loading, refreshing, loadingMore, loadMoreError, error,
                     cursor, authorId, authorName, query);
         }
     }
@@ -157,6 +157,12 @@ public final class FeedViewModel extends ViewModel {
         String normalizedId = FeedRules.normalize(authorId);
         String normalizedName = FeedRules.normalize(authorName);
         if (Objects.equals(normalizedId, state.authorId)) {
+            if (!Objects.equals(normalizedName, state.authorName)) {
+                uiState.setValue(new UiState(
+                        state.items, state.loading, state.refreshing, state.loadingMore,
+                        state.loadMoreError, state.error, state.nextCursor,
+                        state.authorId, normalizedName, state.query));
+            }
             return;
         }
         loadDisposables.clear();
@@ -193,6 +199,20 @@ public final class FeedViewModel extends ViewModel {
                 state.items, false, true, false, false, false, state.nextCursor,
                 state.authorId, state.authorName, state.query));
         loadFirstPage(true);
+    }
+
+    /** Cancels any in-flight list load and reloads page 1 even if a load was busy. */
+    public void forceRefresh() {
+        UiState state = uiState.getValue();
+        if (state == null) {
+            return;
+        }
+        loadDisposables.clear();
+        boolean hasRows = !state.items.isEmpty();
+        uiState.setValue(new UiState(
+                state.items, !hasRows, hasRows, false, false, false, state.nextCursor,
+                state.authorId, state.authorName, state.query));
+        loadFirstPage(hasRows);
     }
 
     /** Retry after the first page failed. */
@@ -241,15 +261,21 @@ public final class FeedViewModel extends ViewModel {
         if (state == null) {
             return;
         }
+        int removedIndex = indexOf(state.items, postId);
+        FeedRepository.Post removedPost = removedIndex >= 0 ? state.items.get(removedIndex) : null;
         uiState.setValue(state.withItems(remove(state.items, postId), state.nextCursor));
         disposables.add(repository.deletePost(postId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
-                        () -> outcome.setValue(Outcome.POST_DELETED),
+                        () -> {
+                            syncBus.publish(new FeedSyncBus.PostDeleted(postId));
+                            outcome.setValue(Outcome.POST_DELETED);
+                        },
                         error -> {
                             outcome.setValue(Outcome.POST_DELETE_FAILED);
-                            refresh();
+                            restorePost(removedPost, removedIndex);
+                            forceRefresh();
                         }));
     }
 
@@ -291,7 +317,17 @@ public final class FeedViewModel extends ViewModel {
         if (state == null) {
             return;
         }
-        if (event instanceof FeedSyncBus.PostUpdated updated) {
+        if (event instanceof FeedSyncBus.PostCreated created) {
+            if (!state.hasActiveFilter() && find(state.items, created.post().id()) == null) {
+                List<FeedRepository.Post> next = new ArrayList<>(state.items.size() + 1);
+                next.add(created.post());
+                next.addAll(state.items);
+                uiState.setValue(new UiState(
+                        List.copyOf(next), state.loading, state.refreshing, state.loadingMore,
+                        state.loadMoreError, state.error, state.nextCursor,
+                        state.authorId, state.authorName, state.query));
+            }
+        } else if (event instanceof FeedSyncBus.PostUpdated updated) {
             if (find(state.items, updated.post().id()) != null) {
                 uiState.setValue(state.withItems(
                         replace(state.items, updated.post().id(), updated.post()),
@@ -406,6 +442,33 @@ public final class FeedViewModel extends ViewModel {
             }
         }
         return List.copyOf(remaining);
+    }
+
+    private void restorePost(@Nullable FeedRepository.Post removedPost, int removedIndex) {
+        if (removedPost == null) {
+            return;
+        }
+        UiState current = uiState.getValue();
+        if (current == null || find(current.items, removedPost.id()) != null) {
+            return;
+        }
+        List<FeedRepository.Post> restored = new ArrayList<>(current.items.size() + 1);
+        restored.addAll(current.items);
+        int insertAt = Math.max(0, Math.min(removedIndex, restored.size()));
+        restored.add(insertAt, removedPost);
+        uiState.setValue(new UiState(
+                List.copyOf(restored), current.loading, current.refreshing, current.loadingMore,
+                current.loadMoreError, current.error, current.nextCursor,
+                current.authorId, current.authorName, current.query));
+    }
+
+    private static int indexOf(List<FeedRepository.Post> items, String postId) {
+        for (int i = 0; i < items.size(); i++) {
+            if (postId.equals(items.get(i).id())) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Nullable

@@ -278,6 +278,14 @@ public final class PostDetailViewModelTest {
 
         assertEquals(PostDetailViewModel.Outcome.COMMENT_DELETE_FAILED, outcome());
         assertEquals(2, repository.getPostCalls.size());
+        assertEquals(List.of("comment-1"), commentIds(state().getComments()));
+        assertEquals(1, state().getPost().commentCount());
+
+        // Even if the follow-up reload fails, the comment stays restored locally.
+        repository.getPostCalls.get(1).onError(new IllegalStateException("offline"));
+        assertEquals(List.of("comment-1"), commentIds(state().getComments()));
+        assertEquals(1, state().getPost().commentCount());
+        assertFalse(state().isError());
     }
 
     @Test public void deletingThePostReportsSuccess() {
@@ -411,6 +419,39 @@ public final class PostDetailViewModelTest {
         assertFalse(state().isCommentsError());
         assertEquals(List.of("comment-1"), commentIds(state().getComments()));
         assertFalse(emptyCommentsCtaVisible());
+    }
+
+    @Test public void loadIfNeededPreservesPaginatedCommentsAcrossRecreation() {
+        loadPostWithComments("cursor-1");
+        viewModel.loadMoreComments();
+        repository.listCommentsCalls.get(1).onSuccess(
+                new FeedRepository.CommentPage(List.of(comment("comment-2")), "cursor-2"));
+
+        viewModel.loadIfNeeded("post-1");
+
+        assertEquals(1, repository.getPostCalls.size());
+        assertEquals(List.of("comment-1", "comment-2"), commentIds(state().getComments()));
+        assertTrue(state().hasMoreComments());
+
+        viewModel.loadIfNeeded("post-2");
+        assertEquals(2, repository.getPostCalls.size());
+    }
+
+    @Test public void getPostFailureWithExistingPostPreservesCursorAndEditingComment() {
+        viewModel.load("post-1");
+        repository.getPostCalls.get(0).onSuccess(post("post-1", 2));
+        FeedRepository.Comment own = ownComment("comment-1", "editable");
+        repository.listCommentsCalls.get(0).onSuccess(
+                new FeedRepository.CommentPage(List.of(own, comment("comment-2")), "cursor-1"));
+        viewModel.startEditComment(own);
+
+        viewModel.load("post-1");
+        repository.getPostCalls.get(1).onError(new IllegalStateException("offline"));
+
+        assertFalse(state().isError());
+        assertEquals("post-1", state().getPost().id());
+        assertTrue(state().hasMoreComments());
+        assertEquals("comment-1", state().getEditingComment().id());
     }
 
     /**

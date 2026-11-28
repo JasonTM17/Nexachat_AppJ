@@ -151,6 +151,15 @@ public final class PostDetailViewModel extends ViewModel {
     /** One-shot result of the last action; consume with {@link #onOutcomeShown()}. */
     @NonNull public LiveData<Outcome> getOutcome() { return outcome; }
 
+    /** Loads the post only when switching posts or when no post is loaded/loading yet. */
+    public void loadIfNeeded(@NonNull String id) {
+        UiState state = uiState.getValue();
+        if (id.equals(postId) && state != null && (state.post != null || state.loading)) {
+            return;
+        }
+        load(id);
+    }
+
     /** Loads the post and its first comment page; safe to call again after a failure. */
     public void load(@NonNull String id) {
         if (!id.equals(postId)) {
@@ -174,10 +183,17 @@ public final class PostDetailViewModel extends ViewModel {
                     loadComments(null);
                 }, error -> {
                     UiState state = uiState.getValue();
+                    FeedRepository.Post existingPost = state == null ? null : state.post;
                     uiState.setValue(new UiState(
-                            state == null ? null : state.post,
+                            existingPost,
                             state == null ? List.of() : state.comments,
-                            false, true, false, false, null, false, null));
+                            false,
+                            existingPost == null,
+                            false,
+                            false,
+                            state == null ? null : state.nextCursor,
+                            state != null && state.commentsError,
+                            state == null ? null : state.editingComment));
                 }));
     }
 
@@ -319,19 +335,28 @@ public final class PostDetailViewModel extends ViewModel {
         if (state == null) {
             return;
         }
+        int removedIndex = -1;
+        FeedRepository.Comment removedComment = null;
         List<FeedRepository.Comment> remaining = new ArrayList<>(state.comments.size());
-        for (FeedRepository.Comment comment : state.comments) {
-            if (!commentId.equals(comment.id())) {
+        for (int i = 0; i < state.comments.size(); i++) {
+            FeedRepository.Comment comment = state.comments.get(i);
+            if (commentId.equals(comment.id()) && removedComment == null) {
+                removedIndex = i;
+                removedComment = comment;
+            } else if (!commentId.equals(comment.id())) {
                 remaining.add(comment);
             }
         }
+        final int restoreIndex = removedIndex;
+        final FeedRepository.Comment restoreComment = removedComment;
+        final FeedRepository.Comment previousEditing = state.editingComment;
         FeedRepository.Comment nextEditing =
                 state.editingComment != null && commentId.equals(state.editingComment.id())
                         ? null
                         : state.editingComment;
         FeedRepository.Post post = state.post;
-        FeedRepository.Post updatedPost = post == null
-                ? null
+        FeedRepository.Post updatedPost = post == null || restoreComment == null
+                ? post
                 : withCommentCount(post, Math.max(0, post.commentCount() - 1));
         uiState.setValue(new UiState(
                 updatedPost,
@@ -349,9 +374,43 @@ public final class PostDetailViewModel extends ViewModel {
                             outcome.setValue(Outcome.COMMENT_DELETED);
                         },
                         error -> {
+                            restoreDeletedComment(restoreComment, restoreIndex, previousEditing);
                             outcome.setValue(Outcome.COMMENT_DELETE_FAILED);
                             load(postId);
                         }));
+    }
+
+    private void restoreDeletedComment(
+            @Nullable FeedRepository.Comment removedComment,
+            int removedIndex,
+            @Nullable FeedRepository.Comment previousEditing) {
+        if (removedComment == null) {
+            return;
+        }
+        UiState current = uiState.getValue();
+        if (current == null) {
+            return;
+        }
+        for (FeedRepository.Comment existing : current.comments) {
+            if (removedComment.id().equals(existing.id())) {
+                return;
+            }
+        }
+        List<FeedRepository.Comment> restored = new ArrayList<>(current.comments.size() + 1);
+        restored.addAll(current.comments);
+        int insertAt = Math.max(0, Math.min(removedIndex, restored.size()));
+        restored.add(insertAt, removedComment);
+        FeedRepository.Post post = current.post;
+        FeedRepository.Post restoredPost = post == null
+                ? null
+                : withCommentCount(post, post.commentCount() + 1);
+        FeedRepository.Comment restoredEditing =
+                current.editingComment != null ? current.editingComment : previousEditing;
+        uiState.setValue(new UiState(
+                restoredPost,
+                List.copyOf(restored),
+                current.loading, current.error, current.loadingMore, current.sending,
+                current.nextCursor, current.commentsError, restoredEditing));
     }
 
     public void deletePost() {

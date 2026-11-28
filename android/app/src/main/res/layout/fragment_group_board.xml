@@ -9,7 +9,7 @@
         android:id="@+id/boardToolbar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:minHeight="?attr/actionBarSize"
+        android:minHeight="@dimen/app_bar_min_height"
         android:background="?attr/colorSurface"
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"

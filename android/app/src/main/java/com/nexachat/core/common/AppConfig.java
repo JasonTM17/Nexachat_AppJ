@@ -39,24 +39,41 @@ public final class AppConfig {
      */
     @Nullable
     public static String absoluteMediaUrl(@Nullable String raw) {
-        if (raw == null || raw.isEmpty()) {
+        return absoluteMediaUrl(raw, API_BASE_URL);
+    }
+
+    @Nullable
+    public static String absoluteMediaUrl(@Nullable String raw, @Nullable String baseUrl) {
+        if (raw == null || raw.isEmpty() || baseUrl == null || baseUrl.isEmpty()) {
             return null;
         }
         HttpUrl parsed = HttpUrl.parse(raw);
-        HttpUrl base = HttpUrl.parse(API_BASE_URL);
+        HttpUrl base = HttpUrl.parse(baseUrl);
         if (parsed != null) {
             if (!parsed.username().isEmpty() || !parsed.password().isEmpty()) {
                 return null;
             }
             return base != null && isSameOrigin(parsed, base) ? raw : null;
         }
+        if (base == null) {
+            return null;
+        }
+        String normalizedBase = stripTrailingSlashes(baseUrl);
         if (raw.startsWith("/")) {
-            return API_BASE_URL + raw;
+            return normalizedBase + raw;
         }
         if (NON_HTTP_SCHEME.matcher(raw).matches()) {
             return null;
         }
-        return API_BASE_URL + "/" + raw;
+        return normalizedBase + "/" + raw;
+    }
+
+    private static String stripTrailingSlashes(String url) {
+        int end = url.length();
+        while (end > 0 && url.charAt(end - 1) == '/') {
+            end--;
+        }
+        return url.substring(0, end);
     }
 
     /** True only when {@code target} shares scheme, host and port with {@code base}. */

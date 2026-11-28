@@ -46,6 +46,7 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
     private static final int MENU_REPORT = 3;
     private static final int MENU_MESSAGE = 4;
     private static final int MENU_COPY = 5;
+    private static final String STATE_EDITING_COMMENT_ID = "editing_comment_id";
 
     private FragmentPostDetailBinding binding;
     private PostDetailViewModel viewModel;
@@ -68,6 +69,9 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        if (savedInstanceState != null) {
+            lastEditingCommentId = savedInstanceState.getString(STATE_EDITING_COMMENT_ID);
+        }
         binding = FragmentPostDetailBinding.bind(view);
         viewModel = new ViewModelProvider(this).get(PostDetailViewModel.class);
         videoController = new FeedVideoController(requireContext(), okHttpClient);
@@ -148,7 +152,7 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
 
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getOutcome().observe(getViewLifecycleOwner(), this::handleOutcome);
-        viewModel.load(requirePostId());
+        viewModel.loadIfNeeded(requirePostId());
     }
 
     private void render(@NonNull PostDetailViewModel.UiState state) {
@@ -430,10 +434,17 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
     }
 
     @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (lastEditingCommentId != null) {
+            outState.putString(STATE_EDITING_COMMENT_ID, lastEditingCommentId);
+        }
+    }
+
+    @Override
     public void onDestroyView() {
         chatOpens.clear();
         openingChat = false;
-        lastEditingCommentId = null;
         if (videoController != null) {
             videoController.release();
             videoController = null;

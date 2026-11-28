@@ -288,8 +288,7 @@
                     android:text="@string/signup_send_code"
                     android:textStyle="bold"
                     app:icon="@drawable/ic_arrow_forward"
-                    app:iconGravity="textEnd"
-                    app:iconTint="?attr/colorOnPrimary" />
+                    app:iconGravity="textEnd" />
 
                 <LinearLayout
                     android:id="@+id/codeActions"

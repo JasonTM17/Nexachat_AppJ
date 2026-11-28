@@ -65,6 +65,7 @@
     <string name="feed_comment_rate_limited">Bạn bình luận quá nhiều. Hãy thử lại sau</string>
     <string name="feed_reaction_pill" translatable="false">%1$s %2$d</string>
     <string name="feed_comment_cd" translatable="false">%1$s: %2$s</string>
+    <string name="feed_comment_cd_with_meta" translatable="false">%1$s, %2$s: %3$s</string>
     <string name="feed_comments_empty">Chưa có bình luận nào</string>
     <string name="feed_comments_empty_cta">Thêm bình luận</string>
     <string name="feed_comment_count_zero">Chưa có bình luận</string>

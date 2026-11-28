@@ -69,17 +69,62 @@ public final class CommentAdapter extends ListAdapter<FeedRepository.Comment, Co
         holder.avatar.setName(author);
         holder.avatar.setAvatarUrl(comment.author().avatarUrl());
         holder.avatar.setOnlineStatus(null);
-        holder.time.setText(relativeTime(context, comment.createdAt()));
+        CharSequence timeText = relativeTime(context, comment.createdAt());
+        holder.time.setText(timeText);
         boolean edited = comment.editedAt() != null && !comment.editedAt().isBlank();
         holder.edited.setVisibility(edited ? View.VISIBLE : View.GONE);
-        holder.body.setText(comment.body() == null ? "" : comment.body());
+        String body = comment.body() == null ? "" : comment.body();
+        holder.body.setText(body);
         holder.menu.setVisibility(View.VISIBLE);
         holder.menu.setOnClickListener(anchor -> listener.onCommentMenu(comment, anchor));
         holder.authorHeader.setContentDescription(author);
         holder.authorHeader.setOnClickListener(
                 ignored -> listener.onOpenAuthor(comment.author(), comment.mine()));
-        holder.itemView.setContentDescription(context.getString(
-                R.string.feed_comment_cd, author, comment.body() == null ? "" : comment.body()));
+        holder.itemView.setContentDescription(formatContentDescription(
+                context, author, timeText, edited, body));
+    }
+
+    @NonNull
+    private static String formatContentDescription(
+            @NonNull Context context,
+            @NonNull String author,
+            @NonNull CharSequence timeText,
+            boolean edited,
+            @NonNull String body) {
+        String editedLabel = edited ? context.getString(R.string.feed_edited_parens) : null;
+        String meta = buildMeta(timeText, editedLabel);
+        if (meta.isEmpty()) {
+            return context.getString(R.string.feed_comment_cd, author, body);
+        }
+        return context.getString(R.string.feed_comment_cd_with_meta, author, meta, body);
+    }
+
+    @NonNull
+    static String buildMeta(@NonNull CharSequence timeText, @Nullable String editedLabel) {
+        String time = timeText.toString().trim();
+        String edited = editedLabel == null ? "" : editedLabel.trim();
+        if (time.isEmpty()) {
+            return edited;
+        }
+        if (edited.isEmpty()) {
+            return time;
+        }
+        return time + " " + edited;
+    }
+
+    @NonNull
+    static String formatContentDescription(
+            @NonNull String author,
+            @NonNull CharSequence timeText,
+            @Nullable String editedLabel,
+            @NonNull String body,
+            @NonNull String basePattern,
+            @NonNull String metaPattern) {
+        String meta = buildMeta(timeText, editedLabel);
+        if (meta.isEmpty()) {
+            return String.format(basePattern, author, body);
+        }
+        return String.format(metaPattern, author, meta, body);
     }
 
     private static CharSequence relativeTime(Context context, @Nullable String createdAt) {

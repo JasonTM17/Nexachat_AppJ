@@ -60,8 +60,8 @@
                     android:background="@drawable/bg_call_avatar"
                     android:gravity="center"
                     android:importantForAccessibility="no"
+                    android:textAppearance="?attr/textAppearanceHeadlineMedium"
                     android:textColor="@color/call_avatar_foreground"
-                    android:textSize="28sp"
                     android:textStyle="bold" />
             </FrameLayout>
 
@@ -72,8 +72,8 @@
                 android:layout_marginTop="12dp"
                 android:ellipsize="end"
                 android:gravity="center"
+                android:textAppearance="?attr/textAppearanceHeadlineSmall"
                 android:textColor="@color/call_text_primary"
-                android:textSize="22sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -83,8 +83,8 @@
                 android:layout_marginTop="4dp"
                 android:accessibilityLiveRegion="polite"
                 android:gravity="center"
-                android:textColor="@color/call_text_secondary"
-                android:textSize="14sp" />
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="@color/call_text_secondary" />
 
             <TextView
                 android:id="@+id/call_timer"
@@ -93,8 +93,8 @@
                 android:layout_marginTop="8dp"
                 android:accessibilityLiveRegion="polite"
                 android:gravity="center"
+                android:textAppearance="?attr/textAppearanceHeadlineMedium"
                 android:textColor="@color/call_text_primary"
-                android:textSize="24sp"
                 android:textStyle="bold"
                 android:visibility="gone" />
         </LinearLayout>
@@ -104,7 +104,11 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <include layout="@layout/view_call_controls" />
+        <include
+            layout="@layout/view_call_controls"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp" />
     </LinearLayout>
     </ScrollView>
 
