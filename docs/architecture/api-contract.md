@@ -1699,6 +1699,7 @@ messages and AI-opted-out conversations are never scanned or shown.
 | `POST /api/v1/admin/feed/comments/{id}/hide` | staff | `{reason}` ≤500 | `204` empty | 401/403 · 404 |
 | `POST /api/v1/admin/feed/comments/{id}/unhide` | staff | optional `{reason}` | `204` empty | 401/403 · 404 |
 | `POST /api/v1/admin/feed/reports/{id}/resolve` | staff | `{status: REVIEWED\|DISMISSED}` | `204` empty | 401/403 · 404 · `VALIDATION_FAILED` 400 |
+| `POST /api/v1/admin/feed/reports/{id}/video` | staff | — | `200` `video/mp4` bytes, `no-store` private, audited `FEED_REPORT_VIDEO_VIEW` | 401/403 · `FILE_NOT_FOUND` 404 (no eligible video, or post deleted) · `RATE_LIMITED` 429 (20/min) |
 
 Alert detection runs asynchronously: a bounded in-memory queue drains matched
 text messages into `alerts` rows storing a redacted snippet and matched rule
@@ -1753,7 +1754,7 @@ keyset-paginate newest first.
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `GET /api/v1/feed/posts` | Bearer | `?limit=` `?cursor=` | `200` `PostPageResponse` `{items, nextCursor}` | `UNAUTHORIZED` 401 · `VALIDATION_FAILED` 400 (bad cursor) |
-| `POST /api/v1/feed/posts` | Bearer | `{body?, imageId?, clientPostId}` — `clientPostId` required; `body` required unless `imageId` is set (≤1000 chars) | `201` `PostResponse` created; `200` `PostResponse` on a `clientPostId` replay (returns the stored row) | `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (3/min, 30/day) |
+| `POST /api/v1/feed/posts` | Bearer | `{body?, imageId?, videoId?, clientPostId}` — `clientPostId` required; `body` required unless `imageId` is set (≤1000 chars); a `videoId` post requires a non-blank caption and cannot also carry `imageId` | `201` `PostResponse` created; `200` `PostResponse` on a `clientPostId` replay (returns the stored row) | `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (3/min, 30/day) |
 | `GET /api/v1/feed/posts/{postId}` | Bearer | — | `200` `PostResponse` | `POST_NOT_FOUND` 404 |
 | `DELETE /api/v1/feed/posts/{postId}` | Bearer author | — | `204` empty | `POST_NOT_FOUND` 404 · `FORBIDDEN` 403 |
 | `PUT /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `200` `ReactionListResponse` (post's reaction aggregate; idempotent re-add) | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 (over 8 distinct emojis per user per post) · `RATE_LIMITED` 429 (60/min) |
@@ -1763,9 +1764,11 @@ keyset-paginate newest first.
 | `DELETE /api/v1/feed/comments/{commentId}` | Bearer author | — | `204` empty | `COMMENT_NOT_FOUND` 404 · `FORBIDDEN` 403 |
 | `POST /api/v1/feed/images` | Bearer | `multipart/form-data` `file`, `width?`, `height?` | `201` `FeedImageResponse` `{imageId, url, width, height, mimeType}` | `VALIDATION_FAILED` 400 (negative or >16384 dimensions) · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 (10/min, 100/day, ≤20 unbound) |
 | `GET /api/v1/feed/images/{imageId}` | Bearer | — | `200` image bytes | `FILE_NOT_FOUND` 404 |
+| `POST /api/v1/feed/videos` | Bearer | `multipart/form-data` `file` | `201` `FeedVideoResponse` `{videoId, url, mimeType}` | `VALIDATION_FAILED` 400 · `MIME_NOT_ALLOWED` 415 (box tree proves no MP4 video track) · `FILE_TOO_LARGE` 413 (over 4 MiB) · `RATE_LIMITED` 429 (shared with image uploads) |
+| `GET /api/v1/feed/videos/{videoId}` | Bearer | — | `200` `video/mp4` bytes, `no-store` private | `FILE_NOT_FOUND` 404 |
 
-`PostResponse` = `{id, author:{id, displayName, avatarUrl}, body, image:{url, width, height, mimeType}?, createdAt, commentCount, reactions:[{emoji, count, mine}], mine}` —
-`body` is null on an image-only post, `image` null on a text-only one.
+`PostResponse` = `{id, author:{id, displayName, avatarUrl}, body, image:{url, width, height, mimeType}?, video:{url, mimeType}?, createdAt, commentCount, reactions:[{emoji, count, mine}], mine}` —
+`body` is null on an image-only post, `image` null on a text-only or video one; the additive `video` field is present only on video posts (omitted otherwise).
 `commentCount` counts the post's visible comments (not deleted, not hidden);
 staff hide/unhide moves it. `CommentResponse` = `{id, postId, author:{id, displayName, avatarUrl}, body, createdAt, mine}`.
 Hidden and soft-deleted rows are excluded from every list/read predicate;
@@ -1779,13 +1782,38 @@ Feed posts and comments are reportable targets (`POST /reports` with
 the server snapshots the target body (≤500 chars) as the evidence
 `messageSnapshot` (`null` on an image-only post). See [`docs/architecture/public-feed.md`](public-feed.md).
 
+### Canonical social mapping — `/api/social/v1`
+
+Every public-feed route above is also exposed under the canonical
+`/api/social/v1` prefix with an identical contract (same controller, auth,
+validation, rate limits, and response shapes); the full mapping and the
+same-origin proxy boundary are specified in
+[`docs/architecture/social-api.md`](social-api.md):
+
+| Method & path | Auth | Success | Errors |
+|---|---|---|---|
+| `GET /api/social/v1/posts` | Bearer | `200` `PostPageResponse` | as `/api/v1/feed/posts` |
+| `POST /api/social/v1/posts` | Bearer | `201`/`200` `PostResponse` | as `/api/v1/feed/posts` |
+| `GET /api/social/v1/posts/{postId}` | Bearer | `200` `PostResponse` | as `/api/v1/feed/posts/{postId}` |
+| `DELETE /api/social/v1/posts/{postId}` | Bearer author | `204` empty | as `/api/v1/feed/posts/{postId}` |
+| `PUT /api/social/v1/posts/{postId}/reactions/{emoji}` | Bearer | `200` `ReactionListResponse` | as `/api/v1/feed` reactions |
+| `DELETE /api/social/v1/posts/{postId}/reactions/{emoji}` | Bearer | `200` `ReactionListResponse` | as `/api/v1/feed` reactions |
+| `GET /api/social/v1/posts/{postId}/comments` | Bearer | `200` `CommentPageResponse` | as `/api/v1/feed` comments |
+| `POST /api/social/v1/posts/{postId}/comments` | Bearer | `201`/`200` `CommentResponse` | as `/api/v1/feed` comments |
+| `DELETE /api/social/v1/comments/{commentId}` | Bearer author | `204` empty | as `/api/v1/feed/comments/{commentId}` |
+| `POST /api/social/v1/images` | Bearer | `201` `FeedImageResponse` | as `/api/v1/feed/images` |
+| `GET /api/social/v1/images/{imageId}` | Bearer | `200` image bytes | as `/api/v1/feed/images/{imageId}` |
+| `POST /api/social/v1/videos` | Bearer | `201` `FeedVideoResponse` | as `/api/v1/feed/videos` |
+| `GET /api/social/v1/videos/{videoId}` | Bearer | `200` `video/mp4` bytes | as `/api/v1/feed/videos/{videoId}` |
+
+
 ## Admin feed moderation — `/api/v1/admin/feed`
 
 The staff moderation queue for feed reports, used by `admin-web/`'s `/feed`
 page. All routes require `ADMIN` or `MODERATOR` like every `/api/v1/admin`
 route (see [Admin console](#admin-console--apiv1admin) for the role model); the
-six routes are listed in that table. `AdminFeedReportResponse` =
-`{id, targetType: POST|COMMENT, targetId, reason, details, messageSnapshot, status, createdAt, reporterId, reporterName, authorId, authorName, targetBody, targetDeleted, targetHidden, targetCreatedAt}`
+routes are listed in that table. `AdminFeedReportResponse` =
+`{id, targetType: POST|COMMENT, targetId, reason, details, messageSnapshot, status, createdAt, reporterId, reporterName, authorId, authorName, targetBody, targetDeleted, targetHidden, targetCreatedAt, targetHasVideo}`
 paged as `{items, page, size, total, hasMore}`. `POST …/hide` requires a
 `reason` (≤500 chars) and hides the target; `POST …/unhide` restores it;
 `POST …/reports/{id}/resolve` sets the report `status` to `REVIEWED` or

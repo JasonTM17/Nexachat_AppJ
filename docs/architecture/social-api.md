@@ -250,11 +250,56 @@ in a controls-enabled, playsInline, non-autoplaying `<video>` whose object URL
 is revoked on sign-out, refresh, or post removal. Native Android posting and
 playback are not part of this slice; older builds see the caption only.
 
-Before opening video to production, the rollout still needs staff video
-playback for report triage (the admin queue can already hide any post),
-exact-SHA CI, the deployment/proxy smoke above, device validation, and capacity
+Before opening video to production, the rollout still needs exact-SHA CI,
+the deployment/proxy smoke above, device validation, and capacity
 observation. Larger future uploads belong behind resumable private ingest with
 isolated validation/transcoding workers, never on chat request threads.
+
+### Staff preview of reported videos
+
+`POST /api/v1/admin/feed/reports/{reportId}/video` gives staff an on-demand
+preview of the video attached to a *reported post* for triage. It is not a
+public or general-purpose media route:
+
+- Auth: the `/api/v1/admin/**` filter-chain staff gate (`ADMIN` or
+  `MODERATOR`) plus a per-staff-member rate limit (20/min). Plain users get
+  403, anonymous 401. Role changes propagate through the access-token
+  validity cache rather than instantly, so a demoted staff member's existing
+  bearer dies at latest with the cache TTL or token expiry — the same
+  revocation model as every other admin route, not a preview-specific one.
+- Eligibility: the report must target a `POST` whose single media slot holds
+  a bound, undeleted MP4 within the 4 MiB cap, joined by the exact same
+  `POST_VIDEO_JOIN` predicate the report queue uses for its `targetHasVideo`
+  flag. Hidden and already-reviewed reports stay eligible (triage often needs
+  the video exactly then); a post the author deleted, a comment report, and
+  any unknown report id each answer `404 FILE_NOT_FOUND` with no audit row.
+  There is no arbitrary key or UUID input: the storage key is resolved
+  server-side from the report id alone.
+- Audit: one `FEED_REPORT_VIDEO_VIEW` row is written in the same transaction
+  before the key leaves the service — the audit row is the preview grant, so
+  a failed audit yields no bytes. The row proves the bytes were released to a
+  staff member, not that a human actually watched them.
+- Response: exact stored bytes as `video/mp4` with `Cache-Control: no-store`
+  private, `nosniff`, and exact Content-Length, read with a bounded prefix
+  read (`MAX_VIDEO_BYTES`) after authorization. Storage keys never appear in
+  the response. The admin console fetches it click-to-load only, exactly like
+  the public player.
+
+STRIDE notes for this boundary: spoofing is bounded by the staff role check
+plus fresh-per-request role resolution; tampering with which video is served
+is impossible because the key comes only from the eligibility join, not the
+request; repudiation is covered by the same-transaction audit row (with the
+residual that audit proves release, not viewing); information disclosure is
+limited to staff who already moderate the report queue, with no-store
+responses and no key leakage — the residual is that bytes legitimately sit in
+staff browser memory like any moderation content; denial of service is capped
+by the per-staff rate limit and the 4 MiB bounded read; elevation of privilege
+is blocked at both the filter chain and `AdminGuard.requireStaff`, with no
+path for a plain reporter to reach it.
+
+The admin queue flag `targetHasVideo` is `true` only when that same
+eligibility join matches, so staff never see a preview button that cannot
+resolve.
 
 ## Compatibility and rollout
 

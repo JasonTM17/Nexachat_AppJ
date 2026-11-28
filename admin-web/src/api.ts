@@ -152,11 +152,22 @@ function timeoutFor(path: string): number {
 
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; auth?: boolean } = {},
+  options: { method?: string; body?: unknown; auth?: boolean; asBlob?: boolean; signal?: AbortSignal } = {},
 ): Promise<T> {
-  const { method = 'GET', body, auth = true } = options;
+  const { method = 'GET', body, auth = true, asBlob = false, signal } = options;
   const controller = new AbortController();
+  // Bind a caller-supplied signal to the internal controller: aborting either
+  // one stops the request, and an already-aborted caller signal aborts now.
+  const onCallerAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', onCallerAbort);
+    }
+  }
   const timer = setTimeout(() => controller.abort(), timeoutFor(path));
+  const callerAborted = () => Boolean(signal?.aborted);
   const request = () =>
     fetch(`${API_BASE}${path}`, {
       method,
@@ -166,25 +177,35 @@ export async function api<T>(
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
+      // Media responses are personal staff content: never cached, never
+      // credentialed cross-origin, never followed through a redirect.
+      ...(asBlob ? { cache: 'no-store' as RequestCache, credentials: 'omit' as RequestCredentials, redirect: 'error' as RequestRedirect } : {}),
     });
   try {
     let res = await request();
-    if (res.status === 401 && auth && (await tryRefresh())) {
+    // A caller abort must never start a refresh or a retry.
+    if (res.status === 401 && auth && !callerAborted() && (await tryRefresh())) {
+      if (callerAborted()) throw new ApiException(0, 'ABORTED', 'The request was cancelled');
       res = await request();
     }
     if (!res.ok) throw await parseError(res);
     if (res.status === 204) return undefined as T;
+    if (asBlob) return (await res.blob()) as T;
     const text = await res.text();
     return (text ? JSON.parse(text) : undefined) as T;
   } catch (err) {
     // A hung request is retryable, not a session failure: surface it like any
     // other API error so ErrorBlock offers the usual Retry.
     if (controller.signal.aborted) {
+      if (callerAborted()) {
+        throw new ApiException(0, 'ABORTED', 'The request was cancelled');
+      }
       throw new ApiException(0, 'TIMEOUT', 'The request timed out');
     }
     throw err;
   } finally {
     clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onCallerAbort);
   }
 }
 
@@ -374,6 +395,8 @@ export interface FeedReport {
   targetDeleted: boolean;
   targetHidden: boolean;
   targetCreatedAt: string | null;
+  // Optional for older API responses that predate the flag.
+  targetHasVideo?: boolean;
 }
 
 export function feedReportsPath(status: FeedReportStatus, page: number, size: number): string {

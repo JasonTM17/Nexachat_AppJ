@@ -1,4 +1,15 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// Synthetic one-second solid-color H.264 clip generated for the server feed
+// tests (regen command documented in FeedFlowIT); reused here as the reported
+// video bytes.
+const VIDEO_BYTES = readFileSync(
+  fileURLToPath(
+    new URL('../../../server/src/test/resources/fixtures/feed_video_h264_64x48.mp4', import.meta.url),
+  ),
+);
 
 // Feed moderation journey against a stateful in-browser mock of the admin API.
 // The fixture mirrors the server's AdminFeedReportResponse field for field.
@@ -22,6 +33,8 @@ interface Report {
   targetDeleted: boolean;
   targetHidden: boolean;
   targetCreatedAt: string | null;
+  targetHasVideo?: boolean;
+  videoFails?: boolean;
 }
 
 interface Call {
@@ -147,6 +160,23 @@ async function mockAdmin(
         if (r.targetId === target[2]) r.targetHidden = target[3] === 'hide';
       }
       return json(route, 204);
+    }
+
+    const video = path.match(/^\/api\/v1\/admin\/feed\/reports\/([^/]+)\/video$/);
+    if (method === 'POST' && video) {
+      const found = mock.reports.find((r) => r.id === video[1]);
+      if (!found?.targetHasVideo || found.targetDeleted || found.videoFails) {
+        return json(route, 404, { error: { code: 'FILE_NOT_FOUND', message: 'no video' } });
+      }
+      // The audited staff path requires the bearer; a missing one is a 401.
+      if (!request.headers()['authorization']) {
+        return json(route, 401, { error: { code: 'UNAUTHORIZED', message: 'no token' } });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'video/mp4',
+        body: VIDEO_BYTES,
+      });
     }
 
     const resolve = path.match(/^\/api\/v1\/admin\/feed\/reports\/([^/]+)\/resolve$/);
@@ -494,6 +524,110 @@ test.describe('feed moderation', () => {
     expect(text).not.toContain('@');
     expect(text).not.toContain('+84');
     expect(text).not.toMatch(/\b0\d{9,10}\b/);
+  });
+
+  test('reported video loads on click, plays, and closes with no remote source', async ({
+    page,
+  }) => {
+    const videoText = 'Reported clip post';
+    const mock = await mockAdmin(page, {
+      reports: [
+        report({
+          id: 'r-video',
+          targetId: 'p-video',
+          reason: 'SPAM',
+          messageSnapshot: videoText,
+          targetBody: videoText,
+          targetHasVideo: true,
+        }),
+        report({
+          id: 'r-plain',
+          targetId: 'p-plain',
+          reason: 'SPAM',
+          messageSnapshot: 'plain text report',
+          targetBody: 'plain text report',
+        }),
+      ],
+    });
+    await page.goto('/feed');
+
+    const post = row(page, videoText);
+    const loadButton = post.getByRole('button', { name: 'Load reported video' });
+    await expect(loadButton).toBeVisible();
+    // Reports without the flag never offer the staff preview.
+    await expect(row(page, 'plain text report').getByRole('button', { name: 'Load reported video' }))
+      .toHaveCount(0);
+    // Nothing is fetched before the explicit click.
+    expect(mock.calls.filter((c) => c.path.endsWith('/video'))).toEqual([]);
+
+    await loadButton.click();
+    await expect.poll(
+      () => mock.calls.filter((c) => c.path === '/api/v1/admin/feed/reports/r-video/video').length,
+    ).toBe(1);
+
+    const player = post.locator('video');
+    await expect(player).toBeVisible();
+    const state = await player.evaluate(async (video: HTMLVideoElement) => {
+      await video.play();
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return {
+        width: video.videoWidth,
+        currentTime: video.currentTime,
+        src: video.src,
+        remote: !video.src.startsWith('blob:'),
+      };
+    });
+    expect(state.width).toBeGreaterThan(0);
+    expect(state.currentTime).toBeGreaterThan(0);
+    expect(state.remote).toBe(false);
+
+    await post.getByRole('button', { name: 'Close video' }).click();
+    await expect(post.locator('video')).toHaveCount(0);
+    // After closing, the explicit load button is back and still the only way
+    // to fetch again.
+    await expect(post.getByRole('button', { name: 'Load reported video' })).toBeVisible();
+    expect(mock.calls.filter((c) => c.path.endsWith('/video'))).toHaveLength(1);
+  });
+
+  test('a failed reported video load shows the localized failure without auto retry', async ({
+    page,
+  }) => {
+    const videoText = 'Broken clip post';
+    const mock = await mockAdmin(page, {
+      reports: [
+        report({
+          id: 'r-video404',
+          targetId: 'p-video404',
+          messageSnapshot: videoText,
+          targetBody: videoText,
+          targetHasVideo: true,
+          videoFails: true,
+        }),
+        report({
+          id: 'r-deleted-video',
+          targetId: 'p-deleted-video',
+          messageSnapshot: 'deleted clip post',
+          targetBody: 'deleted clip post',
+          targetHasVideo: true,
+          targetDeleted: true,
+        }),
+      ],
+    });
+    await page.goto('/feed');
+
+    // Deleted targets never show the preview affordance at all.
+    await expect(row(page, 'deleted clip post').getByRole('button', { name: 'Load reported video' }))
+      .toHaveCount(0);
+
+    const post = row(page, videoText);
+    await post.getByRole('button', { name: 'Load reported video' }).click();
+    await expect(post.getByText('Could not play this video. Try again.')).toBeVisible();
+    await expect(post.locator('video')).toHaveCount(0);
+    // Exactly one audited attempt; nothing refetches on its own.
+    expect(mock.calls.filter((c) => c.path.endsWith('/video'))).toHaveLength(1);
+    // The explicit button is the only way back in.
+    await post.getByRole('button', { name: 'Load reported video' }).click();
+    await expect.poll(() => mock.calls.filter((c) => c.path.endsWith('/video')).length).toBe(2);
   });
 
   test('Vietnamese locale renders the queue and the hide dialog', async ({ page }) => {

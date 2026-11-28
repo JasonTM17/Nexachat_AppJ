@@ -58,10 +58,10 @@ public class FeedImageService {
     static final Set<String> ALLOWED_MIME_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     /** The only video container the feed accepts. */
-    static final String VIDEO_MIME = "video/mp4";
+    public static final String VIDEO_MIME = "video/mp4";
 
     /** Videos are capped well below the storage ceiling so one upload stays cheap. */
-    static final long MAX_VIDEO_BYTES = 4L * 1024 * 1024;
+    public static final int MAX_VIDEO_BYTES = 4 * 1024 * 1024;
 
     static final int IMAGES_PER_MINUTE = 10;
     static final int IMAGES_PER_DAY = 100;

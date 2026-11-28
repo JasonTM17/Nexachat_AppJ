@@ -43,7 +43,8 @@ REQUEST_METHOD = re.compile(r"RequestMethod\.([A-Z]+)")
 CLASS_DECL = re.compile(r"\b(?:public\s+)?(?:final\s+)?class\s+\w+")
 DOC_ROUTE = re.compile(
     r"`?\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+"
-    r"(/api/v1/[A-Za-z0-9_./{}*:-]*|/actuator[A-Za-z0-9_./{}*:-]*"
+    r"(/api/v1/[A-Za-z0-9_./{}*:-]*|/api/social/v1/[A-Za-z0-9_./{}*:-]*"
+    r"|/actuator[A-Za-z0-9_./{}*:-]*"
     r"|/ws[A-Za-z0-9_./{}*:-]*"
     r"|/(?:auth|users|contacts|conversations|labels|messages|attachments|files"
     r"|sync|chat|calls|invite-links|account-deletion|devices|rag|realtime"

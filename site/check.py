@@ -582,6 +582,17 @@ def test_vercel_headers(vercel_data):
     else:
         log_pass("/social(.*) has a static same-origin CSP with blob image support")
 
+    admin_csp = headers_by_source.get("/admin(.*)", {}).get("content-security-policy", "")
+    if "media-src blob:" in admin_csp:
+        log_pass("/admin(.*) CSP allows blob: media for the audited staff video preview")
+    else:
+        failures.append("/admin(.*) CSP missing exact directive 'media-src blob:' for the staff video preview")
+    if "media-src blob: 'self'" in admin_csp or "media-src 'self'" in admin_csp:
+        failures.append("/admin(.*) CSP media-src must stay limited to blob: only")
+    social_media = social_csp
+    if "media-src blob:" not in social_media:
+        failures.append("/social(.*) CSP regressed: media-src blob: missing")
+
     rewrite_pairs = {(r.get("source"), r.get("destination")) for r in rewrites}
     expected_social_rewrites = {
         ("/api/social/v1/session/login", "https://api.nexachat.io.vn/api/v1/auth/login"),
