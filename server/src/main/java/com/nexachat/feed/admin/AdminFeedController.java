@@ -3,12 +3,19 @@ package com.nexachat.feed.admin;
 import com.nexachat.admin.AdminAuditService;
 import com.nexachat.admin.AdminGuard;
 import com.nexachat.common.dto.JwtPrincipal;
+import com.nexachat.attachment.StorageService;
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
 import com.nexachat.config.ClientIpResolver;
+import com.nexachat.feed.FeedImageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,10 +38,13 @@ public class AdminFeedController {
 
     private final AdminFeedService service;
     private final ClientIpResolver clientIpResolver;
+    private final StorageService storageService;
 
-    public AdminFeedController(AdminFeedService service, ClientIpResolver clientIpResolver) {
+    public AdminFeedController(AdminFeedService service, ClientIpResolver clientIpResolver,
+                               StorageService storageService) {
         this.service = service;
         this.clientIpResolver = clientIpResolver;
+        this.storageService = storageService;
     }
 
     public record ReasonRequest(@NotBlank @Size(max = 500) String reason) {
@@ -100,6 +110,26 @@ public class AdminFeedController {
         JwtPrincipal actor = AdminGuard.requireStaff();
         service.resolveReport(actor.userId(), AdminGuard.role(), reportId, body.status(),
                 clientIp(request));
+    }
+
+    /**
+     * Audited staff-only preview of the video attached to a reported post.
+     * Bytes are read with a bounded prefix read only after the authorization
+     * and audit commit inside the service; the storage key never leaves the
+     * server.
+     */
+    @PostMapping("/reports/{reportId}/video")
+    public ResponseEntity<byte[]> previewReportVideo(@PathVariable UUID reportId, HttpServletRequest request) {
+        JwtPrincipal actor = AdminGuard.requireStaff();
+        String key = service.authorizeVideoPreview(actor.userId(), AdminGuard.role(), reportId, clientIp(request));
+        StorageService.PrefixRead video = storageService.readPrefix(key, FeedImageService.MAX_VIDEO_BYTES);
+        if (video.sizeBytes() < 1 || video.sizeBytes() != video.bytes().length) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(FeedImageService.VIDEO_MIME))
+                .header("X-Content-Type-Options", "nosniff")
+                .cacheControl(CacheControl.noStore().cachePrivate())
+                .contentLength(video.sizeBytes()).body(video.bytes());
     }
 
     private String clientIp(HttpServletRequest request) {
