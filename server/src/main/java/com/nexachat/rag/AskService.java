@@ -415,6 +415,12 @@ public class AskService {
                     null, false);
         }
 
+        if (RagVietnamesePlaceLookup.parse(question, language, speaker != null) != null) {
+            stats.recordNotFound();
+            return AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE,
+                    false, null, evidenceOmitted, false);
+        }
+
         RagLlmOutcome outcome = null;
         if (consented) {
             if (speaker != null && !retrievalService.speakerUnchanged(conversationId, speaker)) {

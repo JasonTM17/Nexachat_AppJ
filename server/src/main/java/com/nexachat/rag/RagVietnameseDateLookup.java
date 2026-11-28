@@ -23,11 +23,18 @@ record RagVietnameseDateLookup(String event) {
     private static final Pattern ASSERTION_INTRO = Pattern.compile(
             "\\A(?:(?:tôi|toi|mình|minh|tớ|to|chúng tôi|chung toi) (?:(?:đã|da) )?"
                     + "(?:xác nhận|xac nhan|chốt|chot|thông báo|thong bao)(?: (?:rằng|rang))?(?: *[:,] *| )"
-                    + "|(?:thông báo|thong bao|cập nhật|cap nhat|chốt lại|chot lai) *[:,] *"
+                    + "|(?:thông báo|thong bao|cập nhật|cap nhat|chốt lại|chot lai)(?: nhé| nhe| nha)? *[:,] *"
                     + "|(?:bản tin|ban tin) (?:ghi|xác nhận|xac nhan)(?: (?:rằng|rang))?(?: *[:,] *| )"
                     + "|theo (?:thông báo|thong bao|lịch|lich)(?: mới nhất| moi nhat| chính thức| chinh thuc)? *, *)");
     private static final Pattern OCCURRENCE_LABEL = Pattern.compile(
             "\\A(?:ngày|ngay) (?:diễn ra|dien ra|tổ chức|to chuc) (?:của |cua )?");
+    private static final Pattern DATE_STATUS_SUBJECT = Pattern.compile(
+            "\\A(?:lịch|lich) (?:của |cua )?");
+    private static final Pattern EVENT_DATE_UNSET = Pattern.compile(
+            "\\A (?:(?:thi|van|hien tai|van con) )?chua (?:(?:duoc|the|co the) )?"
+                    + "(?:chot|an dinh|xac nhan|xac dinh|thong bao|cong bo)"
+                    + "(?: (?:ngay(?: gio)?|thoi diem)(?: cu the)?)?"
+                    + "(?: (?:chinh thuc|cuoi cung|dau))?[.!]?\\z");
     private static final String UNIT = "(?:mot|hai|ba|bon|tu|nam|lam|sau|bay|tam|chin)";
     private static final String WRITTEN_DAY = "(?:ba muoi(?: mot)?|hai muoi(?: " + UNIT + ")?|muoi(?: "
             + UNIT + ")?|" + UNIT + ")";
@@ -49,6 +56,13 @@ record RagVietnameseDateLookup(String event) {
     private static final Pattern TEMPORAL_INTRO = Pattern.compile("(?:vào|vao|từ|tu|đến|den)?");
     private static final Pattern OTHER_SUBJECT = Pattern.compile(
             "\\b(?:cua|(?:ket thuc|tong ket|be mac|dien tap|tap duot)(?: cua| cho)?)\\z");
+    private static final String RESERVATION = "dat(?: truoc)? (?:phong|hoi truong|sanh|dia diem|cho)\\b[^,;:?!]*? cho\\z";
+    private static final Pattern RESERVATION_MENTION = Pattern.compile("\\b" + RESERVATION);
+    private static final Pattern COMPLETED_RESERVATION = Pattern.compile(
+            "\\A(?:toi|minh|to|chung toi|chung minh) da " + RESERVATION);
+    private static final Pattern RESERVATION_SCHEDULE = Pattern.compile(
+            "\\A\\s*[,;]\\s*(?:(?:ai ranh thi|moi nguoi|cac ban|ca nhom) )?(?:nho )?"
+                    + "(?:giu|ghi|luu) lich(?: giup (?:toi|minh|to|chung toi))?(?: nhe| nha)?[.!]?\\z");
     private static final Pattern UNCERTAIN_TAIL = Pattern.compile(
             "\\b(?:truoc day|truoc kia|ban dau|lich cu|ngay cu|da huy|doi sang|chuyen sang"
                     + "|khong con hieu luc|khong dung nua)\\b"
@@ -80,8 +94,18 @@ record RagVietnameseDateLookup(String event) {
         if (!normalized.startsWith(event)) {
             normalized = OCCURRENCE_LABEL.matcher(normalized).replaceFirst("");
         }
+        boolean reservation = false;
         if (!normalized.startsWith(event)) {
-            return List.of();
+            int start = eventStart(normalized);
+            if (start < 0) {
+                return List.of();
+            }
+            String prefix = Tokenizer.foldForMatching(normalized.substring(0, start)).strip();
+            if (!COMPLETED_RESERVATION.matcher(prefix).matches() || DATE_MENTION.matcher(prefix).find()) {
+                return List.of();
+            }
+            normalized = normalized.substring(start);
+            reservation = true;
         }
         String predicate = Tokenizer.foldForMatching(normalized.substring(event.length()));
         Matcher matcher = DATED_PREDICATE.matcher(predicate);
@@ -89,7 +113,9 @@ record RagVietnameseDateLookup(String event) {
             return List.of();
         }
         String tail = predicate.substring(matcher.end());
-        if (UNCERTAIN_TAIL.matcher(tail).find()) {
+        if (UNCERTAIN_TAIL.matcher(tail).find()
+                || reservation && (!"vao".equals(matcher.group("binding").strip())
+                    || !RESERVATION_SCHEDULE.matcher(tail).matches())) {
             return List.of();
         }
         String date = calendarValue(matcher);
@@ -111,8 +137,11 @@ record RagVietnameseDateLookup(String event) {
         boolean invalidDate = false;
         for (String clause : SEPARATE_CLAUSE.split(normalized)) {
             int eventStart = eventStart(clause);
-            boolean target = eventStart >= 0 && !OTHER_SUBJECT.matcher(
-                    Tokenizer.foldForMatching(clause.substring(0, eventStart)).strip()).find();
+            String prefix = eventStart < 0 ? "" : Tokenizer.foldForMatching(clause.substring(0, eventStart)).strip();
+            // A reservation can be dated independently of the event. Only the explicit
+            // scheduling form checked by dates() supplies an event date in that clause.
+            boolean target = eventStart >= 0 && !OTHER_SUBJECT.matcher(prefix).find()
+                    && !RESERVATION_MENTION.matcher(prefix).find();
             String folded = Tokenizer.foldForMatching(clause);
             Matcher dates = DATE_MENTION.matcher(folded);
             while (dates.find()) {
@@ -130,6 +159,20 @@ record RagVietnameseDateLookup(String event) {
         // asserted only for a different subject, or an invalid date stated for this one.
         boolean disproven = compatible.isEmpty() && (invalidDate || otherDatedAssertion && eventStart(normalized) >= 0);
         return new DateEvidence(List.copyOf(compatible), disproven, direct.size() == 1);
+    }
+
+    boolean statesDateIsUnsettled(String statement) {
+        String text = ASSERTION_INTRO.matcher(normalize(statement)).replaceFirst("");
+        Matcher subject = OCCURRENCE_LABEL.matcher(text);
+        if (!subject.lookingAt()) {
+            subject = DATE_STATUS_SUBJECT.matcher(text);
+            if (!subject.lookingAt()) {
+                return false;
+            }
+        }
+        String assertion = text.substring(subject.end());
+        return eventStart(assertion) == 0 && EVENT_DATE_UNSET.matcher(
+                Tokenizer.foldForMatching(assertion.substring(event.length()))).lookingAt();
     }
 
     private int eventStart(String text) {

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Clock;
 import java.util.List;
@@ -608,6 +609,163 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
         assertThat(response.answer()).contains(identifier);
         assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void namedPlaceQuestionResolvesThePronounToTheAuthorsOwnClaim() {
+        String statement = "Tôi sẽ trình bày bản demo ở phòng Hoa Sữa lúc 9 giờ sáng thứ Sáu.";
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Minh Trâm", statement);
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Đắc Nhân",
+                "Mình vừa đặt xong phòng Bạch Mai cho bản demo sáng thứ Sáu đấy.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo chính lời của Minh Trâm, cô ấy sẽ trình bày bản demo ở đâu?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(statement);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Tôi sẽ bàn giao phiếu vận chuyển lúc 10 giờ.",
+            "Lâm Duy sẽ bàn giao phiếu vận chuyển ở Quầy Cỏ.",
+            "Tôi sẽ bàn giao phiếu vận chuyển lúc 10 giờ, còn tôi sẽ kiểm hàng ở Quầy Cỏ.",
+            "Tôi sẽ không bàn giao phiếu vận chuyển ở Quầy Cỏ.",
+            "Tôi sẽ bàn giao phiếu vận chuyển ở chỗ đó.",
+            "Tôi sẽ bàn giao phiếu vận chuyển ở đâu đó.",
+            "Tôi đã bàn giao phiếu vận chuyển ở Quầy Cỏ hôm qua.",
+            "Tôi sẽ bàn giao phiếu vận chuyển ở Quầy Cỏ, hoặc ở Sảnh Bắc."
+    })
+    void namedPlaceQuestionNeedsTheAuthorsOwnLocatedAction(String statement) {
+        addNamedMessage(conversationId, senderId, 1, "Yên Thảo", statement);
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Lâm Duy",
+                "Tôi sẽ bàn giao phiếu vận chuyển ở Quầy Cỏ.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Yên Thảo thì anh ấy sẽ bàn giao phiếu vận chuyển ở đâu ạ?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void namedPlaceQuestionAbstainsWhenTheAuthorStatesDifferentPlaces() {
+        addNamedMessage(conversationId, senderId, 1, "Yên Thảo",
+                "Tôi sẽ bàn giao phiếu vận chuyển tại Quầy Cỏ.");
+        addNamedMessage(conversationId, senderId, 2, "Yên Thảo",
+                "Tôi sẽ bàn giao phiếu vận chuyển ở Sảnh Bắc lúc 11 giờ.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Yên Thảo, anh ấy sẽ bàn giao phiếu vận chuyển ở đâu?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void namedPlaceQuestionDoesNotTreatAPastLocationAsAConflictingFutureLocation() {
+        addNamedMessage(conversationId, senderId, 1, "Yên Thảo",
+                "Tôi đã bàn giao phiếu vận chuyển ở Quầy Cỏ hôm qua.");
+        RagMessage planned = addNamedMessage(conversationId, senderId, 2, "Yên Thảo",
+                "Tôi sẽ bàn giao phiếu vận chuyển ở Sảnh Bắc lúc 11 giờ.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Yên Thảo, anh ấy sẽ bàn giao phiếu vận chuyển ở đâu?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(planned.content());
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(planned.id());
+    }
+
+    @Test
+    void namedDateQuestionCitesACompletedBookingThatSchedulesTheEvent() {
+        String statement = "Cập nhật nhé: mình đã đặt phòng trà cho buổi triển lãm ảnh 'Vệt Nắng' "
+                + "vào 21 tháng 5, ai rảnh thì giữ lịch giúp tớ nhé.";
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Tống Kim Ngân", statement);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Tống Kim Ngân, buổi triển lãm ảnh 'Vệt Nắng' là ngày nào?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(statement);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Tôi đã đặt sảnh vào ngày 18 tháng 6 cho buổi gặp nhóm bản đồ, lịch sự kiện sẽ báo riêng.",
+            "Chúng tôi sẽ đặt phòng cho buổi gặp nhóm bản đồ vào ngày 4/7, đó là ngày làm thủ tục đặt chỗ.",
+            "Tôi đã đặt phòng cho buổi gặp nhóm bản đồ vào 4 tháng 7, nhớ giữ lịch để kiểm tra phòng.",
+            "Chúng tôi đã đặt hội trường cho buổi gặp nhóm bản đồ vào ngày 4/7, còn chờ xác nhận cuối cùng về lịch."
+    })
+    void namedDateQuestionRejectsBookingDatesWithoutASettledEventDate(String statement) {
+        addNamedMessage(conversationId, senderId, 1, "Phan Ngọc Vi", statement);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Phan Ngọc Vi, buổi gặp nhóm bản đồ là ngày nào?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Ngày diễn ra buổi triển lãm ảnh Ánh Sao chưa chốt. | NOT_FOUND",
+            "Lịch của buổi triển lãm ảnh Ánh Sao chưa chốt. | NOT_FOUND",
+            "Ngày diễn ra buổi hướng dẫn tham quan chưa chốt. | EXTRACTIVE",
+            "Lịch của buổi triển lãm ảnh Ánh Sao chưa chốt nội dung phần đón khách. | EXTRACTIVE",
+            "Buổi triển lãm ảnh Ánh Sao chưa chốt chỗ đỗ xe. | EXTRACTIVE"
+    })
+    void namedDateQuestionChecksUnsettledDateInAnotherSentenceOfTheSameMessage(String update,
+                                                                             AskMode expected) {
+        String booking = "Tôi đã đặt hội trường cho buổi triển lãm ảnh Ánh Sao vào 4 tháng 7, mọi người ghi lịch nhé.";
+        RagMessage source = addNamedMessage(conversationId, senderId, 1, "Phan Ngọc Vi",
+                booking + " " + update);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Phan Ngọc Vi, buổi triển lãm ảnh Ánh Sao là ngày nào?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(expected);
+        if (expected == AskMode.NOT_FOUND) {
+            assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+            assertThat(response.citations()).isEmpty();
+        } else {
+            assertThat(response.answer()).isEqualTo(booking);
+            assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(source.id());
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true, true", "true, false", "false, true", "false, false"})
+    void namedDateQuestionUsesTheOrderOfConfirmationAndUnsettledUpdates(boolean confirmedLast, boolean sameMessage) {
+        String confirmed = "Ngày diễn ra buổi triển lãm ảnh Ánh Sao là 24 tháng 5.";
+        String unsettled = "Ngày diễn ra buổi triển lãm ảnh Ánh Sao chưa chốt.";
+        String first = confirmedLast ? unsettled : confirmed;
+        String second = confirmedLast ? confirmed : unsettled;
+        RagMessage latest;
+        if (sameMessage) {
+            latest = addNamedMessage(conversationId, senderId, 1, "Phan Ngọc Vi", first + " " + second);
+        } else {
+            addNamedMessage(conversationId, senderId, 1, "Phan Ngọc Vi", first);
+            latest = addNamedMessage(conversationId, senderId, 2, "Phan Ngọc Vi", second);
+        }
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Phan Ngọc Vi, buổi triển lãm ảnh Ánh Sao là ngày nào?", SummaryLanguage.AUTO));
+
+        if (confirmedLast) {
+            assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+            assertThat(response.answer()).isEqualTo(confirmed);
+            assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(latest.id());
+        } else {
+            assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+            assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+            assertThat(response.citations()).isEmpty();
+        }
     }
 
     @Test
