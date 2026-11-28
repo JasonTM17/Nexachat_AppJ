@@ -61,6 +61,18 @@ public final class InviteLayoutsAccessibilityUnitTest {
     }
   }
 
+  @Test
+  public void invitePreviewCardDoesNotReserveSpaceBeforePreviewLoads() throws Exception {
+    Document doc =
+        DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(new File(resDir, "layout/fragment_invite_join.xml"));
+    Element card = findElementById(doc.getDocumentElement(), "previewCard");
+    assertNotNull("Group preview must have a single visibility container", card);
+    assertEquals("gone", getAttr(card, NS_ANDROID, "visibility"));
+    assertNotNull("Group name must be inside the preview card", findElementById(card, "groupTitle"));
+  }
+
   private static Element findElementById(Node node, String idSuffix) {
     if (node.getNodeType() == Node.ELEMENT_NODE) {
       Element el = (Element) node;

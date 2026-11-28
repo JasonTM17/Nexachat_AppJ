@@ -57,9 +57,7 @@ public final class InviteJoinFragment extends Fragment {
         if (binding == null) return;
         InvitePreviewResponse preview = state.getPreview();
         boolean hasPreview = preview != null;
-        binding.groupAvatar.setVisibility(hasPreview ? View.VISIBLE : View.GONE);
-        binding.groupTitle.setVisibility(hasPreview ? View.VISIBLE : View.GONE);
-        binding.memberCount.setVisibility(hasPreview ? View.VISIBLE : View.GONE);
+        binding.previewCard.setVisibility(hasPreview ? View.VISIBLE : View.GONE);
         binding.approvalNote.setVisibility(
                 hasPreview && preview.requiresApproval ? View.VISIBLE : View.GONE);
         if (hasPreview) {
@@ -119,9 +117,9 @@ public final class InviteJoinFragment extends Fragment {
                 ? View.VISIBLE : View.GONE);
     }
 
-    /** Failures read as errors; plain status copy keeps the muted variant color. */
+    /** Sign-in guidance and regular status messages use the neutral status color. */
     static int statusTextColorAttr(@Nullable InviteFailure failure) {
-        return failure != null
+        return failure != null && failure != InviteFailure.SIGN_IN_REQUIRED
                 ? com.google.android.material.R.attr.colorError
                 : com.google.android.material.R.attr.colorOnSurfaceVariant;
     }

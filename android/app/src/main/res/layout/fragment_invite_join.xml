@@ -35,9 +35,11 @@
             android:padding="@dimen/space_lg">
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/previewCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
+                android:visibility="gone"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer"
                 app:cardCornerRadius="@dimen/corner_xl"
                 app:cardElevation="0dp"
