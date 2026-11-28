@@ -214,6 +214,9 @@ class FileControllerTest {
         assertThat(response.getHeaders().getFirst("X-Content-Type-Options")).isEqualTo("nosniff");
         assertThat(response.getHeaders().getFirst("Content-Disposition")).isEqualTo("inline");
         assertThat(response.getHeaders().getFirst("Accept-Ranges")).isEqualTo("bytes");
+        assertThat(response.getHeaders().getCacheControl())
+                .contains("no-store")
+                .contains("private");
         assertThat(response.getHeaders().getContentLength()).isEqualTo(PNG_BYTES.length);
         assertThat(drain(response).getContentAsByteArray()).containsExactly(PNG_BYTES);
     }
@@ -306,8 +309,14 @@ class FileControllerTest {
                 new JwtPrincipal(userId));
 
         assertThat(response.getStatusCodeValue()).isEqualTo(206);
+        assertThat(response.getHeaders().getCacheControl())
+                .contains("no-store")
+                .contains("private");
         MockHttpServletResponse servletResponse = drain(response);
         assertThat(servletResponse.getHeader("Content-Range")).isEqualTo("bytes 2-5/10");
+        assertThat(servletResponse.getHeader("Cache-Control"))
+                .contains("no-store")
+                .contains("private");
         assertThat(servletResponse.getContentLength()).isEqualTo(4);
         assertThat(servletResponse.getContentAsByteArray()).containsExactly("2345".getBytes());
         assertThat(servletResponse.getHeader("Accept-Ranges")).isEqualTo("bytes");

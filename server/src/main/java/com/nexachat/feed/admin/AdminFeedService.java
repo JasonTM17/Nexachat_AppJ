@@ -141,6 +141,7 @@ public class AdminFeedService {
     /** Unhides a post; idempotent, audited. */
     @Transactional
     public void unhidePost(UUID actorId, User.Role actorRole, UUID postId, String reason, String ip) {
+        String cleanReason = optionalReason(reason);
         int updated = jdbc.update("""
                         UPDATE public_posts
                         SET hidden_at = NULL, hidden_by = NULL, hidden_reason = NULL
@@ -149,7 +150,7 @@ public class AdminFeedService {
         requireTargetExists(updated, "public_posts", postId, ApiErrorCode.POST_NOT_FOUND);
         if (updated == 1) {
             auditService.record(actorId, actorRole, "FEED_POST_UNHIDE", "POST", postId.toString(),
-                    reason, null, ip);
+                    cleanReason, null, ip);
             log.info("Feed post {} unhidden by {}", postId, actorId);
         }
     }
@@ -190,6 +191,7 @@ public class AdminFeedService {
     @Transactional
     public void unhideComment(UUID actorId, User.Role actorRole, UUID commentId, String reason,
                               String ip) {
+        String cleanReason = optionalReason(reason);
         List<UUID> changed = jdbc.queryForList("""
                         UPDATE public_comments
                         SET hidden_at = NULL, hidden_by = NULL, hidden_reason = NULL
@@ -203,7 +205,7 @@ public class AdminFeedService {
         jdbc.update("UPDATE public_posts SET comment_count = comment_count + 1 WHERE id = ?",
                 changed.get(0));
         auditService.record(actorId, actorRole, "FEED_COMMENT_UNHIDE", "COMMENT",
-                commentId.toString(), reason, null, ip);
+                commentId.toString(), cleanReason, null, ip);
         log.info("Feed comment {} unhidden by {}", commentId, actorId);
     }
 
@@ -271,11 +273,26 @@ public class AdminFeedService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "reason is required");
         }
         String clean = reason.strip();
+        if (clean.indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "reason must not contain NUL bytes");
+        }
         if (clean.length() > 500) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "reason must be at most 500 characters");
         }
         return clean;
+    }
+
+    private static String optionalReason(String reason) {
+        if (reason == null) {
+            return null;
+        }
+        if (reason.indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "reason must not contain NUL bytes");
+        }
+        return reason;
     }
 
     private static Report.Status parseStatus(String raw) {

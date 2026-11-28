@@ -1,6 +1,7 @@
 package com.nexachat.feed;
 
 import com.nexachat.attachment.RangeNotSatisfiableException;
+import com.nexachat.attachment.SizedInputStreamResource;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
@@ -132,5 +133,25 @@ class FeedControllerTest {
         ApiException disabledEx = catchThrowableOfType(ApiException.class,
                 () -> controller.uploadVideo(new JwtPrincipal(viewerId), two));
         assertThat(disabledEx.getCode()).isEqualTo(ApiErrorCode.SOCIAL_FEATURE_DISABLED);
+    }
+
+    @Test
+    void imageReturns200WithSizedResourceExactContentLengthAndBytes() throws Exception {
+        UUID imageId = UUID.randomUUID();
+        byte[] bytes = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+        FeedStore.ImageRow row = new FeedStore.ImageRow(
+                imageId, viewerId, "feed/i.png", "image/png", bytes.length, 16, 16, null);
+        when(imageService.open(viewerId, imageId)).thenReturn(new FeedImageService.ImageContent(
+                row, new StorageService.StreamHandle(new ByteArrayInputStream(bytes), bytes.length)));
+
+        ResponseEntity<Resource> response = controller.image(new JwtPrincipal(viewerId), imageId);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isInstanceOf(SizedInputStreamResource.class);
+        MockHttpServletResponse drained = drain(response);
+        assertThat(drained.getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
+        assertThat(drained.getHeader("Cache-Control")).contains("private");
+        assertThat(drained.getContentLength()).isEqualTo(bytes.length);
+        assertThat(drained.getContentAsByteArray()).containsExactly(bytes);
     }
 }

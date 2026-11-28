@@ -20,7 +20,6 @@ import com.nexachat.feed.dto.PostResponse;
 import com.nexachat.feed.dto.ReactionListResponse;
 import com.nexachat.social.SocialSettingsService;
 import jakarta.validation.Valid;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -193,7 +192,8 @@ public class FeedController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePrivate())
                 .contentLength(content.content().sizeBytes())
-                .body(new InputStreamResource(content.content().content()));
+                .body(new SizedInputStreamResource(
+                        content.content().content(), content.content().sizeBytes()));
     }
 
     @PostMapping("/videos")

@@ -440,6 +440,10 @@ public class FeedService {
         if (body.isEmpty()) {
             return null;
         }
+        if (body.indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    field + " must not contain NUL bytes");
+        }
         if (body.length() > max) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     field + " must be at most " + max + " characters");
@@ -454,6 +458,10 @@ public class FeedService {
         String trimmed = rawQuery.strip();
         if (trimmed.isEmpty()) {
             return null;
+        }
+        if (trimmed.indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "q must not contain NUL bytes");
         }
         if (trimmed.length() > MAX_SEARCH_QUERY) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,

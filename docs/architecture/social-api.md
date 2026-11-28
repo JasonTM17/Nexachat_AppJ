@@ -37,8 +37,8 @@ that exact legacy UUID path or the equivalent canonical `/api/social/v1/images/{
 path, converts it to the same-origin canonical `/images/{uuid}` request, and
 never treats user content as a URL.
 
-The same-origin Vercel proxy additionally maps session and report shortcuts;
-these are proxy mappings, not extra Spring controller prefixes:
+The same-origin Vercel proxy additionally maps session, report, and file-streaming
+shortcuts; these are proxy mappings, not extra Spring controller prefixes:
 
 | Browser same-origin path | Backend path |
 | --- | --- |
@@ -47,19 +47,23 @@ these are proxy mappings, not extra Spring controller prefixes:
 | `/api/social/v1/session/logout` | `/api/v1/auth/logout` |
 | `/api/social/v1/reports` | `/api/v1/reports` |
 | `/api/social/v1/config` | `/api/social/v1/config` |
+| `/api/social/v1/authors/:path*` | `/api/social/v1/authors/:path*` |
+| `/api/v1/files/:path*` | `/api/v1/files/:path*` |
 
 The proxy deliberately does **not** expose a catch-all
-`/api/social/v1/:path*` rewrite. It is limited to the public config route,
-those auth/report routes, and the posts, comments, images and videos subtrees.
-Browser requests use
+`/api/social/v1/:path*` or `/api/v1/:path*` rewrite. It is limited to the public
+config route, those auth/report/file routes, and the posts, comments, authors,
+images, and videos subtrees. Browser requests use
 `credentials: 'omit'`, `cache: 'no-store'`, `redirect: 'error'`, relative
 same-origin URLs, and an explicit bearer only on authenticated calls. The
-proxy adds `Cache-Control: private, no-store` plus CDN no-store headers to
-`/api/social/v1/(.*)` so personalized canonical responses — especially images
-that may become invisible after a block or moderation action — are not stored
-by browser or CDN caches. The direct Spring image endpoint still has its
-legacy private cache behavior for existing clients; canonical browser traffic
-is protected at the same-origin proxy boundary.
+proxy adds `Cache-Control: private, no-store` plus CDN no-store headers to both
+`/api/social/v1/(.*)` and `/api/v1/files/(.*)` (matching the backend's explicit
+`Cache-Control: no-store, private` on `/api/v1/files/**`) so personalized
+canonical responses — especially images, videos, avatars, and attachments that
+may become invisible after a block or moderation action — are not stored by
+browser or CDN caches. The direct Spring image endpoint still has its legacy
+private cache behavior for existing clients; canonical browser traffic is
+protected at the same-origin proxy boundary.
 
 ## Runtime feature controls and live announcements
 

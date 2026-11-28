@@ -447,6 +447,61 @@ def test_assetlinks_live_url(base_url):
     return failures
 
 
+def validate_social_and_files_proxy(headers_by_source, rewrites):
+    passes = []
+    failures = []
+
+    for route_prefix, label in (
+        ("/api/social/v1/(.*)", "Social API proxy"),
+        ("/api/v1/files/(.*)", "Files API proxy"),
+    ):
+        api_hdrs = headers_by_source.get(route_prefix, {})
+        if api_hdrs.get("cache-control") == "private, no-store":
+            passes.append(f"{label} responses require private no-store caching")
+        else:
+            failures.append(f"Missing Cache-Control: private, no-store for {route_prefix}")
+        for cache_key in ("cdn-cache-control", "vercel-cdn-cache-control"):
+            if api_hdrs.get(cache_key) == "no-store":
+                passes.append(f"{label} sets {cache_key}: no-store")
+            else:
+                failures.append(f"Missing {cache_key}: no-store for {route_prefix}")
+
+    rewrite_pairs = {(r.get("source"), r.get("destination")) for r in rewrites}
+    expected_social_rewrites = {
+        ("/api/social/v1/session/login", "https://api.nexachat.io.vn/api/v1/auth/login"),
+        ("/api/social/v1/session/refresh", "https://api.nexachat.io.vn/api/v1/auth/refresh"),
+        ("/api/social/v1/session/logout", "https://api.nexachat.io.vn/api/v1/auth/logout"),
+        ("/api/social/v1/reports", "https://api.nexachat.io.vn/api/v1/reports"),
+        ("/api/social/v1/posts", "https://api.nexachat.io.vn/api/social/v1/posts"),
+        ("/api/social/v1/posts/:path*", "https://api.nexachat.io.vn/api/social/v1/posts/:path*"),
+        ("/api/social/v1/comments/:path*", "https://api.nexachat.io.vn/api/social/v1/comments/:path*"),
+        ("/api/social/v1/images", "https://api.nexachat.io.vn/api/social/v1/images"),
+        ("/api/social/v1/images/:path*", "https://api.nexachat.io.vn/api/social/v1/images/:path*"),
+        ("/api/social/v1/videos", "https://api.nexachat.io.vn/api/social/v1/videos"),
+        ("/api/social/v1/videos/:path*", "https://api.nexachat.io.vn/api/social/v1/videos/:path*"),
+        ("/api/social/v1/config", "https://api.nexachat.io.vn/api/social/v1/config"),
+        ("/api/social/v1/authors/:path*", "https://api.nexachat.io.vn/api/social/v1/authors/:path*"),
+    }
+    expected_files_rewrite = (
+        "/api/v1/files/:path*",
+        "https://api.nexachat.io.vn/api/v1/files/:path*",
+    )
+    missing_rewrites = sorted(expected_social_rewrites - rewrite_pairs)
+    if missing_rewrites:
+        failures.append(f"Missing social API rewrite(s): {missing_rewrites}")
+    if expected_files_rewrite not in rewrite_pairs:
+        failures.append(f"Missing files API rewrite: {expected_files_rewrite}")
+    if any(r.get("source") == "/api/social/v1/:path*" for r in rewrites):
+        failures.append("Social proxy must not expose arbitrary /api/social/v1/:path* backend paths")
+    if any(r.get("source") == "/api/v1/:path*" for r in rewrites):
+        failures.append("API proxy must not expose arbitrary /api/v1/:path* backend paths")
+    if not failures:
+        passes.append(
+            "Social API proxy is restricted to auth, reports, posts, comments, authors, images, videos and /api/v1/files"
+        )
+    return passes, failures
+
+
 def test_vercel_headers(vercel_data):
     failures = []
     if not vercel_data:
@@ -552,16 +607,10 @@ def test_vercel_headers(vercel_data):
         else:
             log_pass("/admin rewrite target is not a team-scoped (SSO-protected) Vercel domain")
 
-    social_api_hdrs = headers_by_source.get("/api/social/v1/(.*)", {})
-    if social_api_hdrs.get("cache-control") == "private, no-store":
-        log_pass("Social API proxy responses require private no-store caching")
-    else:
-        failures.append("Missing Cache-Control: private, no-store for /api/social/v1/(.*)")
-    for cache_key in ("cdn-cache-control", "vercel-cdn-cache-control"):
-        if social_api_hdrs.get(cache_key) == "no-store":
-            log_pass(f"Social API proxy sets {cache_key}: no-store")
-        else:
-            failures.append(f"Missing {cache_key}: no-store for /api/social/v1/(.*)")
+    proxy_passes, proxy_failures = validate_social_and_files_proxy(headers_by_source, rewrites)
+    for msg in proxy_passes:
+        log_pass(msg)
+    failures.extend(proxy_failures)
 
     social_hdrs = headers_by_source.get("/social(.*)", {})
     social_csp = social_hdrs.get("content-security-policy", "")
@@ -594,27 +643,6 @@ def test_vercel_headers(vercel_data):
         failures.append("/social(.*) CSP regressed: media-src blob: missing")
 
     rewrite_pairs = {(r.get("source"), r.get("destination")) for r in rewrites}
-    expected_social_rewrites = {
-        ("/api/social/v1/session/login", "https://api.nexachat.io.vn/api/v1/auth/login"),
-        ("/api/social/v1/session/refresh", "https://api.nexachat.io.vn/api/v1/auth/refresh"),
-        ("/api/social/v1/session/logout", "https://api.nexachat.io.vn/api/v1/auth/logout"),
-        ("/api/social/v1/reports", "https://api.nexachat.io.vn/api/v1/reports"),
-        ("/api/social/v1/posts", "https://api.nexachat.io.vn/api/social/v1/posts"),
-        ("/api/social/v1/posts/:path*", "https://api.nexachat.io.vn/api/social/v1/posts/:path*"),
-        ("/api/social/v1/comments/:path*", "https://api.nexachat.io.vn/api/social/v1/comments/:path*"),
-        ("/api/social/v1/images", "https://api.nexachat.io.vn/api/social/v1/images"),
-        ("/api/social/v1/images/:path*", "https://api.nexachat.io.vn/api/social/v1/images/:path*"),
-        ("/api/social/v1/videos", "https://api.nexachat.io.vn/api/social/v1/videos"),
-        ("/api/social/v1/videos/:path*", "https://api.nexachat.io.vn/api/social/v1/videos/:path*"),
-        ("/api/social/v1/config", "https://api.nexachat.io.vn/api/social/v1/config"),
-    }
-    missing_rewrites = sorted(expected_social_rewrites - rewrite_pairs)
-    if missing_rewrites:
-        failures.append(f"Missing social API rewrite(s): {missing_rewrites}")
-    elif any(r.get("source") == "/api/social/v1/:path*" for r in rewrites):
-        failures.append("Social proxy must not expose arbitrary /api/social/v1/:path* backend paths")
-    else:
-        log_pass("Social API proxy is restricted to auth, reports, posts, comments, images and videos")
     if ("/social", "/social/index.html") in rewrite_pairs and ("/social/", "/social/index.html") in rewrite_pairs:
         log_pass("/social and /social/ are backed by social/index.html")
     else:
@@ -1246,6 +1274,52 @@ def run_gate_self_tests():
         failures.append("collect_urls_for_external_scan must allow the configured API base meta")
     if "https://evil.example/x" not in meta_urls:
         failures.append("collect_urls_for_external_scan must still scan the rest of the page")
+
+    valid_no_store = {
+        "cache-control": "private, no-store",
+        "cdn-cache-control": "no-store",
+        "vercel-cdn-cache-control": "no-store",
+    }
+    valid_headers_by_source = {
+        "/api/social/v1/(.*)": valid_no_store,
+        "/api/v1/files/(.*)": valid_no_store,
+    }
+    valid_rewrites = [
+        {"source": "/api/social/v1/session/login", "destination": "https://api.nexachat.io.vn/api/v1/auth/login"},
+        {"source": "/api/social/v1/session/refresh", "destination": "https://api.nexachat.io.vn/api/v1/auth/refresh"},
+        {"source": "/api/social/v1/session/logout", "destination": "https://api.nexachat.io.vn/api/v1/auth/logout"},
+        {"source": "/api/social/v1/reports", "destination": "https://api.nexachat.io.vn/api/v1/reports"},
+        {"source": "/api/social/v1/posts", "destination": "https://api.nexachat.io.vn/api/social/v1/posts"},
+        {"source": "/api/social/v1/posts/:path*", "destination": "https://api.nexachat.io.vn/api/social/v1/posts/:path*"},
+        {"source": "/api/social/v1/comments/:path*", "destination": "https://api.nexachat.io.vn/api/social/v1/comments/:path*"},
+        {"source": "/api/social/v1/images", "destination": "https://api.nexachat.io.vn/api/social/v1/images"},
+        {"source": "/api/social/v1/images/:path*", "destination": "https://api.nexachat.io.vn/api/social/v1/images/:path*"},
+        {"source": "/api/social/v1/videos", "destination": "https://api.nexachat.io.vn/api/social/v1/videos"},
+        {"source": "/api/social/v1/videos/:path*", "destination": "https://api.nexachat.io.vn/api/social/v1/videos/:path*"},
+        {"source": "/api/social/v1/config", "destination": "https://api.nexachat.io.vn/api/social/v1/config"},
+        {"source": "/api/social/v1/authors/:path*", "destination": "https://api.nexachat.io.vn/api/social/v1/authors/:path*"},
+        {"source": "/api/v1/files/:path*", "destination": "https://api.nexachat.io.vn/api/v1/files/:path*"},
+    ]
+    _, ok_proxy_failures = validate_social_and_files_proxy(valid_headers_by_source, valid_rewrites)
+    if ok_proxy_failures:
+        failures.append(f"self-test: valid social+files proxy failed: {ok_proxy_failures}")
+    _, missing_files_hdr_failures = validate_social_and_files_proxy(
+        {"/api/social/v1/(.*)": valid_no_store}, valid_rewrites
+    )
+    if not missing_files_hdr_failures:
+        failures.append("self-test: missing /api/v1/files/(.*) no-store headers must fail")
+    _, catchall_v1_failures = validate_social_and_files_proxy(
+        valid_headers_by_source,
+        valid_rewrites + [{"source": "/api/v1/:path*", "destination": "https://api.nexachat.io.vn/api/v1/:path*"}],
+    )
+    if not any("/api/v1/:path*" in err for err in catchall_v1_failures):
+        failures.append("self-test: catch-all /api/v1/:path* rewrite must fail")
+    _, missing_authors_failures = validate_social_and_files_proxy(
+        valid_headers_by_source,
+        [r for r in valid_rewrites if r["source"] != "/api/social/v1/authors/:path*"],
+    )
+    if not missing_authors_failures:
+        failures.append("self-test: missing /api/social/v1/authors/:path* rewrite must fail")
 
     if not failures:
         log_pass("Gate helper regression self-tests passed")

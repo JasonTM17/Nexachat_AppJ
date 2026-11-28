@@ -238,6 +238,10 @@ public class AttachmentService {
                 && !bound.getExpiresAt().isAfter(java.time.Instant.now())) {
             throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
         }
+        if (bound != null && bound.isPeerSuppressed()
+                && !attachment.getOwner().getId().equals(requesterId)) {
+            throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
+        }
         if (attachment.getOwner().getId().equals(requesterId)) {
             return;
         }

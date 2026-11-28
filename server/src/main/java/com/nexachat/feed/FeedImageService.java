@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -232,7 +231,6 @@ public class FeedImageService {
      * @throws ApiException {@code FILE_NOT_FOUND} when the image is missing,
      *                      not readable by the caller, or not a still image
      */
-    @Transactional(readOnly = true)
     public ImageContent open(UUID viewerId, UUID imageId) {
         return openAsset(viewerId, imageId, false);
     }
@@ -243,7 +241,6 @@ public class FeedImageService {
      * @throws ApiException {@code FILE_NOT_FOUND} when the video is missing,
      *                      not readable by the caller, or not an MP4 video
      */
-    @Transactional(readOnly = true)
     public ImageContent openVideo(UUID viewerId, UUID videoId) {
         return openAsset(viewerId, videoId, true);
     }
@@ -256,15 +253,24 @@ public class FeedImageService {
      *                      {@code RANGE_NOT_SATISFIABLE} when the header is
      *                      malformed or unsatisfiable
      */
-    @Transactional(readOnly = true)
     public VideoRangeContent openVideoRange(UUID viewerId, UUID videoId, String rangeHeader) {
-        FeedStore.ImageRow image = requireReadableAsset(viewerId, videoId, true);
+        FeedStore.ImageRow image = requireReadableAssetInReadOnlyTx(viewerId, videoId, true);
         long size = image.sizeBytes();
         ByteRanges.ByteRange range = ByteRanges.parse(rangeHeader, size);
         long count = range.count();
         StorageService.StreamHandle handle =
                 storageService.openRange(image.storageKey(), range.start(), count);
         return new VideoRangeContent(image, handle, range.start(), range.end(), count, size);
+    }
+
+    private FeedStore.ImageRow requireReadableAssetInReadOnlyTx(UUID viewerId, UUID imageId, boolean video) {
+        PlatformTransactionManager txManager = transactionManagerProvider.getIfAvailable();
+        if (txManager == null) {
+            return requireReadableAsset(viewerId, imageId, video);
+        }
+        TransactionTemplate template = new TransactionTemplate(txManager);
+        template.setReadOnly(true);
+        return template.execute(status -> requireReadableAsset(viewerId, imageId, video));
     }
 
     private FeedStore.ImageRow requireReadableAsset(UUID viewerId, UUID imageId, boolean video) {
@@ -279,7 +285,7 @@ public class FeedImageService {
     }
 
     private ImageContent openAsset(UUID viewerId, UUID imageId, boolean video) {
-        FeedStore.ImageRow image = requireReadableAsset(viewerId, imageId, video);
+        FeedStore.ImageRow image = requireReadableAssetInReadOnlyTx(viewerId, imageId, video);
         return new ImageContent(image, storageService.open(image.storageKey()));
     }
 

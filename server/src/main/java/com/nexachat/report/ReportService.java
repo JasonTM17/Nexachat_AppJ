@@ -202,6 +202,10 @@ public class ReportService {
         if (message.getEncryption() == null) {
             return new Snapshot(truncate(message.getContent()), false);
         }
+        if (request.messageSnapshot() != null && request.messageSnapshot().indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "messageSnapshot must not contain NUL bytes");
+        }
         String provided = truncate(request.messageSnapshot());
         return new Snapshot(provided, provided != null);
     }
@@ -259,7 +263,14 @@ public class ReportService {
     }
 
     private static String normalizeOptional(String value) {
-        return value == null || value.isBlank() ? null : value;
+        if (value == null) {
+            return null;
+        }
+        if (value.indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "details must not contain NUL bytes");
+        }
+        return value.isBlank() ? null : value;
     }
 
     private static int normalizeLimit(Integer limit) {

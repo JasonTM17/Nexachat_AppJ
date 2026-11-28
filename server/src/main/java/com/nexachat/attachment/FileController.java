@@ -8,6 +8,7 @@ import com.nexachat.feed.FeedImageAccess;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -136,6 +137,7 @@ public class FileController {
                 .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .header(HttpHeaders.ACCEPT_RANGES, ByteRanges.BYTES_UNIT)
+                .cacheControl(CacheControl.noStore().cachePrivate())
                 .contentLength(size)
                 .body(new SizedInputStreamResource(bodyStream, size));
     }
@@ -161,6 +163,7 @@ public class FileController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .header(HttpHeaders.ACCEPT_RANGES, ByteRanges.BYTES_UNIT)
                 .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + size)
+                .cacheControl(CacheControl.noStore().cachePrivate())
                 .contentLength(count)
                 // The resource carries exactly the requested bytes, so the
                 // converter writes the slice without buffering the file.

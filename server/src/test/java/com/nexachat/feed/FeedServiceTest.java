@@ -228,6 +228,44 @@ class FeedServiceTest {
         verify(store).listPosts(eq(viewerId), eq(authorId), eq("%100\\%\\_a\\\\%".replace("\\\\", "\\\\").replace("%100\\%\\_a\\\\%", "%100\\%\\_a\\\\b%")), isNull(), eq(11));
     }
 
+    @Test
+    void nulBytesAreRejectedWithValidationFailedAcrossTextAndSearch() {
+        UUID userId = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
+        UUID commentId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.create(userId,
+                new CreatePostRequest("hello\u0000world", null, UUID.randomUUID())))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getCode())
+                        .isEqualTo(ApiErrorCode.VALIDATION_FAILED));
+
+        assertThatThrownBy(() -> service.editPost(userId, postId,
+                new EditPostRequest("edit\u0000post")))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getCode())
+                        .isEqualTo(ApiErrorCode.VALIDATION_FAILED));
+
+        when(store.findVisiblePost(userId, postId))
+                .thenReturn(Optional.of(postRow(postId, userId, "ok", null)));
+        assertThatThrownBy(() -> service.createComment(userId, postId,
+                new CreateCommentRequest("hello\u0000comment", UUID.randomUUID())))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getCode())
+                        .isEqualTo(ApiErrorCode.VALIDATION_FAILED));
+
+        assertThatThrownBy(() -> service.editComment(userId, commentId,
+                new EditCommentRequest("edit\u0000comment")))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getCode())
+                        .isEqualTo(ApiErrorCode.VALIDATION_FAILED));
+
+        assertThatThrownBy(() -> service.list(userId, 10, null, null, "bad\u0000query"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getCode())
+                        .isEqualTo(ApiErrorCode.VALIDATION_FAILED));
+    }
+
     private static FeedStore.PostRow postRow(UUID id, UUID authorId, String body, Instant editedAt) {
         return new FeedStore.PostRow(id, authorId, "Author", null, body,
                 null, null, null, null, null, 0, NOW.minusSeconds(10), editedAt);

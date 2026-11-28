@@ -32,12 +32,12 @@ services:
     envVars:
       # ---- Process / runtime ------------------------------------------------
       # Render defaults PORT to 10000; the app and the image health check use
-      # 8080 (application.yml:2, server/Dockerfile:44-45).
+      # 8080 (application.yml:2, server/Dockerfile:95).
       - key: PORT
         value: "8080"
       - key: SPRING_PROFILES_ACTIVE
         value: prod,render,json-logs
-      # Replaces the image default (server/Dockerfile:80). MaxRAMPercentage=60
+      # Replaces the image default (server/Dockerfile:99). MaxRAMPercentage=60
       # leaves room for metaspace, code cache, thread stacks and direct buffers
       # inside the 512 MB cgroup; SerialGC and C1-only compilation avoid
       # competing GC/JIT threads on 0.1 CPU. The AppCDS archive is built into
@@ -104,7 +104,7 @@ services:
         value: CF-Connecting-IP
 
       # ---- Storage ---------------------------------------------------------
-      # Kept for the diskSpace health probe (application.yml:63). With the s3
+      # Kept for the diskSpace health probe (application.yml:80-81). With the s3
       # provider S1 no longer requires it at startup, but a writable path must
       # still exist for /actuator/health/readiness.
       - key: STORAGE_ROOT
@@ -112,13 +112,13 @@ services:
       # Multipart scratch is created and probe-written at boot, so an
       # unwritable path fails startup instead of the first upload
       # (docs/operations/operations.md, multipart section). /app is owned by the runtime
-      # user (server/Dockerfile:36).
+      # user (server/Dockerfile:55,57).
       - key: NEXACHAT_MULTIPART_TEMP_DIR
         value: /app/data/multipart
       # Supabase Storage (S3 protocol, region ap-southeast-1, private bucket,
       # path-style) is the deployed store; Cloudflare R2 (region auto) is a
       # supported alternative. Names match application.yml storage.s3 block
-      # (server/src/main/resources/application.yml:148-153); S3StorageConfiguration
+      # (server/src/main/resources/application.yml:200-205); S3StorageConfiguration
       # always uses path-style addressing.
       - key: NEXACHAT_STORAGE_PROVIDER
         value: s3

@@ -425,4 +425,31 @@ class AttachmentServiceTest {
 
         verify(memberRepository, never()).existsAdmittedAt(any(), any(), any());
     }
+
+    @Test
+    void loadContent_peerSuppressedMessage_nonOwnerMemberGetsNotFoundWhileOwnerPasses() throws Exception {
+        MessageAttachment attachment = attachment(ownerId, "attachments/suppressed.png", true);
+        ReflectionTestUtils.setField(attachment.getMessage(), "peerSuppressed", true);
+        when(attachmentRepository.findById(attachment.getId())).thenReturn(Optional.of(attachment));
+        when(attachmentRepository.findByStorageKey("attachments/suppressed.png"))
+                .thenReturn(Optional.of(attachment));
+        when(storageService.open("attachments/suppressed.png")).thenReturn(handle(PNG_BYTES));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> attachmentService.loadContent(attachment.getId(), requesterId));
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(404);
+        verify(storageService, never()).open(anyString());
+        verify(memberRepository, never()).existsAdmittedAt(any(), any(), any());
+
+        ApiException rawEx = catchThrowableOfType(ApiException.class,
+                () -> attachmentService.assertStorageKeyReadable("attachments/suppressed.png", requesterId));
+        assertThat(rawEx.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+
+        try (AttachmentService.AttachmentContent ownerContent =
+                     attachmentService.loadContent(attachment.getId(), ownerId)) {
+            assertThat(ownerContent.content().content().readAllBytes()).containsExactly(PNG_BYTES);
+        }
+        attachmentService.assertStorageKeyReadable("attachments/suppressed.png", ownerId);
+    }
 }

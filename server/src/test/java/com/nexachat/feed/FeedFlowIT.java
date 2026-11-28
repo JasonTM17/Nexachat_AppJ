@@ -1495,4 +1495,46 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
     }
 
+    @Test
+    void nulBytesInPostCommentSearchAndReportReturnValidationFailed() throws Exception {
+        Actor author = newUser("Nul Author");
+        UUID postId = createPostId(author, "clean post");
+        UUID commentId = UUID.fromString(json(postAs(author,
+                "/api/v1/feed/posts/" + postId + "/comments",
+                Map.of("body", "clean comment", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+
+        postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "bad\u0000post", "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        patchAs(author, "/api/v1/feed/posts/" + postId, Map.of("body", "bad\u0000edit"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        postAs(author, "/api/v1/feed/posts/" + postId + "/comments", Map.of(
+                "body", "bad\u0000comment", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        patchAs(author, "/api/v1/feed/comments/" + commentId, Map.of("body", "bad\u0000cedit"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        mockMvc.perform(get("/api/v1/feed/posts")
+                        .queryParam("q", "bad\u0000search")
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        postAs(author, "/api/v1/reports", Map.of(
+                "targetType", "POST",
+                "targetId", postId.toString(),
+                "reason", "SPAM",
+                "details", "bad\u0000details"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
 }

@@ -273,6 +273,13 @@ class SocialSettingsFlowIT extends FeatureItSupport {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
         assertThat(auditRows("SOCIAL_CMS_PUBLISH")).isZero();
+
+        putAs(admin, "/api/v1/admin/social/settings/announcement/draft", Map.of(
+                "expectedRevision", currentRevision(admin),
+                "titleVi", "tiêu\u0000đề", "bodyVi", "body",
+                "titleEn", "title", "bodyEn", "body"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
     }
 
     // --------------------------------------------------------------- helper

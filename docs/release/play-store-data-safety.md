@@ -568,7 +568,7 @@ These are owner decisions; do not infer them from code:
 - Source inspected: Android manifest, backup/network XML, Gradle catalog,
   privacy configuration test, Room entities and database module, DataStore and
   Keystore storage, attachment/media caches, auth/logout/deletion flow, Google
-  Credential Manager client, server Flyway migrations V1–V48, controllers,
+  Credential Manager client, server Flyway migrations V1–V51, controllers,
   account-deletion and email-OTP services, the mail adapters, Firebase bridge
   and RTDB projection code (`server/src/main/java/com/nexachat/firebase/`),
   Android ephemeral transport (`core/realtime/ephemeral/` and

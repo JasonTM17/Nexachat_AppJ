@@ -190,6 +190,10 @@ public class SocialSettingsService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, field + " is required");
         }
         String stripped = value.strip();
+        if (stripped.indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    field + " must not contain NUL bytes");
+        }
         if (stripped.isEmpty() || stripped.length() > maxLength) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     field + " must be 1-" + maxLength + " characters");

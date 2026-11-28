@@ -19,7 +19,7 @@ References: [Render Blueprint spec](https://render.com/docs/blueprint-spec),
 ## 1. Create the Neon database
 
 1. Create a Neon project in **AWS ap-southeast-1 (Singapore)** — the same region
-   as the Render service — with PostgreSQL 16, database `nexachat`, role
+   as the Render service — with PostgreSQL 18, database `nexachat`, role
    `nexachat`.
 2. In **Connect**, turn **Connection pooling off** and copy the **direct**
    connection string. Append `?sslmode=require`.
@@ -139,7 +139,7 @@ curl -fsS https://api.nexachat.io.vn/actuator/health/readiness
 ```
 
 `readiness` covers `db`, `flyway`, `diskSpace` and `refreshReplay`
-(`application.yml:54-58`). If `refreshReplay` is DOWN, the generated key was
+(`application.yml:75-76`). If `refreshReplay` is DOWN, the generated key was
 removed; strict refresh rotation still works, but replay recovery is off.
 
 Run the smoke test:
@@ -180,36 +180,36 @@ manually to the service):
 |---|---|---|
 | `PORT` | `application.yml:2` | `8080`; Render's default is `10000` |
 | `SPRING_PROFILES_ACTIVE` | `logback-spring.xml:10` | `prod,render,json-logs` |
-| `JAVA_OPTS` | `render.yaml` (overrides `server/Dockerfile:80`) | 512 MB JVM fit; loads the AppCDS archive built into the image |
+| `JAVA_OPTS` | `render.yaml` (overrides `server/Dockerfile:99`) | 512 MB JVM fit; loads the AppCDS archive built into the image |
 | `DATABASE_URL` | `application-prod.yml:55` | direct Neon JDBC URL, `sslmode=require` |
 | `DATABASE_USER` | `application-prod.yml:56` | |
 | `DATABASE_PASSWORD` | `application-prod.yml:57` | secret |
 | `JWT_SECRET` | `application-prod.yml:79` | generated; ≥ 32 bytes (`JwtService.java:37-49`) |
-| `NEXACHAT_REFRESH_REPLAY_KEY` | `application.yml:101` | generated; base64 of exactly 32 bytes |
-| `NEXACHAT_CORS_ALLOWED_ORIGINS` | `application.yml:117` | `https://nexachat.io.vn` for web account deletion |
-| `NEXACHAT_TRUSTED_PROXY_CIDRS` | `application.yml:126` | `10.0.0.0/8`; Render private-network peer range, see §8 |
-| `NEXACHAT_CLIENT_IP_HEADER` | `application.yml:130` | `CF-Connecting-IP`; Cloudflare overwrites it, see §8 |
+| `NEXACHAT_REFRESH_REPLAY_KEY` | `application.yml:110` | generated; base64 of exactly 32 bytes |
+| `NEXACHAT_CORS_ALLOWED_ORIGINS` | `application.yml:136` | `https://nexachat.io.vn` for web account deletion |
+| `NEXACHAT_TRUSTED_PROXY_CIDRS` | `application.yml:146` | `10.0.0.0/8`; Render private-network peer range, see §8 |
+| `NEXACHAT_CLIENT_IP_HEADER` | `application.yml:150` | `CF-Connecting-IP`; Cloudflare overwrites it, see §8 |
 | `STORAGE_ROOT` | `application-prod.yml:84` | `/app/data/uploads`; also the `diskSpace` health path |
-| `NEXACHAT_STORAGE_PROVIDER` | `application.yml:146` | `s3` |
-| `NEXACHAT_STORAGE_S3_ENDPOINT` | `application.yml:149` | Supabase S3 endpoint `https://<project-ref>.storage.supabase.co/storage/v1/s3` (or R2 endpoint) |
-| `NEXACHAT_STORAGE_S3_REGION` | `application.yml:150` | `ap-southeast-1` for Supabase (`auto` for R2) |
-| `NEXACHAT_STORAGE_S3_BUCKET` | `application.yml:151` | `nexachat-uploads` |
-| `NEXACHAT_STORAGE_S3_ACCESS_KEY_ID` | `application.yml:152` | secret |
-| `NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY` | `application.yml:153` | secret |
-| `NEXACHAT_MAIL_PROVIDER` | `application.yml:89` | `resend`; SMTP ports are blocked on Render Free |
-| `RESEND_API_KEY` | `application.yml:98` | secret |
-| `RESEND_FROM` | `application.yml:90` | sender on a domain verified in Resend |
-| `FCM_ENABLED` | `application.yml:294` | `false` until credentials exist |
-| `FCM_PROJECT_ID` | `application.yml:295` | |
-| `FCM_SERVICE_ACCOUNT_JSON` | `application.yml:297` | full JSON inline, no file needed (`GoogleServiceAccountCredentialsFactory.java:58-101`) |
-| `FIREBASE_REALTIME_ENABLED` | `application.yml:307` | `false` |
-| `FIREBASE_DATABASE_URL` | `application.yml:309` | only when the bridge is enabled |
-| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | `application.yml:107` | `false`; all `/api/v1/auth/google/*` answer 404 while off |
+| `NEXACHAT_STORAGE_PROVIDER` | `application.yml:198` | `s3` |
+| `NEXACHAT_STORAGE_S3_ENDPOINT` | `application.yml:201` | Supabase S3 endpoint `https://<project-ref>.storage.supabase.co/storage/v1/s3` (or R2 endpoint) |
+| `NEXACHAT_STORAGE_S3_REGION` | `application.yml:202` | `ap-southeast-1` for Supabase (`auto` for R2) |
+| `NEXACHAT_STORAGE_S3_BUCKET` | `application.yml:203` | `nexachat-uploads` |
+| `NEXACHAT_STORAGE_S3_ACCESS_KEY_ID` | `application.yml:204` | secret |
+| `NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY` | `application.yml:205` | secret |
+| `NEXACHAT_MAIL_PROVIDER` | `application.yml:98` | `resend`; SMTP ports are blocked on Render Free |
+| `RESEND_API_KEY` | `application.yml:107` | secret |
+| `RESEND_FROM` | `application.yml:99` | sender on a domain verified in Resend |
+| `FCM_ENABLED` | `application.yml:387` | `false` until credentials exist |
+| `FCM_PROJECT_ID` | `application.yml:388` | |
+| `FCM_SERVICE_ACCOUNT_JSON` | `application.yml:390` | full JSON inline, no file needed (`GoogleServiceAccountCredentialsFactory.java:58-101`) |
+| `FIREBASE_REALTIME_ENABLED` | `application.yml:399` | `false` |
+| `FIREBASE_DATABASE_URL` | `application.yml:402` | only when the bridge is enabled |
+| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | `application.yml:124` | `false`; all `/api/v1/auth/google/*` answer 404 while off |
 | `NEXACHAT_GOOGLE_SIGNUP_ENABLED` | `nexachat.google.signin.signup-enabled` | `false`; Google **account creation** from an unknown Google `sub`; needs sign-in enabled |
-| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | `application.yml:108` | secret when sign-in is enabled; expected ID token `aud` |
-| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | `application.yml:110` | secret when sign-in is enabled; comma-separated Android OAuth IDs trusted as `azp` |
-| `NEXACHAT_GOOGLE_JWKS_URI` | `application.yml:111` | public Google JWKS URL; override only in tests |
-| `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | `application.yml:112` | `300` |
+| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | `application.yml:125` | secret when sign-in is enabled; expected ID token `aud` |
+| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | `application.yml:127` | secret when sign-in is enabled; comma-separated Android OAuth IDs trusted as `azp` |
+| `NEXACHAT_GOOGLE_JWKS_URI` | `application.yml:128` | public Google JWKS URL; override only in tests |
+| `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | `application.yml:129` | `300` |
 
 Line numbers reflect the current server codebase on main.
 
@@ -235,7 +235,7 @@ here. Resend uses HTTPS and is the configured provider.
 
 - **Site:** `site/delete-account.html:19` already sets
   `nexachat-api-base` to `https://api.nexachat.io.vn`, and the CSP in
-  `site/vercel.json:41` allows exactly that origin in `connect-src`.
+  `site/vercel.json:116` allows exactly that origin in `connect-src`.
   `python site/check.py` keeps the two in sync. If the API origin changes,
   change both files and the CORS value together. Deploy the API first: with the
   meta set, the page enables the form and shows an error if the API is not

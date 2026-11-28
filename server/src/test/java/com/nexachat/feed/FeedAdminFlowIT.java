@@ -223,6 +223,11 @@ class FeedAdminFlowIT extends FeatureItSupport {
                 Map.of("reason", "  "))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        postAs(moderator, "/api/v1/admin/feed/posts/" + postId + "/hide",
+                Map.of("reason", "bad\u0000reason"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
     }
 
     @Test

@@ -58,6 +58,14 @@
       "destination": "https://api.nexachat.io.vn/api/social/v1/config"
     },
     {
+      "source": "/api/social/v1/authors/:path*",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/authors/:path*"
+    },
+    {
+      "source": "/api/v1/files/:path*",
+      "destination": "https://api.nexachat.io.vn/api/v1/files/:path*"
+    },
+    {
       "source": "/social",
       "destination": "/social/index.html"
     },
@@ -115,6 +123,23 @@
     },
     {
       "source": "/api/social/v1/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/api/v1/files/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

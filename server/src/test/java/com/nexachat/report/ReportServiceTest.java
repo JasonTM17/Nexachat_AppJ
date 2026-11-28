@@ -297,4 +297,17 @@ class ReportServiceTest {
         assertThat(page.items().get(0).id()).isEqualTo(r1.getId());
         assertThat(page.nextCursor()).isNotNull();
     }
+
+    @Test
+    void submit_nulByteInDetails_throwsValidationFailed() {
+        when(userRepository.findById(targetId)).thenReturn(Optional.of(mock(User.class)));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> reportService.submit(reporterId, new CreateReportRequest(
+                        Report.TargetType.USER, targetId, Report.Reason.SPAM,
+                        "bad\u0000details", null)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(reportRepository, never()).saveAndFlush(any());
+    }
 }

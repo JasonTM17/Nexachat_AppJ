@@ -122,6 +122,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V48 | `V48__message_embeddings_model_key.sql` | Widens `message_embeddings` to primary key `(message_id, model)` so local and external embedding identities can coexist for the same source message instead of overwriting each other. |
 | V49 | `V49__access_token_version.sql` | Adds a per-user version for access-token revocation. |
 | V50 | `V50__social_feature_controls.sql` | Singleton Social runtime switches and bilingual draft/published announcement state with revision-based optimistic concurrency. |
+| V51 | `V51__feed_edit_and_search.sql` | Adds nullable `edited_at` columns on `public_posts` and `public_comments` and the `public.f_unaccent(body) gin_trgm_ops` index for accent- and case-insensitive feed search. |
 
 ## Operational notes
 

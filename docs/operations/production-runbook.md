@@ -23,11 +23,11 @@ Operational runbook for the NexaChat production deployment on free-tier infrastr
 1. **Trigger**: Push to production deployment branch or trigger manual deploy in Render Dashboard.
 2. **Build**: Render builds the container using `server/Dockerfile` (multi-stage Maven build with Eclipse Temurin 21 JRE noble runtime).
 3. **Startup & Migrations**:
-   - JVM flags configure cgroup memory allocation: the `render.yaml` `JAVA_OPTS` block (`render.yaml:44-55`) is the source of truth for production (`-XX:MaxRAMPercentage=60.0`, `-XX:+UseSerialGC`, `-Xss512k`, `-XX:TieredStopAtLevel=1`, `-XX:+ExitOnOutOfMemoryError`, and AppCDS archive `-XX:SharedArchiveFile=/app/application.jsa`), overriding the container image default at `server/Dockerfile:80`. Readiness is locally measured at 120–185 s with the archive and 167–328 s without, at 0.1 CPU / 512 MB (readiness on Render not yet measured).
+   - JVM flags configure cgroup memory allocation: the `render.yaml` `JAVA_OPTS` block (`render.yaml:46-56`) is the source of truth for production (`-XX:MaxRAMPercentage=60.0`, `-XX:+UseSerialGC`, `-Xss512k`, `-XX:TieredStopAtLevel=1`, `-XX:+ExitOnOutOfMemoryError`, and AppCDS archive `-XX:SharedArchiveFile=/app/application.jsa`), overriding the container image default at `server/Dockerfile:99`. Readiness is locally measured at 120–185 s with the archive and 167–328 s without, at 0.1 CPU / 512 MB (readiness on Render not yet measured).
    - `ProductionDataSourceConfiguration` validates that required credentials (`spring.datasource.url`, `spring.datasource.username`, `spring.datasource.password`, and `STORAGE_ROOT` when provider is `local`) are present and non-empty (`server/src/main/java/com/nexachat/config/ProductionDataSourceConfiguration.java:18-30`).
    - `ProductionJwtSecretGuard` validates that `JWT_SECRET` is not the development default and has at least 8 distinct characters (`server/src/main/java/com/nexachat/config/ProductionJwtSecretGuard.java:48`).
-   - Flyway executes forward migrations (`V1`–`V20`, `V22`, and `V24`–`V48`; `V21` and `V23` are reserved and have no files) with validation enabled (`validate-on-migrate: true`, `server/src/main/resources/application-prod.yml:47`).
-4. **Liveness Probe**: Render checks container liveness via `curl -fsS http://localhost:8080/actuator/health/liveness` (`server/Dockerfile:82-83`).
+   - Flyway executes forward migrations (`V1`–`V20`, `V22`, and `V24`–`V51`; `V21` and `V23` are reserved and have no files) with validation enabled (`validate-on-migrate: true`, `server/src/main/resources/application-prod.yml:47`).
+4. **Liveness Probe**: Render checks container liveness via `curl -fsS http://localhost:8080/actuator/health/liveness` (`server/Dockerfile:101-102`).
 5. **Post-Deploy Smoke Check**: Run `tools/ops/prod-smoke.sh` immediately after deployment completes.
 
 ### Rollback Strategy
@@ -53,7 +53,7 @@ Operational runbook for the NexaChat production deployment on free-tier infrastr
 ### Free-Tier Sleep Cycle
 
 - **Render Web Service**: Spins down after 15 minutes of zero HTTP traffic unless kept awake. In the supported production configuration, the `prod-keep-warm` GitHub Actions workflow (`.github/workflows/keep-warm.yml`, cron every 10 minutes, subject to GitHub scheduler jitter) or an external uptime monitor pings `https://nexachat-api-rl1v.onrender.com/actuator/health/liveness` (`https://api.nexachat.io.vn/actuator/health/liveness`), keeping Render awake 24/7 (covered by Render's 750 free instance hours per month).
-- **Neon Serverless Postgres**: Automatically suspends compute after 5 minutes of idle connection inactivity. Because the liveness endpoint only checks `ping` (`server/src/main/resources/application.yml:55-56`) and never queries the database, Neon can suspend even while Render stays awake.
+- **Neon Serverless Postgres**: Automatically suspends compute after 5 minutes of idle connection inactivity. Because the liveness endpoint only checks `ping` (`server/src/main/resources/application.yml:73-74`) and never queries the database, Neon can suspend even while Render stays awake.
 - **Wake-up Duration**:
   - Total cold start: In local benchmarking capped at 512 MB / 0.1 CPU, Spring Boot reached readiness in 120–185 s with the AppCDS archive and 167–328 s without (readiness on Render not yet measured; the first live Render deploy without AppCDS measured 123 s from container start to a healthy check, with Spring Boot starting in 106.6 s, including the first Flyway run on Neon). The Android client waits up to 150 s for health before an auth request.
   - Neon Postgres compute resume: ~1–3 seconds added to the first database query when compute has suspended.
@@ -222,7 +222,7 @@ If client abuse, leaked credentials, or an RTDB loop occurs:
   - HikariCP pool exhaustion: Ensure configured pool sizes (`maximum-pool-size: 5` on Render via `application-render.yml:26`, `10` in default prod via `application-prod.yml:60`) remain intact and `leak-detection-threshold: 60000` catches leaked connections.
 - **Operator Actions & Mitigation**:
   - Always use the Neon direct connection string (never the `-pooler` endpoint, which conflicts with session advisory locks used by Flyway and ScheduledAdvisoryLock; see `render.yaml:57-59` and `docs/operations/deploy-render.md:30-34`).
-  - Enable bounded data retention cleanup to purge expired tokens, tombstones, and inactive records (`server/src/main/resources/application.yml:153-208`). Note: retention cleanup is **not** a single flag. It requires:
+  - Enable bounded data retention cleanup to purge expired tokens, tombstones, and inactive records (`server/src/main/resources/application.yml:238-297`). Note: retention cleanup is **not** a single flag. It requires:
     1. Global enablement: `NEXACHAT_RETENTION_ENABLED=true` (`RetentionJobRunner.java:66`).
     2. Disabling dry-run mode: `NEXACHAT_RETENTION_DRY_RUN=false` (`RetentionJobRunner.java:84,233-246`; dry-run defaults to `true`, which only logs/counts candidate rows without deleting them).
     3. Per-job enablement: `NEXACHAT_RETENTION_<JOB>_ENABLED=true` for each target entity (`REFRESH_TOKENS`, `DEVICE_TOKENS`, `MESSAGE_TOMBSTONES`, `REMINDERS`, `POLLS`, `CALL_RECORDS`, `ATTACHMENTS`, etc., all default to `false`).
@@ -253,8 +253,8 @@ If client abuse, leaked credentials, or an RTDB loop occurs:
       weekly keep-alive ping or monitoring call) counts as activity and keeps
       the project from pausing.
 - **Operator Actions & Mitigation**:
-  - Enable avatar sweep (`NEXACHAT_AVATAR_SWEEP_ENABLED=true`, `NEXACHAT_AVATAR_SWEEP_DRY_RUN=false`) to delete unreferenced avatar files older than 24 hours (`server/src/main/resources/application.yml:138-142`).
-  - Enable attachment retention cleanup by setting `NEXACHAT_RETENTION_ENABLED=true`, `NEXACHAT_RETENTION_DRY_RUN=false`, and `NEXACHAT_RETENTION_ATTACHMENTS_ENABLED=true` (`server/src/main/resources/application.yml:153-156,189-191`). Both global and per-job flags must be active and dry-run disabled to remove unreferenced and soft-deleted attachment binaries (`RetentionJobRunner.java:66,71,84`).
+  - Enable avatar sweep (`NEXACHAT_AVATAR_SWEEP_ENABLED=true`, `NEXACHAT_AVATAR_SWEEP_DRY_RUN=false`) to delete unreferenced avatar files older than 24 hours (`server/src/main/resources/application.yml:216-219`).
+  - Enable attachment retention cleanup by setting `NEXACHAT_RETENTION_ENABLED=true`, `NEXACHAT_RETENTION_DRY_RUN=false`, and `NEXACHAT_RETENTION_ATTACHMENTS_ENABLED=true` (`server/src/main/resources/application.yml:238-241,273-276`). Both global and per-job flags must be active and dry-run disabled to remove unreferenced and soft-deleted attachment binaries (`RetentionJobRunner.java:66,71,84`).
 - **Upgrade Path**:
   - Supabase **Pro** plan ($25/month): 100 GB storage included, 250 GB monthly egress bandwidth, $0.021/GB extra storage.
 

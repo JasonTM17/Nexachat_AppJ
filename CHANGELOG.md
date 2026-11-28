@@ -8,12 +8,27 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [1.2.32] - 2026-11-28
 
-See [the Android release notes](docs/release-notes/v1.2.32.md).
+See [the release notes](docs/release-notes/v1.2.32.md).
 
 ### Added
 
-- This release includes the Social changes already merged into main. Web Social
-  and new video uploads are off by default.
+- Social posts and comments can now be edited by their authors, displaying an
+  `(edited)` indicator (`editedAt`), alongside accent- and case-insensitive
+  keyword search, author profile views and post filtering, a multi-emoji
+  reaction picker, optional report details, and author avatars.
+- Social video and attachment endpoints support HTTP `Range` byte-range
+  streaming (`206 Partial Content` / `416 Range Not Satisfiable`), and the web
+  proxy forwards same-origin author profile and file requests with `no-store`
+  cache protection.
+- Web Social and new video uploads remain disabled by default until enabled by
+  an administrator.
+
+### Changed
+
+- Unified the Tonal Plum light and dark palette, typography, and component
+  styling across Android Feed, Social Web, Join, and Admin Web, including a
+  light/dark theme toggle on Social Web and targeted updates that preserve
+  video playback and comment drafts.
 
 ### Fixed
 
@@ -23,6 +38,14 @@ See [the Android release notes](docs/release-notes/v1.2.32.md).
 - Tapping a citation opens the original message. Ask abstains when a fact is
   missing or contradictory, or when its only source was recalled or excluded
   from AI processing.
+- Admin Web hides the `/social` settings navigation from moderators with a
+  localized admin-only notice, retains unsaved draft changes per field on
+  settings version conflicts, shows inline title/body validation errors, and
+  fixes reported-video preview playback.
+- Backend API endpoints reject NUL bytes cleanly with `400 VALIDATION_FAILED`,
+  release database connections before streaming feed media from object storage,
+  set explicit `Cache-Control: no-store, private` headers on `/api/v1/files/**`,
+  and block non-sender reads of attachments on peer-suppressed messages.
 
 ## [1.2.31] - 2026-11-28
 

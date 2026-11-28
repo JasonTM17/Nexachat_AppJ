@@ -93,11 +93,13 @@ python tools/checks/check-release-r8-mapping.py
 ## 3. Roll out the database migration and server
 
 Flyway runs on application startup and is forward-only: `V1`–`V20`, `V22`, and
-`V24`–`V48` are the current files (`server/src/main/resources/db/migration/`);
+`V24`–`V51` are the current files (`server/src/main/resources/db/migration/`);
 `V21` and `V23` are reserved and have no files. There is no down-migration.
 For schema changes that rebuild primary keys or indexes (such as `V48` on
-`message_embeddings`), verify no concurrent backfill or embedding writer is
-mutating the table before booting the upgrade.
+`message_embeddings` and `V51` `idx_public_posts_body_trgm` on `public_posts`),
+verify no concurrent backfill or embedding writer is mutating the table before
+booting the upgrade. Note also that `V50` (`social_settings`) seeds Web Social
+and new video uploads disabled (`false`) by default.
 The manual Render deploy in §4 boots the API from `server/Dockerfile`; Flyway
 applies pending migrations on that boot. There is no separate migration command.
 
@@ -239,7 +241,7 @@ production does not pull it. Render builds from `server/Dockerfile`.
   (1) global toggle `NEXACHAT_RETENTION_ENABLED=true`, (2) disabling dry-run
   `NEXACHAT_RETENTION_DRY_RUN=false` (defaults to `true`, which counts candidates
   without deleting), and (3) per-job toggles `NEXACHAT_RETENTION_<JOB>_ENABLED=true`
-  (`server/src/main/resources/application.yml:172-227`).
+  (`server/src/main/resources/application.yml:238-297`).
 - [ ] Record the deployed commit SHA, APK/AAB checksum, migration version and
   smoke results in the release notes or deployment log.
 

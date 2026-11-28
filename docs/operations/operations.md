@@ -1036,7 +1036,7 @@ LAN address printed by the demo script and be on the same network.
 ## Upgrade
 
 Back up before replacing the app image. Flyway applies versioned migrations
-through V48 on app startup and they are forward-only: add a new SQL migration; never
+through V51 on app startup and they are forward-only: add a new SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/architecture/api-contract.md`](../architecture/api-contract.md#migration-history); the migrations after
 V11 introduce:
@@ -1087,7 +1087,7 @@ writers together: a pre-V48 writer using `ON CONFLICT (message_id)` cannot run
 against the migrated schema. Once any message carries multiple model rows the
 change is effectively irreversible without deduplication, so rollback is a
 forward fix, not a key shrink.
-Ensure every migration file V1–V20, `V22`, and `V24`–`V48` is present in the
+Ensure every migration file V1–V20, `V22`, and `V24`–`V51` is present in the
 source tree before rebuilding the dev app container; the image packages the
 server migration resources used by Flyway at startup.
 
