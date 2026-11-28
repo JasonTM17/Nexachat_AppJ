@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ApiException } from '../api';
 import { useI18n } from '../i18n';
 import { timeLocale } from '../lib/locale';
@@ -118,19 +118,19 @@ function isVisible(element: HTMLElement): boolean {
 }
 
 function useModalLayer(
-  open: boolean,
   close: () => void,
   ref: RefObject<HTMLElement | null>,
+  initialFocus?: RefObject<HTMLElement | null>,
 ) {
   // Callers pass inline closures, so `close` changes identity every render — keep
   // it in a ref and register once per open-cycle, or a re-render would re-push
   // the layer on top of a dialog stacked above it.
   const closeRef = useRef(close);
   closeRef.current = close;
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
+  useLayoutEffect(() => {
     const layerElement = ref.current;
+    if (!layerElement) return;
+    const opener = document.activeElement;
     const layer = { close: () => closeRef.current() };
     modalStack.push(layer);
     const isTop = () => modalStack[modalStack.length - 1] === layer;
@@ -170,15 +170,25 @@ function useModalLayer(
       }
     };
     document.addEventListener('keydown', onKey, true);
+
+    const target = initialFocus?.current;
+    if (target && !target.matches(':disabled')) target.focus();
+    else layerElement.focus();
+
     return () => {
       document.removeEventListener('keydown', onKey, true);
+      const wasTop = isTop();
       const i = modalStack.indexOf(layer);
       if (i !== -1) modalStack.splice(i, 1);
-      // Hand focus back to the opener only when focus is still inside the
-      // closing layer; otherwise a programmatic focus move elsewhere wins.
-      if (layerElement?.contains(document.activeElement)) previous?.focus?.();
+      // The browser can already have moved focus to body when a focused node
+      // is removed. Respect deliberate focus moves to another live control.
+      const active = document.activeElement;
+      if (wasTop && opener instanceof HTMLElement && opener.isConnected
+        && (active === document.body || layerElement.contains(active))) {
+        opener.focus({ preventScroll: true });
+      }
     };
-  }, [open, ref]);
+  }, [ref, initialFocus]);
 }
 
 export function Drawer({
@@ -194,10 +204,7 @@ export function Drawer({
 }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
-  useModalLayer(true, onClose, ref);
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
+  useModalLayer(onClose, ref);
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -265,19 +272,12 @@ export function ConfirmDialog({
     }
     onConfirm(reason);
   };
-  useEffect(() => {
-    // With a reason textarea the field takes focus; without one there is no
-    // field at all, so land focus on the dialog container (mirroring the
-    // Drawer) — otherwise focus never enters the dialog.
-    if (reasonRef.current) reasonRef.current.focus();
-    else dialogRef.current?.focus();
-  }, []);
   useModalLayer(
-    true,
     () => {
       if (!busyRef.current) onCancel();
     },
     dialogRef,
+    reasonRef,
   );
   return (
     <div className="dialog-backdrop">
@@ -303,7 +303,6 @@ export function ConfirmDialog({
               rows={2}
               ref={reasonRef}
               maxLength={maxReasonLength}
-              autoFocus
               required={requireReason}
               disabled={busy}
               aria-invalid={reasonError || undefined}

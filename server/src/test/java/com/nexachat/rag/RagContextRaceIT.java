@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -160,6 +161,24 @@ class RagContextRaceIT extends FeatureItSupport {
         assertThat(current.path("citations").get(0).path("messageId").asText()).isEqualTo(safeId.toString());
         assertThat(ask().path("mode").asText()).isEqualTo("CACHE");
         assertThat(calls).hasValue(2);
+    }
+
+    @Test
+    void replayIgnoresRowsFromThePreviousAnswerPolicy() {
+        RagQuestionCache.ContextSnapshot snapshot = cache.contextSnapshot(conversationId);
+        assertThat(save(snapshot)).isTrue();
+        // Recreate the previous policy's storage key with the exact same hash and source revision.
+        assertThat(jdbcTemplate.update("UPDATE rag_ask_cache SET model = 'lexical' WHERE conversation_id = ?",
+                conversationId)).isEqualTo(1);
+
+        assertAll(
+                () -> assertThat(cache.findExact(conversationId, "lexical", "fixture")).isEmpty(),
+                () -> assertThat(cache.findCandidates(conversationId, "lexical")).isEmpty());
+
+        assertThat(save(snapshot)).isTrue();
+        assertThat(cache.findExact(conversationId, "lexical", "fixture")).isPresent();
+        assertThat(cache.findCandidates(conversationId, "lexical")).hasSize(1);
+        assertThat(cacheRows()).isEqualTo(2);
     }
 
     @Test

@@ -7,6 +7,7 @@ public enum SummaryError {
     NOT_MEMBER,
     E2EE_UNAVAILABLE,
     INVALID_TIME_ZONE,
+    LOCAL_MODE_UNAVAILABLE,
     NETWORK,
     UNKNOWN
 }

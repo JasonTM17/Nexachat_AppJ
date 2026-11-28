@@ -1489,8 +1489,10 @@ offers are removed with the session (`CallRegistry`).
 
 ## Conversation summary API
 
-The server also exposes `POST /api/v1/conversations/{conversationId}/summary`.
-The route is implemented in `SummaryController` and is shipped. The request and
+The server exposes `POST /api/v1/conversations/{conversationId}/summary` and
+`POST /api/v1/conversations/{conversationId}/summary/local`. The local route
+always uses the built-in extractive engine, including requests with `refresh: true`
+on accounts that allow AI. Both routes use the same request and
 response shapes, consent rules and provider behavior are specified in
 [`docs/architecture/ai-summary.md`](ai-summary.md). The server requires conversation membership
 and at least five usable messages. The response includes `contextOmitted`, a

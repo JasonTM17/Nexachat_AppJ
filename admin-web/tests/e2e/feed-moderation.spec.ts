@@ -100,7 +100,7 @@ interface Mock {
 
 async function mockAdmin(
   page: Page,
-  options: { reports?: Report[] } = {},
+  options: { reports?: Report[]; displayName?: string } = {},
 ): Promise<Mock> {
   const mock: Mock = { calls: [], reports: options.reports ?? fixture() };
 
@@ -123,7 +123,7 @@ async function mockAdmin(
     const path = url.pathname;
 
     if (path === '/api/v1/admin/me') {
-      return json(route, 200, { userId: 'staff-1', role: 'ADMIN', displayName: 'Staff' });
+      return json(route, 200, { userId: 'staff-1', role: 'ADMIN', displayName: options.displayName ?? 'Staff' });
     }
 
     if (method === 'GET' && path === '/api/v1/admin/feed/reports') {
@@ -163,6 +163,36 @@ async function mockAdmin(
 }
 
 const row = (page: Page, text: string) => page.getByRole('row').filter({ hasText: text });
+
+test.describe('mobile feed', () => {
+  test.use({ hasTouch: true, colorScheme: 'dark' });
+
+  for (const width of [320, 390]) {
+    test(`keeps the toolbar and short report text readable at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 740 });
+      const text = 'QA Update for the community garden';
+      await mockAdmin(page, {
+        displayName: 'Admin QA',
+        reports: [report({ id: 'short-report', targetId: 'short-post', messageSnapshot: text })],
+      });
+      await page.goto('/feed');
+      await page.getByLabel('Language').selectOption('vi');
+
+      const message = row(page, text).getByText(text, { exact: true });
+      await expect(message).toBeVisible();
+      const sizes = await message.evaluate((element) => ({
+        textWidth: element.scrollWidth,
+        textContainerWidth: element.clientWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+      }));
+      expect.soft(sizes.textWidth).toBeLessThanOrEqual(sizes.textContainerWidth);
+      expect.soft(sizes.documentWidth).toBeLessThanOrEqual(sizes.viewportWidth);
+      await expect(page.getByRole('button', { name: 'Đổi giao diện' })).toBeInViewport({ ratio: 1 });
+      await expect(row(page, text).getByRole('button', { name: 'Đánh dấu đã xem' })).toBeInViewport({ ratio: 1 });
+    });
+  }
+});
 
 test.describe('feed moderation', () => {
   test('report queue lists posts and comments with author, snapshot and state', async ({
@@ -261,6 +291,26 @@ test.describe('feed moderation', () => {
     await dialog.getByRole('button', { name: 'Cancel' }).click();
 
     await expect(dialog).toHaveCount(0);
+    await expect(post.getByRole('cell', { name: 'Visible', exact: true })).toBeVisible();
+    expect(mock.calls).toEqual([]);
+  });
+
+  test('Escape restores focus to the hide trigger without updating the post', async ({ page }) => {
+    const mock = await mockAdmin(page);
+    await page.goto('/feed');
+    const post = row(page, SPAM_TEXT);
+    const hide = post.getByRole('button', { name: 'Hide', exact: true });
+    await hide.focus();
+    await hide.press('Enter');
+
+    const dialog = page.getByRole('alertdialog', { name: 'Hide post' });
+    const reason = dialog.getByLabel(/Reason/);
+    await expect(reason).toBeFocused();
+    await reason.fill('QA cancel');
+    await page.keyboard.press('Escape');
+
+    await expect(dialog).toHaveCount(0);
+    await expect(hide).toBeFocused();
     await expect(post.getByRole('cell', { name: 'Visible', exact: true })).toBeVisible();
     expect(mock.calls).toEqual([]);
   });

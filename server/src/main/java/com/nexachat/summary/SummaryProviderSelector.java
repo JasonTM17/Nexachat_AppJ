@@ -67,7 +67,7 @@ public class SummaryProviderSelector {
         if (base.provider().id().equals("LLM")) {
             boolean isComplex = complexityAssessor.isComplex(window, refresh);
             if (!localLlmEnabled && !isComplex) {
-                return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", null);
+                return prepareLocal();
             }
         }
         return base;
@@ -75,7 +75,7 @@ public class SummaryProviderSelector {
 
     public PreparedSummaryProvider prepare(boolean consented) {
         if (configuredProvider.equals("local")) {
-            return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", null);
+            return prepareLocal();
         }
         if (!consented) {
             return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", SummaryFallbackReason.NO_CONSENT);
@@ -85,6 +85,10 @@ public class SummaryProviderSelector {
             return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", SummaryFallbackReason.LLM_DISABLED);
         }
         return new PreparedSummaryProvider(llmProvider, "LLM", null);
+    }
+
+    PreparedSummaryProvider prepareLocal() {
+        return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", null);
     }
 
     public SummaryGeneration generate(

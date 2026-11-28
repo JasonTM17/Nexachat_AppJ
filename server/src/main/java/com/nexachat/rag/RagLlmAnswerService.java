@@ -136,6 +136,17 @@ public class RagLlmAnswerService {
             Map<UUID, RagMessage> contextMessages,
             List<AskPriorTurn> priorTurns,
             AskDeadline deadline) {
+        return answerDetailed(userId, conversationId, question, language, context, contextMessages, priorTurns, deadline, false);
+    }
+
+    RagLlmOutcome answerSpeakerQuote(UUID userId, UUID conversationId, String question, SummaryLanguage language,
+                                    List<RagContextItem> context, Map<UUID, RagMessage> contextMessages, AskDeadline deadline) {
+        return answerDetailed(userId, conversationId, question, language, context, contextMessages, List.of(), deadline, true);
+    }
+
+    private RagLlmOutcome answerDetailed(UUID userId, UUID conversationId, String question, SummaryLanguage language,
+                                         List<RagContextItem> context, Map<UUID, RagMessage> contextMessages,
+                                         List<AskPriorTurn> priorTurns, AskDeadline deadline, boolean speakerQuote) {
         if (!consentRepository.isConsented(userId)) {
             return RagLlmOutcome.providerError(false, true, false, false);
         }
@@ -174,7 +185,8 @@ public class RagLlmAnswerService {
                 stats.recordLlmBulkheadRejection();
                 return RagLlmOutcome.bulkheadRejected(deadline != null && deadline.expired());
             }
-            RagPrompt prompt = promptBuilder.build(question, language, externalContext, priorTurns);
+            RagPrompt prompt = speakerQuote ? promptBuilder.buildSpeakerQuote(question, language, externalContext)
+                    : promptBuilder.build(question, language, externalContext, priorTurns);
             try {
                 primaryAttempted = primary != null && breakerAllows;
                 TieredCompletion tiered = completeTiers(
