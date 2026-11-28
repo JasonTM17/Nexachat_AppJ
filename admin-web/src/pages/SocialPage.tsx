@@ -36,6 +36,7 @@ export default function SocialPage() {
 
   const [state, setState] = useState<SocialAdminState | null>(null);
   const [failed, setFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
 
@@ -50,10 +51,8 @@ export default function SocialPage() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
 
-  // Mirror of the in-progress form state so async conflict reloads compare
-  // against what the admin is editing right now, not a stale render closure.
-  const formRef = useRef({ draftForm, webEnabled, videoEnabled });
-  formRef.current = { draftForm, webEnabled, videoEnabled };
+  const refreshRequest = useRef(0);
+  const conflictBaseline = useRef<SocialAdminState | null>(null);
 
   const updateSettings = useCallback((next: SocialAdminState) => {
     setState(next);
@@ -71,18 +70,21 @@ export default function SocialPage() {
   // editing. Per field: whenever the local value differs from the pre-
   // mutation baseline it carries admin intent and is kept; untouched fields
   // adopt the authoritative server value so the console never drifts stale.
-  const load = useCallback((before?: SocialAdminState) => {
+  const load = useCallback(() => {
+    const request = ++refreshRequest.current;
+    const before = conflictBaseline.current;
     setFailed(false);
+    setRefreshing(true);
     api<SocialAdminState>('/api/v1/admin/social/settings')
       .then((next) => {
+        if (request !== refreshRequest.current) return;
         if (!before) {
           adopt(next);
           return;
         }
         setState(next);
-        const current = formRef.current;
-        if (current.webEnabled === before.webEnabled) setWebEnabled(next.webEnabled);
-        if (current.videoEnabled === before.videoUploadsEnabled) setVideoEnabled(next.videoUploadsEnabled);
+        setWebEnabled((latest) => latest === before.webEnabled ? next.webEnabled : latest);
+        setVideoEnabled((latest) => latest === before.videoUploadsEnabled ? next.videoUploadsEnabled : latest);
         const baseDraft = before.draft ?? EMPTY_DRAFT;
         const nextDraft = next.draft ?? EMPTY_DRAFT;
         setDraftForm((latest) => ({
@@ -91,20 +93,32 @@ export default function SocialPage() {
           titleEn: latest.titleEn === baseDraft.titleEn ? nextDraft.titleEn : latest.titleEn,
           bodyEn: latest.bodyEn === baseDraft.bodyEn ? nextDraft.bodyEn : latest.bodyEn,
         }));
+        conflictBaseline.current = null;
       })
-      .catch(() => setFailed(true));
+      .catch(() => {
+        if (request === refreshRequest.current) setFailed(true);
+      })
+      .finally(() => {
+        if (request === refreshRequest.current) setRefreshing(false);
+      });
   }, [adopt]);
 
   useEffect(() => {
+    conflictBaseline.current = null;
     if (!sessionLoading && isAdmin) load();
+    return () => {
+      refreshRequest.current += 1;
+    };
   }, [sessionLoading, isAdmin, load]);
 
   // A stale revision means another admin saved first: never overwrite their
   // change — surface the conflict and reload the authoritative state.
-  const handleMutationError = useCallback((err: unknown, before?: SocialAdminState) => {
+  const handleMutationError = useCallback((err: unknown, before: SocialAdminState) => {
     if (err instanceof ApiException && err.code === 'SOCIAL_SETTINGS_CONFLICT') {
+      // Keep the baseline until a refresh succeeds so Retry can still merge edits.
+      conflictBaseline.current = before;
       setConflict(true);
-      load(before);
+      load();
       return;
     }
     setActionError(err);
@@ -194,6 +208,7 @@ export default function SocialPage() {
   if (failed) return <ErrorBlock onRetry={() => load()} />;
   if (!state) return <Loading />;
 
+  const settingsBusy = refreshing || flagsBusy || draftBusy || pendingBusy;
   const flagsDirty = webEnabled !== state.webEnabled || videoEnabled !== state.videoUploadsEnabled;
   const draftValid = Boolean(
     draftForm.titleVi.trim() && draftForm.bodyVi.trim()
@@ -206,8 +221,8 @@ export default function SocialPage() {
 
   return (
     <>
-      <div className="social-stack">
-        {conflict && (
+      <div className="social-stack" aria-busy={refreshing}>
+        {conflict && !refreshing && (
           <div className="social-banner is-warn" role="alert">
             {t('social.conflict')}
           </div>
@@ -249,7 +264,7 @@ export default function SocialPage() {
           </label>
           <button
             className="btn primary"
-            disabled={!flagsDirty || flagsBusy || pendingBusy}
+            disabled={!flagsDirty || settingsBusy}
             onClick={() => setPending({ kind: 'flags', webEnabled, videoUploadsEnabled: videoEnabled })}
           >
             {t('social.flags.save')}
@@ -270,7 +285,7 @@ export default function SocialPage() {
               </p>
               <button
                 className="btn ghost"
-                disabled={pendingBusy}
+                disabled={settingsBusy}
                 onClick={() => setPending({ kind: 'unpublish' })}
               >
                 {t('social.cms.unpublish')}
@@ -355,14 +370,14 @@ export default function SocialPage() {
           <div className="social-cms-actions">
             <button
               className="btn ghost"
-              disabled={!draftValid || draftBusy || pendingBusy}
+              disabled={!draftValid || settingsBusy}
               onClick={() => void saveDraft()}
             >
               {t('social.cms.saveDraft')}
             </button>
             <button
               className="btn primary"
-              disabled={!state.draft || pendingBusy}
+              disabled={!state.draft || settingsBusy}
               onClick={() => setPending({ kind: 'publish' })}
             >
               {t('social.cms.publish')}
@@ -381,7 +396,7 @@ export default function SocialPage() {
                 : t('social.confirm.unpublish')
           }
           confirmDanger={pending.kind === 'unpublish'}
-          busy={pendingBusy || flagsBusy}
+          busy={settingsBusy}
           onConfirm={() => void runPending()}
           onCancel={() => setPending(null)}
         >

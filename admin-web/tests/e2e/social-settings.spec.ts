@@ -29,6 +29,8 @@ interface MutationCall {
 interface Mock {
   calls: MutationCall[];
   getSettingsCount: number;
+  settingsLoadFailures: number;
+  settingsLoadGate?: Promise<void>;
   state: SocialAdminState;
 }
 
@@ -69,7 +71,7 @@ async function mockSocialAdmin(
   options: { conflictFlags?: boolean; role?: 'ADMIN' | 'MODERATOR' } = {},
 ): Promise<Mock> {
   const role = options.role ?? 'ADMIN';
-  const mock: Mock = { calls: [], getSettingsCount: 0, state: initialState() };
+  const mock: Mock = { calls: [], getSettingsCount: 0, settingsLoadFailures: 0, state: initialState() };
 
   await page.addInitScript(() => {
     sessionStorage.setItem('admin.accessToken', 'test-access');
@@ -99,6 +101,11 @@ async function mockSocialAdmin(
 
     if (method === 'GET' && path === '/api/v1/admin/social/settings') {
       mock.getSettingsCount += 1;
+      if (mock.settingsLoadFailures > 0) {
+        mock.settingsLoadFailures -= 1;
+        return json(route, 503, { error: { code: 'UNAVAILABLE', message: 'try again' } });
+      }
+      if (mock.settingsLoadGate) await mock.settingsLoadGate;
       return json(route, 200, snapshot(mock.state));
     }
 
@@ -482,6 +489,64 @@ test.describe('social settings', () => {
       bodyVi: 'Nội dung gốc',
       titleEn: 'Server updated EN title',
       bodyEn: 'Original body',
+    });
+  });
+
+  test('retrying a failed conflict reload keeps edits and adopts untouched server fields', async ({ page }) => {
+    const mock = await mockSocialAdmin(page);
+    const draft = {
+      titleVi: 'Tiêu đề gốc',
+      bodyVi: 'Nội dung gốc',
+      titleEn: 'Original title',
+      bodyEn: 'Original body',
+    };
+    mock.state.draft = draft;
+    await page.goto('/social');
+
+    const vi = page.getByRole('group', { name: 'Tiếng Việt' });
+    const en = page.getByRole('group', { name: 'English' });
+    const web = flagRow(page, 'Web Social feed').locator('input');
+    const video = flagRow(page, 'Video uploads').locator('input');
+    await vi.locator('input').fill('Bản nháp của tôi');
+    await web.check();
+
+    mock.state = {
+      ...mock.state,
+      revision: 2,
+      videoUploadsEnabled: true,
+      draft: { ...draft, titleEn: 'Server title' },
+    };
+    mock.settingsLoadFailures = 2;
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    const retry = page.getByRole('button', { name: 'Retry' });
+    await expect(retry).toBeVisible();
+    const failedRetry = page.waitForResponse((response) =>
+      response.url().endsWith('/api/v1/admin/social/settings') && response.status() === 503);
+    await retry.click();
+    await failedRetry;
+    await expect(retry).toBeVisible();
+
+    let releaseSettings: () => void = () => {};
+    mock.settingsLoadGate = new Promise<void>((resolve) => { releaseSettings = resolve; });
+    try {
+      await retry.click();
+      await expect(page.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Save switches' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Publish' })).toBeDisabled();
+    } finally {
+      releaseSettings();
+    }
+
+    await expect(vi.locator('input')).toHaveValue('Bản nháp của tôi');
+    await expect(en.locator('input')).toHaveValue('Server title');
+    await expect(web).toBeChecked();
+    await expect(video).toBeChecked();
+    await expect(page.getByText(/Another admin saved changes first/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect.poll(() => mock.state.revision).toBe(3);
+    expect(mock.calls.at(-1)?.body).toEqual({
+      ...draft, expectedRevision: 2, titleVi: 'Bản nháp của tôi', titleEn: 'Server title',
     });
   });
 
