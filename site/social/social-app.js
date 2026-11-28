@@ -1,4 +1,4 @@
-import { createSocialClient, SocialSessionError } from './social-client.js';
+import { createSocialClient, fetchSocialConfig, SocialApiError, SocialSessionError } from './social-client.js';
 import { ALLOWED_IMAGE_MIME_TYPES, ALLOWED_VIDEO_MIME_TYPES, canonicalImageRequestPath, canonicalVideoRequestPath, imageUuid, isMediaId, videoUuid } from './social-media.js';
 
 const HEART = '❤️';
@@ -30,6 +30,11 @@ const TEXT = {
     composerLabel: 'Nội dung bài viết',
     mediaLabel: 'Ảnh hoặc video',
     mediaHelp: 'JPEG, PNG, WebP hoặc MP4 tối đa 4 MiB. Ảnh có thể đăng một mình; video cần kèm nội dung chú thích.',
+    mediaHelpImagesOnly: 'JPEG, PNG, WebP tối đa 4 MiB. Ảnh có thể đăng một mình.',
+    mediaVideoDisabled: 'Đăng video đang tạm tắt. Bạn vẫn có thể đăng ảnh.',
+    unavailableTitle: 'Bảng tin tạm thời không khả dụng',
+    socialDisabled: 'Bảng tin web đang tạm đóng. Vui lòng quay lại sau.',
+    configUnavailable: 'Không tải được trạng thái bảng tin. Kiểm tra kết nối rồi tải lại trang.',
     mediaRemove: 'Gỡ tệp',
     mediaTypeError: 'Chỉ nhận ảnh JPEG, PNG, WebP hoặc video MP4.',
     mediaSizeError: 'Tệp phải nhỏ hơn hoặc bằng 4 MiB.',
@@ -121,6 +126,11 @@ const TEXT = {
     composerLabel: 'Post body',
     mediaLabel: 'Photo or video',
     mediaHelp: 'JPEG, PNG, WebP, or MP4 up to 4 MiB. A photo can be posted alone; a video needs a caption.',
+    mediaHelpImagesOnly: 'JPEG, PNG, or WebP up to 4 MiB. A photo can be posted alone.',
+    mediaVideoDisabled: 'Video posting is temporarily off. You can still post photos.',
+    unavailableTitle: 'Social is temporarily unavailable',
+    socialDisabled: 'The web feed is currently turned off. Please check back later.',
+    configUnavailable: 'Could not load the feed status. Check the connection and reload the page.',
     mediaRemove: 'Remove file',
     mediaTypeError: 'Only JPEG, PNG, WebP images or MP4 videos are accepted.',
     mediaSizeError: 'The file must be at most 4 MiB.',
@@ -226,6 +236,13 @@ const els = {
   mainLayout: $('main'),
   heroTitle: $('social-title'),
   heroLead: $('social-lead'),
+  announcementCard: $('announcement-card'),
+  announcementTitle: $('announcement-title'),
+  announcementBody: $('announcement-body'),
+  unavailablePanel: $('unavailable-panel'),
+  unavailableBody: $('unavailable-body'),
+  mediaHelp: $('media-help'),
+  feedPanel: $('feed-panel'),
 };
 
 let lang = window.location.hash === '#lang-en' ? 'en' : 'vi';
@@ -242,6 +259,11 @@ let pendingUpload = null;
 let reportTarget = null;
 let reportReturnFocus = null;
 let uiEpoch = 0;
+// Runtime feature state. 'loading' is the boot value: every interactive
+// panel stays hidden until the public config proves the surface enabled —
+// an unreachable or malformed config fails closed to 'unavailable'.
+let surfaceState = 'loading';
+let featureConfig = null;
 let postDraft = { id: crypto.randomUUID(), submittedBody: null, file: null };
 
 function t(key, values = {}) {
@@ -258,10 +280,69 @@ function setStatus(element, key, info = false) {
   element.classList.toggle('info', info);
 }
 
+// Single arbiter of which coarse panels the surface state allows. When the
+// surface is not enabled the interactive panels hide and the localized
+// unavailable state shows instead; a published announcement stays visible
+// either way, because it usually explains the state.
+function applySurfaceState() {
+  const enabled = surfaceState === 'enabled';
+  els.unavailablePanel.hidden = enabled;
+  if (!enabled) {
+    setStatus(els.unavailableBody, surfaceState === 'disabled' ? 'socialDisabled'
+      : surfaceState === 'unavailable' ? 'configUnavailable' : '');
+    els.signedOut.hidden = true;
+    els.session.hidden = true;
+    els.composer.hidden = true;
+    els.feedPanel.hidden = true;
+    return;
+  }
+  setStatus(els.unavailableBody, '');
+  els.feedPanel.hidden = false;
+  els.signedOut.hidden = Boolean(account);
+  els.session.hidden = !account;
+  els.composer.hidden = !account;
+}
+
+function renderAnnouncement() {
+  const announcement = featureConfig && featureConfig.announcement;
+  if (!announcement) {
+    els.announcementCard.hidden = true;
+    return;
+  }
+  els.announcementTitle.textContent = lang === 'en' ? announcement.titleEn : announcement.titleVi;
+  els.announcementBody.textContent = lang === 'en' ? announcement.bodyEn : announcement.bodyVi;
+  els.announcementCard.hidden = false;
+}
+
+// New video uploads can be switched off independently: the picker then
+// accepts images only and the help text says so. Existing feed videos keep
+// playing regardless — the switch never gates reads.
+function applyVideoGate() {
+  const videoOff = Boolean(featureConfig) && !featureConfig.videoUploadsEnabled;
+  els.postMedia.accept = videoOff
+    ? 'image/jpeg,image/png,image/webp'
+    : 'image/jpeg,image/png,image/webp,video/mp4';
+  els.mediaHelp.dataset.i18n = videoOff ? 'mediaHelpImagesOnly' : 'mediaHelp';
+}
+
+async function bootstrapConfig() {
+  try {
+    const config = await fetchSocialConfig();
+    featureConfig = config;
+    surfaceState = config.webEnabled ? 'enabled' : 'disabled';
+  } catch {
+    featureConfig = null;
+    surfaceState = 'unavailable';
+  }
+  applySurfaceState();
+  applyLanguage();
+}
+
 function applyLanguage() {
   document.documentElement.lang = lang;
   const signedIn = Boolean(account);
   els.mainLayout.classList.toggle('signed-in', signedIn);
+  applyVideoGate();
   els.heroTitle.dataset.i18n = signedIn ? 'titleCompact' : 'title';
   els.heroLead.dataset.i18n = signedIn ? 'leadCompact' : 'lead';
   for (const node of document.querySelectorAll('[data-i18n]')) {
@@ -279,6 +360,7 @@ function applyLanguage() {
   if (account) {
     els.sessionUser.textContent = t('signedInAs', { name: displayName(account) });
   }
+  renderAnnouncement();
   renderFeed();
 }
 
@@ -539,9 +621,7 @@ async function loadVideo(post, container) {
 function setSignedIn(user) {
   uiEpoch += 1;
   account = user;
-  els.signedOut.hidden = true;
-  els.session.hidden = false;
-  els.composer.hidden = false;
+  applySurfaceState();
   els.refreshButton.hidden = false;
   els.sessionUser.textContent = t('signedInAs', { name: displayName(user) });
   els.loginIdentifier.value = '';
@@ -563,9 +643,7 @@ function clearSocialState() {
   clearMedia();
   clearMediaSelection();
   els.feedList.replaceChildren();
-  els.signedOut.hidden = false;
-  els.session.hidden = true;
-  els.composer.hidden = true;
+  applySurfaceState();
   els.refreshButton.hidden = true;
   els.loadMoreButton.hidden = true;
   els.postBody.value = '';
@@ -594,6 +672,13 @@ function expireSession() {
 function handleError(error, fallbackKey, statusElement) {
   if (error instanceof SocialSessionError) {
     expireSession();
+    return;
+  }
+  if (error instanceof SocialApiError && error.payload && error.payload.error
+      && error.payload.error.code === 'SOCIAL_FEATURE_DISABLED') {
+    surfaceState = 'disabled';
+    applySurfaceState();
+    applyLanguage();
     return;
   }
   setStatus(statusElement, fallbackKey);
@@ -1074,6 +1159,11 @@ function updateMediaSelection() {
     setStatus(els.composerStatus, 'mediaTypeError');
     return;
   }
+  if (file.type === 'video/mp4' && featureConfig && !featureConfig.videoUploadsEnabled) {
+    els.postMedia.value = '';
+    setStatus(els.composerStatus, 'mediaVideoDisabled');
+    return;
+  }
   if (file.size > MAX_MEDIA_BYTES) {
     els.postMedia.value = '';
     setStatus(els.composerStatus, 'mediaSizeError');
@@ -1256,5 +1346,13 @@ els.reportDialog.addEventListener('close', () => {
   restoreReportFocus();
 });
 
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    void bootstrapConfig();
+  }
+});
+
+applySurfaceState();
 applyLanguage();
 setStatus(els.feedStatus, '');
+void bootstrapConfig();

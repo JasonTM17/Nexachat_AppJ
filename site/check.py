@@ -606,6 +606,7 @@ def test_vercel_headers(vercel_data):
         ("/api/social/v1/images/:path*", "https://api.nexachat.io.vn/api/social/v1/images/:path*"),
         ("/api/social/v1/videos", "https://api.nexachat.io.vn/api/social/v1/videos"),
         ("/api/social/v1/videos/:path*", "https://api.nexachat.io.vn/api/social/v1/videos/:path*"),
+        ("/api/social/v1/config", "https://api.nexachat.io.vn/api/social/v1/config"),
     }
     missing_rewrites = sorted(expected_social_rewrites - rewrite_pairs)
     if missing_rewrites:

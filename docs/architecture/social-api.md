@@ -45,10 +45,12 @@ these are proxy mappings, not extra Spring controller prefixes:
 | `/api/social/v1/session/refresh` | `/api/v1/auth/refresh` |
 | `/api/social/v1/session/logout` | `/api/v1/auth/logout` |
 | `/api/social/v1/reports` | `/api/v1/reports` |
+| `/api/social/v1/config` | `/api/social/v1/config` |
 
 The proxy deliberately does **not** expose a catch-all
-`/api/social/v1/:path*` rewrite. It is limited to those auth/report routes and
-the posts, comments, images and videos subtrees. Browser requests use
+`/api/social/v1/:path*` rewrite. It is limited to the public config route,
+those auth/report routes, and the posts, comments, images and videos subtrees.
+Browser requests use
 `credentials: 'omit'`, `cache: 'no-store'`, `redirect: 'error'`, relative
 same-origin URLs, and an explicit bearer only on authenticated calls. The
 proxy adds `Cache-Control: private, no-store` plus CDN no-store headers to
@@ -57,6 +59,55 @@ that may become invisible after a block or moderation action — are not stored
 by browser or CDN caches. The direct Spring image endpoint still has its
 legacy private cache behavior for existing clients; canonical browser traffic
 is protected at the same-origin proxy boundary.
+
+## Runtime feature controls and live announcements
+
+V50 adds one singleton settings row with two independent runtime switches.
+Both switches ship **disabled**: `webEnabled` controls the browser-facing
+canonical surface, and `videoUploadsEnabled` controls only new video upload and
+bind mutations. `GET /api/social/v1/config` is the anonymous bootstrap read;
+it answers `{webEnabled, videoUploadsEnabled, announcement}` where
+`announcement` is `null` or the published bilingual plain-text copy. It never
+carries credentials, draft copy, revisions, staff identity, or audit detail,
+and is `no-store` end to end. When `webEnabled` is false the public projection
+also reports `videoUploadsEnabled: false`. The browser treats a malformed or
+unreachable config as unavailable — fail closed, with the sign-in form and
+feed hidden — and rechecks when the page becomes visible again.
+
+Enforcement is server-side on new requests:
+
+- With the web switch off, every `/api/social/v1/**` route except `/config`
+  returns `403 SOCIAL_FEATURE_DISABLED`. The legacy `/api/v1/feed/**` alias
+  used by Android and other existing clients is deliberately unaffected, as
+  are account, chat, logout and report handling outside this web surface.
+- With the video switch off, `POST /videos` and post creation carrying
+  `videoId` return `403 SOCIAL_FEATURE_DISABLED` on **both** the canonical and
+  legacy aliases. Existing bound videos remain readable under the normal feed
+  visibility rules; the switch is admission control for new videos, not a
+  deletion or read gate.
+- Staff moderation is unchanged in either state, including the hidden/unhidden
+  queue states and the audited click-to-load preview of a reported video.
+  Work already admitted before a flag flip may finish; new requests use the
+  committed state.
+
+The live announcement CMS is ADMIN-only. It keeps an editable draft separate
+from the published snapshot: saving a draft never changes the live copy,
+publishing copies the current draft into the snapshot, and taking the
+announcement down clears only the published snapshot while leaving the draft
+intact. Every mutation carries the `expectedRevision` the administrator
+loaded. A stale revision returns `409 SOCIAL_SETTINGS_CONFLICT` with no state
+change, no publish side effect, and no success audit row. Successful mutations
+increment the revision and write their audit row in the same transaction:
+`SOCIAL_FLAGS_UPDATE`, `SOCIAL_CMS_DRAFT_SAVE`, `SOCIAL_CMS_PUBLISH`, or
+`SOCIAL_CMS_UNPUBLISH`; audit detail does not include draft copy or
+credentials.
+
+Rollout order matters because the additive migration is safe before either
+surface is open: deploy backend and static artifacts with both flags off,
+smoke the disabled/unavailable states and the admin console, enable web
+Social only after the same-origin smoke passes, and enable video separately
+after staff moderation and storage checks. Fast rollback is a flag change or
+announcement takedown, not deletion of the settings row.
 
 ## Methods and examples
 
@@ -252,8 +303,11 @@ playback are not part of this slice; older builds see the caption only.
 
 Before opening video to production, the rollout still needs exact-SHA CI,
 the deployment/proxy smoke above, device validation, and capacity
-observation. Larger future uploads belong behind resumable private ingest with
-isolated validation/transcoding workers, never on chat request threads.
+observation. The runtime video switch ships off and stays off while those
+checks run: enable web Social first after smoke, then enable new video uploads
+and binds only after staff moderation and storage readiness are confirmed.
+Larger future uploads belong behind resumable private ingest with isolated
+validation/transcoding workers, never on chat request threads.
 
 ### Staff preview of reported videos
 
@@ -304,18 +358,24 @@ resolve.
 ## Compatibility and rollout
 
 - Legacy Android and other existing clients continue using `/api/v1/feed`;
-  their response shape and image URLs do not change.
-- The canonical Spring mapping can ship backend-first with no database schema
-  or migration change. Older clients are unaffected because the mapping is
-  additive.
-- The static site can then ship the restricted proxy and `/social/` page.
+  their response shape and image URLs do not change, and the web kill switch
+  does not gate that alias.
+- The canonical feed mapping itself remains additive for older clients. The
+  runtime controls and announcement CMS add the forward-only V50 settings row;
+  deploy that migration with both switches off rather than using it as a
+  reason to open the surface early.
+- The static site can then ship the restricted proxy and `/social/` page. The
+  dedicated `/api/social/v1/config` rewrite must be present before the page is
+  promoted; without it the browser must show the localized unavailable state,
+  never the sign-in form.
 - Production activation requires the normal authorized backend deploy and
   Vercel deploy; this document does not claim either has happened.
 - Prelaunch smoke after an authorized deploy must verify on the real Vercel route
   that exact base and child paths forward upstream, bearer/auth behavior is
-  preserved, authenticated responses stay private, and `Cache-Control`,
-  `CDN-Cache-Control`, and `Vercel-CDN-Cache-Control` are no-store. The local
-  fixture cannot prove those deployment properties.
+  preserved, authenticated responses stay private, the public config is fresh
+  and anonymous, and `Cache-Control`, `CDN-Cache-Control`, and
+  `Vercel-CDN-Cache-Control` are no-store. The local fixture cannot prove those
+  deployment properties.
 - If a client depends on direct Spring canonical image caching, note that only
   the same-origin proxy currently adds CDN/browser no-store headers. Direct
   backend image behavior remains the legacy private-cache contract.

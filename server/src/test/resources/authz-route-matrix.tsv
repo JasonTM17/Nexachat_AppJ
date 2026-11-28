@@ -201,3 +201,9 @@ GET	/api/v1/feed/videos/{videoId}	AUTHENTICATED	authenticated_public_feed	rest-1
 POST	/api/social/v1/videos	AUTHENTICATED	authenticated_public_feed	rest-200
 GET	/api/social/v1/videos/{videoId}	AUTHENTICATED	authenticated_public_feed	rest-201
 POST	/api/v1/admin/feed/reports/{reportId}/video	ADMIN_STAFF	admin_staff	rest-202
+GET	/api/social/v1/config	PUBLIC_AUTH	public_auth	rest-203
+GET	/api/v1/admin/social/settings	ADMIN_STAFF	admin_staff	rest-204
+PATCH	/api/v1/admin/social/settings/flags	ADMIN_STAFF	admin_staff	rest-205
+PUT	/api/v1/admin/social/settings/announcement/draft	ADMIN_STAFF	admin_staff	rest-206
+POST	/api/v1/admin/social/settings/announcement/publish	ADMIN_STAFF	admin_staff	rest-207
+POST	/api/v1/admin/social/settings/announcement/unpublish	ADMIN_STAFF	admin_staff	rest-208

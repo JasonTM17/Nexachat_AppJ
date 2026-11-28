@@ -2,6 +2,7 @@ package com.nexachat.feed;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.testutil.FeatureItSupport;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
@@ -50,6 +51,14 @@ class FeedAdminFlowIT extends FeatureItSupport {
         return countRows(
                 "SELECT count(*) FROM admin_audit_log WHERE action = ? AND target_id = ?",
                 action, targetId.toString());
+    }
+
+    // These suites exercise the enabled feed: the runtime Social switches
+    // ship off by default, so each test opts back in after the shared reset.
+    // The kill-switch and video-gate denial paths live in SocialSettingsFlowIT.
+    @BeforeEach
+    void enableSocial() {
+        enableSocialFeatures();
     }
 
     @Test

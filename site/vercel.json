@@ -54,6 +54,10 @@
       "destination": "https://api.nexachat.io.vn/api/social/v1/videos/:path*"
     },
     {
+      "source": "/api/social/v1/config",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/config"
+    },
+    {
       "source": "/social",
       "destination": "/social/index.html"
     },

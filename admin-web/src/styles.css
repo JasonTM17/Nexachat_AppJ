@@ -794,6 +794,115 @@ a.kpi-link:hover { border-color: var(--plum-300); }
 
 .checkbox { width: 15px; height: 15px; accent-color: var(--primary); }
 
+/* ---------- Social runtime controls ---------- */
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+.check-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--primary);
+}
+.check-row > span {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.social-live {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.social-live h3 { margin: 0 0 6px; font-size: 13px; }
+.social-live .btn { margin-top: 12px; }
+
+.social-draft-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.social-draft-lang {
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.social-draft-lang legend {
+  padding: 0 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+.social-draft-lang .field > span {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.social-draft-lang .field:last-child { margin-bottom: 0; }
+.social-draft-lang textarea.input { min-height: 88px; resize: vertical; }
+
+.social-preview { margin-top: 16px; }
+.social-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.social-preview-head h3 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.social-preview-head .select {
+  width: auto;
+  min-width: 76px;
+  min-height: 2.25rem;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+}
+/* Mirrors the public announcement card: tonal surface, one accent edge,
+   plain preserved text. */
+.social-preview-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--primary);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.social-preview-card strong { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
+.social-preview-card p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.social-cms-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .social-draft-grid { grid-template-columns: 1fr; }
+}
+
 .note { border-left: 3px solid var(--container); padding: 6px 12px; margin-bottom: 8px; }
 .note .meta { font-size: 11px; color: var(--text-2); }
 
