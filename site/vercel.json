@@ -10,6 +10,50 @@
   "ignoreCommand": "bash -c 'p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- :/site 2>/dev/null && exit 0; exit 1'",
   "rewrites": [
     {
+      "source": "/api/social/v1/session/login",
+      "destination": "https://api.nexachat.io.vn/api/v1/auth/login"
+    },
+    {
+      "source": "/api/social/v1/session/refresh",
+      "destination": "https://api.nexachat.io.vn/api/v1/auth/refresh"
+    },
+    {
+      "source": "/api/social/v1/session/logout",
+      "destination": "https://api.nexachat.io.vn/api/v1/auth/logout"
+    },
+    {
+      "source": "/api/social/v1/reports",
+      "destination": "https://api.nexachat.io.vn/api/v1/reports"
+    },
+    {
+      "source": "/api/social/v1/posts",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/posts"
+    },
+    {
+      "source": "/api/social/v1/posts/:path*",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/posts/:path*"
+    },
+    {
+      "source": "/api/social/v1/comments/:path*",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/comments/:path*"
+    },
+    {
+      "source": "/api/social/v1/images",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/images"
+    },
+    {
+      "source": "/api/social/v1/images/:path*",
+      "destination": "https://api.nexachat.io.vn/api/social/v1/images/:path*"
+    },
+    {
+      "source": "/social",
+      "destination": "/social/index.html"
+    },
+    {
+      "source": "/social/",
+      "destination": "/social/index.html"
+    },
+    {
       "source": "/join/:token",
       "destination": "/join/index.html"
     },
@@ -54,6 +98,32 @@
         {
           "key": "Strict-Transport-Security",
           "value": "max-age=63072000; includeSubDomains; preload"
+        }
+      ]
+    },
+    {
+      "source": "/api/social/v1/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/social(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         }
       ]
     },

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#733f68">
+  <title>NexaChat Social — Bảng tin</title>
+  <meta name="description" content="NexaChat Social là bảng tin công khai cho tài khoản NexaChat: đăng bài, ảnh, bình luận, cảm xúc và báo cáo trên cùng một miền.">
+  <link rel="canonical" href="https://nexachat.io.vn/social/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="vi_VN">
+  <meta property="og:url" content="https://nexachat.io.vn/social/">
+  <meta property="og:title" content="NexaChat Social">
+  <meta property="og:description" content="Bảng tin công khai cho tài khoản NexaChat.">
+  <meta property="og:image" content="https://nexachat.io.vn/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="NexaChat Social">
+  <meta name="twitter:description" content="Public feed for NexaChat accounts.">
+  <meta name="twitter:image" content="https://nexachat.io.vn/og-image.png">
+  <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/social/social.css">
+  <script type="module" src="/social/social-app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip">Bỏ qua đến nội dung</a>
+
+  <header class="social-header">
+    <a class="brand" href="/" aria-label="NexaChat">
+      <svg class="brand__mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
+      <span>NexaChat</span>
+    </a>
+    <nav class="header-actions" aria-label="Ngôn ngữ / Language">
+      <button class="lang-button" id="lang-vi-button" type="button" lang="vi" aria-pressed="true">VI</button>
+      <button class="lang-button" id="lang-en-button" type="button" lang="en" aria-pressed="false">EN</button>
+      <a class="header-link" id="download-link" href="/download.html#lang-vi" data-i18n="android">Tải Android</a>
+    </nav>
+  </header>
+
+  <main id="main" class="social-layout" tabindex="-1">
+    <section class="feed-column" aria-labelledby="social-title">
+      <div class="hero-copy">
+        <p class="eyebrow" data-i18n="eyebrow">Bảng tin NexaChat</p>
+        <h1 id="social-title" data-i18n="title">Chia sẻ công khai với tài khoản NexaChat của bạn.</h1>
+        <p class="lead" id="social-lead" data-i18n="lead">Đăng bài, ảnh đã có, bình luận và cảm xúc. Bài viết hiển thị với mọi tài khoản NexaChat và không được mã hóa đầu cuối.</p>
+      </div>
+
+      <section class="card auth-card" id="signed-out-panel" aria-labelledby="signin-title">
+        <h2 id="signin-title" data-i18n="signinTitle">Đăng nhập</h2>
+        <p class="muted" data-i18n="signinHelp">Dùng số điện thoại hoặc email đã xác minh cùng mật khẩu NexaChat của bạn.</p>
+        <form id="login-form" method="post" novalidate>
+          <label class="field-label" for="login-identifier" data-i18n="identifier">Số điện thoại hoặc email đã xác minh</label>
+          <input class="text-input" id="login-identifier" type="text" autocomplete="username" required>
+          <label class="field-label" for="login-password" data-i18n="password">Mật khẩu</label>
+          <input class="text-input" id="login-password" type="password" autocomplete="current-password" required>
+          <button class="button button-primary" id="login-button" type="submit" data-i18n="signinButton">Đăng nhập</button>
+        </form>
+        <p class="status-message" id="login-status" role="alert"></p>
+      </section>
+
+      <section class="card session-card" id="session-panel" aria-labelledby="session-title" hidden>
+        <div>
+          <h2 id="session-title" data-i18n="sessionTitle">Phiên đăng nhập</h2>
+          <p class="muted" id="session-user"></p>
+        </div>
+        <button class="button button-secondary" id="logout-button" type="button" data-i18n="signout">Đăng xuất</button>
+      </section>
+
+      <section class="card composer-card" id="composer-panel" aria-labelledby="composer-title" hidden>
+        <h2 id="composer-title" data-i18n="composerTitle">Bài viết mới</h2>
+        <label class="field-label" for="post-body" data-i18n="composerLabel">Nội dung bài viết</label>
+        <textarea class="text-input post-input" id="post-body" maxlength="1000" rows="4"></textarea>
+        <div class="composer-row">
+          <span class="muted" id="post-counter">0/1000</span>
+          <button class="button button-primary" id="post-submit" type="button" data-i18n="postButton">Đăng bài</button>
+        </div>
+        <p class="disclosure" data-i18n="disclosure">Bài viết hiển thị với mọi tài khoản NexaChat và không được mã hóa.</p>
+        <p class="status-message" id="composer-status" role="alert"></p>
+      </section>
+
+      <section class="feed-panel" aria-labelledby="feed-title">
+        <div class="feed-heading-row">
+          <h2 id="feed-title" data-i18n="feedTitle">Bảng tin</h2>
+          <button class="icon-text-button" id="refresh-button" type="button" data-i18n="refresh" hidden>Làm mới</button>
+        </div>
+        <p class="status-message" id="feed-status" aria-live="polite"></p>
+        <div id="feed-list" class="feed-list"></div>
+        <button class="button button-secondary load-more" id="load-more-button" type="button" data-i18n="loadMore" hidden>Tải thêm</button>
+      </section>
+    </section>
+
+    <aside class="context-panel" aria-labelledby="context-title">
+      <section class="card">
+        <h2 id="context-title" data-i18n="contextTitle">Ai xem được bảng tin?</h2>
+        <p data-i18n="contextBody">Mọi tài khoản NexaChat đều có thể đọc bài viết công khai. Nội dung ở đây không phải tin nhắn riêng tư và không được mã hóa đầu cuối.</p>
+      </section>
+      <section class="card">
+        <h2 data-i18n="chatTitle">Trò chuyện riêng</h2>
+        <p data-i18n="chatBody">Nhắn tin riêng vẫn nằm trong ứng dụng Android NexaChat. Trang này không cung cấp trò chuyện trên trình duyệt.</p>
+        <a class="button button-secondary link-button" id="open-chat-link" href="/download.html#lang-vi" data-i18n="openChat">Tải NexaChat cho Android</a>
+      </section>
+    </aside>
+  </main>
+
+  <dialog class="report-dialog" id="report-dialog" aria-labelledby="report-title">
+    <section class="card report-card">
+      <h2 id="report-title" data-i18n="reportTitle">Báo cáo nội dung</h2>
+      <label class="field-label" for="report-reason" data-i18n="reportReason">Lý do</label>
+      <select class="text-input" id="report-reason">
+        <option value="SPAM" data-i18n="reasonSpam">Spam</option>
+        <option value="HARASSMENT" data-i18n="reasonHarassment">Quấy rối</option>
+        <option value="VIOLENCE" data-i18n="reasonViolence">Bạo lực</option>
+        <option value="SEXUAL" data-i18n="reasonSexual">Nội dung khiêu dâm</option>
+        <option value="SCAM" data-i18n="reasonScam">Lừa đảo</option>
+        <option value="OTHER" data-i18n="reasonOther">Khác</option>
+      </select>
+      <div class="dialog-actions">
+        <button class="button button-secondary" id="report-cancel" type="button" data-i18n="cancel">Hủy</button>
+        <button class="button button-primary" id="report-submit" type="button" data-i18n="reportSubmit">Gửi báo cáo</button>
+      </div>
+      <p class="status-message" id="report-status" role="alert"></p>
+    </section>
+  </dialog>
+</body>
+</html>

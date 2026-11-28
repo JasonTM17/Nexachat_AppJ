@@ -203,6 +203,41 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
     }
 
+    @Test
+    void canonicalSocialMappingKeepsTheLegacyFeedContract() throws Exception {
+        Actor author = newUser("Canonical Author");
+        Actor reader = newUser("Canonical Reader");
+        String clientPostId = UUID.randomUUID().toString();
+        Map<String, Object> request = Map.of("body", "canonical seam", "clientPostId", clientPostId);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/social/v1/posts"))
+                .andExpect(status().isUnauthorized());
+
+        JsonNode created = json(postAs(author, "/api/social/v1/posts", request)
+                .andExpect(status().isCreated()));
+        assertThat(created.get("author").get("id").asText()).isEqualTo(author.id().toString());
+        String postId = created.get("id").asText();
+
+        JsonNode legacyReplay = json(postAs(author, "/api/v1/feed/posts", request)
+                .andExpect(status().isOk()));
+        assertThat(legacyReplay.get("id").asText()).isEqualTo(postId);
+
+        JsonNode readerView = json(getAs(reader, "/api/social/v1/posts/" + postId)
+                .andExpect(status().isOk()));
+        assertThat(readerView.get("id").asText()).isEqualTo(postId);
+        assertThat(readerView.get("mine").asBoolean()).isFalse();
+
+        postAs(reader, "/api/v1/users/" + author.id() + "/block", null)
+                .andExpect(status().is2xxSuccessful());
+        getAs(reader, "/api/social/v1/posts/" + postId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+        getAs(reader, "/api/v1/feed/posts/" + postId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+    }
+
     // ---------------------------------------------------------------- comments
 
     @Test
