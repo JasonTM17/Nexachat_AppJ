@@ -196,12 +196,16 @@ jobs:
           bash tools/release/test-release-version.sh
           bash tools/release/test-sign-release-url-guard.sh
           bash tools/release/test-vercel-ignore-command.sh
-      - name: Install the WebSocket client used by the tooling tests
-        run: python -m pip install websocket-client==1.9.2
+      - name: Install dependencies for hermetic tooling tests
+        run: python -m pip install websocket-client==1.9.2 Pillow==13.0.0
       - name: Test additional hermetic Python tooling
         run: |
           python -m unittest tools/checks/test_compose_env_contract.py tools/backup/test_backup.py tools/backup/test_restore.py tools/e2e/test_reminder_clock.py tools/e2e/device/test_inject_push.py tools/e2e/device/test_patch_window.py tools/e2e/device/test_stable_journeys.py tools/e2e/test_readme_runnable_rows.py tools/e2e/test_e2e_accounts.py tools/e2e/journeys/test_realtime_fanout_e2e.py tools/e2e/new_features/test_features_live.py tools/e2e/p0/test_p0_helpers.py tools/e2e/p0/test_p0_live.py tools/e2e/summary/test_summary_e2e.py tools/gif/test_record.py
           python -m unittest discover -s tools/e2e/calls -p 'test_*.py'
+      - name: Test release QA and smoke tooling offline
+        run: |
+          python -m unittest tools/e2e/release_qa/test_release_qa.py tools/e2e/social_suite/test_social_suite.py tools/e2e/device/test_social_emulator_e2e.py
+          bash tools/ops/prod-smoke.sh --self-test
       - name: Check Android layout accessibility
         run: python tools/checks/check-android-a11y.py
       - name: Test API contract checker

@@ -239,8 +239,11 @@ def _t4_s1_bilingual_web_social_lifecycle(ctx: SuiteContext) -> None:
                     timeout=10000,
                 )
 
-                # Clean sign out
-                page.click("#logout-button")
+                # Finish server revocation before the next case signs in as this actor.
+                with page.expect_response(lambda r: "/api/social/v1/session/logout" in r.url
+                                          and r.request.method == "POST") as logout:
+                    page.click("#logout-button")
+                check(logout.value.status == 204, f"S1 logout returned {logout.value.status}")
                 page.wait_for_selector("#signed-out-panel:not([hidden])", timeout=10000)
                 rec.assert_clean("S1 social lifecycle")
     finally:
@@ -275,17 +278,19 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                 lead = page.inner_text("#social-lead")
                 check("existing images" not in lead, f"stale EN lead text: {lead!r}")
 
-                # Upload avatar for author before signing in so login payload carries /api/v1/files/...
+                # Sign in again after S1 revoked the author's earlier access token.
+                # Provision the avatar before browser login so its response includes the updated URL.
+                author = ctx.spring.login_with_retry(ctx.phone("author"), FIXTURE_PASSWORD)
                 av_resp = ctx.spring.upload_multipart(
                     "/api/v1/users/me/avatar",
-                    token=ctx.token("author"),
+                    token=author["accessToken"],
                     files=[("file", "s1b_avatar.png", "image/png", make_png_bytes(32, 32, (115, 63, 104)))],
                 )
                 expect_status(av_resp, 200, "S1b upload author avatar")
                 av_url = (av_resp.json() or {}).get("avatarUrl") or ""
                 check(av_url.startswith("/api/v1/files/"), f"S1b unexpected author avatarUrl: {av_url!r}")
 
-                # Switch to VI and sign in (also refreshes author's token after T4.S1 logout)
+                # Switch to VI and verify that browser login renders the new avatar.
                 page.click("#lang-vi-button")
                 check("ảnh đã có" not in page.inner_text("#social-lead"), "stale VI lead text")
                 _social_login(page, rec, ctx, "author")
@@ -368,7 +373,7 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                 vid_card.wait_for(state="visible", timeout=15000)
                 page.wait_for_function(
                     """(pid) => {
-                      const img = document.querySelector(`.post-card[data-post-id='${pid}'] .author-trigger img.avatar-img`);
+                      const img = document.querySelector(`.post-card[data-post-id='${pid}'] > .post-header > .author-trigger img.avatar-img`);
                       return Boolean(img && img.complete && img.naturalWidth > 0 && (img.src || '').startsWith('blob:'));
                     }""",
                     arg=author_vid_post["id"],
@@ -462,7 +467,7 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                 vid_card.locator(".post-body-wrap .inline-edit-input").fill(edited_post_body)
                 vid_card.locator('.post-body-wrap [data-edit-action="save"]').click()
                 vid_card.locator(".post-body", has_text=edited_post_body).wait_for(state="visible", timeout=15000)
-                check(vid_card.locator(".post-header .edited-badge").first.is_visible(), "edited post badge not visible")
+                check(vid_card.locator(":scope > .post-header .edited-badge").is_visible(), "edited post badge not visible")
 
                 # Keyword search (accent-insensitive ?q=) + empty-search + clear
                 page.fill("#feed-search-input", f"ca phe {unique_tag}")
@@ -475,12 +480,13 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
 
                 # Author Profile modal + Author Filter chip while search is visible
                 r_card = page.locator(f".post-card[data-post-id='{reader_post['id']}']")
+                reader_author = r_card.locator(":scope > .post-header > .author-trigger")
                 reader_tone = _expected_avatar_tone(ctx.sessions.get("reader").display_name)
                 check(
-                    r_card.locator(".author-trigger img.avatar-img").count() == 0,
+                    reader_author.locator("img.avatar-img").count() == 0,
                     "reader post unexpectedly rendered img.avatar-img when avatarUrl is null",
                 )
-                r_av = r_card.locator(".author-trigger .avatar-initial").first.evaluate(
+                r_av = reader_author.locator(".avatar-initial").evaluate(
                     """(el) => ({
                       classes: Array.from(el.classList),
                       bg: getComputedStyle(el).backgroundColor,
@@ -495,7 +501,7 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                     f"reader post avatar background is transparent: {r_av}",
                 )
 
-                r_card.locator(".author-trigger").click()
+                reader_author.click()
                 page.wait_for_selector("#author-dialog[open]", timeout=10000)
                 page.wait_for_selector("#author-dialog-filter:not([hidden])", timeout=10000)
                 check("Reader" in page.inner_text("#author-dialog-title"), "author dialog missing displayName")
@@ -537,7 +543,7 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                 r_card.wait_for(state="visible", timeout=15000)
 
                 # Verify author's uploaded blob avatar also loads inside #author-dialog
-                vid_card.locator(".author-trigger").click()
+                vid_card.locator(":scope > .post-header > .author-trigger").click()
                 page.wait_for_selector("#author-dialog[open]", timeout=10000)
                 page.wait_for_function(
                     """() => {
