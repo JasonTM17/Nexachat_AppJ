@@ -6,6 +6,17 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.33] - 2026-11-28
+
+See [the release notes](docs/release-notes/v1.2.33.md).
+
+### Fixed
+
+- Web Admin preserves unsaved Social announcement fields and switches when a
+  version conflict is followed by repeated reload failures. After a successful
+  Retry, untouched fields pick up the server values and actions use the latest
+  settings revision.
+
 ## [1.2.32] - 2026-11-28
 
 See [the release notes](docs/release-notes/v1.2.32.md).
