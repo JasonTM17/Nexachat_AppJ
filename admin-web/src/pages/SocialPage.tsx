@@ -64,10 +64,7 @@ export default function SocialPage() {
   const load = useCallback(() => {
     setFailed(false);
     api<SocialAdminState>('/api/v1/admin/social/settings')
-      .then((res) => {
-        adopt(res);
-        setConflict(false);
-      })
+      .then(adopt)
       .catch(() => setFailed(true));
   }, [adopt]);
 
@@ -95,6 +92,7 @@ export default function SocialPage() {
         method: 'PATCH',
         body: { expectedRevision: state.revision, webEnabled: web, videoUploadsEnabled: video },
       }));
+      setConflict(false);
       toast.show(t('social.flags.saved'));
     } catch (err) {
       handleMutationError(err);
@@ -114,6 +112,7 @@ export default function SocialPage() {
         method: 'PUT',
         body: { expectedRevision: state.revision, ...draftForm },
       }));
+      setConflict(false);
       toast.show(t('social.cms.draftSaved'));
     } catch (err) {
       handleMutationError(err);
@@ -136,6 +135,7 @@ export default function SocialPage() {
         `/api/v1/admin/social/settings/announcement/${pending.kind}`,
         { method: 'POST', body },
       ));
+      setConflict(false);
       toast.show(t(pending.kind === 'publish' ? 'social.cms.published' : 'social.cms.unpublished'));
     } catch (err) {
       handleMutationError(err);
