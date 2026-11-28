@@ -66,6 +66,7 @@ Android client can consume the API but no dedicated screen is merged into
 | Signup email OTP | V41 | Shipped — signup verification code screen | signup OTP flow tests |
 | Chat streaks and check-in streak | V42 | Shipped — inbox streak badges, settings `streakReminders` toggle | `StreakFlowIT`, `StreakRulesTest`, `StreakServiceTest`, Android streak suites |
 | Public feed | V43 | Shipped — feed tab, composer, comments, reactions, report action; admin `/feed` moderation page | `FeedFlowIT`, `FeedAdminFlowIT`, `FeedRetentionIT`, admin-web `feed.test.tsx` |
+| Social runtime controls and live announcement CMS | V50 | n/a — admin `/social` console plus `/social/` web surface | `SocialSettingsFlowIT`, admin-web `social-settings.spec.ts`, site-tests `social-config.test.mjs` |
 
 ## Migration history
 
@@ -120,6 +121,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V47 | `V47__rag_context_revision.sql` | `conversations.ai_context_version` plus `rag_ask_cache.context_version`, with a message-change trigger and expiry index so derived RAG answers are replayable only against the exact source context. |
 | V48 | `V48__message_embeddings_model_key.sql` | Widens `message_embeddings` to primary key `(message_id, model)` so local and external embedding identities can coexist for the same source message instead of overwriting each other. |
 | V49 | `V49__access_token_version.sql` | Adds a per-user version for access-token revocation. |
+| V50 | `V50__social_feature_controls.sql` | Singleton Social runtime switches and bilingual draft/published announcement state with revision-based optimistic concurrency. |
 
 ## Operational notes
 
@@ -310,6 +312,8 @@ These keys are Spring properties; override them with the matching
 | `TRANSLATION_UNAVAILABLE` | 503 | No translation provider available or provider output rejected |
 | `ALERT_RULE_NOT_FOUND` | 404 | Admin alert rule id does not exist |
 | `RULE_IN_USE` | 409 | Admin rule deletion refused while the rule is still referenced by alerts |
+| `SOCIAL_FEATURE_DISABLED` | 403 | Web Social is disabled on a canonical `/api/social/v1/**` route, or a new video upload/bind is attempted while video uploads are disabled |
+| `SOCIAL_SETTINGS_CONFLICT` | 409 | Admin social settings mutation carried a stale `expectedRevision`; no state change or success audit row is written |
 | `NOT_FOUND` | 404 | Unknown path |
 | `METHOD_NOT_ALLOWED` | 405 | Wrong HTTP method for the path |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Request `Content-Type` not accepted |
@@ -1700,6 +1704,20 @@ messages and AI-opted-out conversations are never scanned or shown.
 | `POST /api/v1/admin/feed/comments/{id}/unhide` | staff | optional `{reason}` | `204` empty | 401/403 · 404 |
 | `POST /api/v1/admin/feed/reports/{id}/resolve` | staff | `{status: REVIEWED\|DISMISSED}` | `204` empty | 401/403 · 404 · `VALIDATION_FAILED` 400 |
 | `POST /api/v1/admin/feed/reports/{id}/video` | staff | — | `200` `video/mp4` bytes, `no-store` private, audited `FEED_REPORT_VIDEO_VIEW` | 401/403 · `FILE_NOT_FOUND` 404 (no eligible video, or post deleted) · `RATE_LIMITED` 429 (20/min) |
+| `GET /api/v1/admin/social/settings` | ADMIN | — | `200` `SocialAdminState` | 401/403 |
+| `PATCH /api/v1/admin/social/settings/flags` | ADMIN | `{expectedRevision, webEnabled, videoUploadsEnabled}` | `200` `SocialAdminState`, revision incremented, audited `SOCIAL_FLAGS_UPDATE` | 401/403 · `SOCIAL_SETTINGS_CONFLICT` 409 · `VALIDATION_FAILED` 400 |
+| `PUT /api/v1/admin/social/settings/announcement/draft` | ADMIN | `{expectedRevision, titleVi, bodyVi, titleEn, bodyEn}` — title ≤100 chars, body ≤500 chars, both languages required | `200` `SocialAdminState`, revision incremented, audited `SOCIAL_CMS_DRAFT_SAVE` | 401/403 · `SOCIAL_SETTINGS_CONFLICT` 409 · `VALIDATION_FAILED` 400 |
+| `POST /api/v1/admin/social/settings/announcement/publish` | ADMIN | `{expectedRevision}` | `200` `SocialAdminState`, revision incremented, audited `SOCIAL_CMS_PUBLISH` | 401/403 · `SOCIAL_SETTINGS_CONFLICT` 409 · `VALIDATION_FAILED` 400 (no saved draft) |
+| `POST /api/v1/admin/social/settings/announcement/unpublish` | ADMIN | `{expectedRevision}` | `200` `SocialAdminState`, revision incremented, audited `SOCIAL_CMS_UNPUBLISH` | 401/403 · `SOCIAL_SETTINGS_CONFLICT` 409 · `VALIDATION_FAILED` 400 |
+
+`SocialAdminState` =
+`{revision, webEnabled, videoUploadsEnabled, draft, published, publishedAt}`;
+`draft` and `published` are either `null` or
+`{titleVi, bodyVi, titleEn, bodyEn}`. Unlike the moderator-shared feed
+moderation routes, every social settings route — including the read — requires
+`ADMIN`. A stale `expectedRevision` returns `409 SOCIAL_SETTINGS_CONFLICT`
+without overwriting state, publishing content, or writing a success audit row;
+the successful mutation and its audit write commit or roll back together.
 
 Alert detection runs asynchronously: a bounded in-memory queue drains matched
 text messages into `alerts` rows storing a redacted snippet and matched rule
@@ -1788,7 +1806,21 @@ Every public-feed route above is also exposed under the canonical
 `/api/social/v1` prefix with an identical contract (same controller, auth,
 validation, rate limits, and response shapes); the full mapping and the
 same-origin proxy boundary are specified in
-[`docs/architecture/social-api.md`](social-api.md):
+[`docs/architecture/social-api.md`](social-api.md). One additional public
+bootstrap route exists only under the canonical prefix:
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /api/social/v1/config` | public | — | `200` `{webEnabled, videoUploadsEnabled, announcement?}` with `Cache-Control: no-store`; `announcement` is `null` or `{titleVi, bodyVi, titleEn, bodyEn}` | — |
+
+Runtime gates are server-enforced rather than client-only. When the web Social
+switch is off, every `/api/social/v1/**` route except the public config route
+returns `403 SOCIAL_FEATURE_DISABLED`; the legacy `/api/v1/feed/**` routes used
+by Android are not changed by that switch. When the video switch is off,
+`POST /api/v1/feed/videos`, `POST /api/social/v1/videos`, and post creation
+with a `videoId` on either alias return `403 SOCIAL_FEATURE_DISABLED`; existing
+videos remain readable under the normal feed visibility rules, and staff
+moderation (including the audited report-video preview) is unaffected.
 
 | Method & path | Auth | Success | Errors |
 |---|---|---|---|

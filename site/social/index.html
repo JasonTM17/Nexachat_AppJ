@@ -48,7 +48,17 @@
         <p class="lead" id="social-lead" data-i18n="lead">Đăng bài, ảnh đã có, bình luận và cảm xúc. Bài viết hiển thị với mọi tài khoản NexaChat và không được mã hóa đầu cuối.</p>
       </div>
 
-      <section class="card auth-card" id="signed-out-panel" aria-labelledby="signin-title">
+      <section class="card announcement-card" id="announcement-card" aria-labelledby="announcement-title" hidden>
+        <h2 id="announcement-title"></h2>
+        <p id="announcement-body" class="announcement-body"></p>
+      </section>
+
+      <section class="card unavailable-card" id="unavailable-panel" aria-labelledby="unavailable-title" hidden>
+        <h2 id="unavailable-title" data-i18n="unavailableTitle">Bảng tin tạm thời không khả dụng</h2>
+        <p class="status-message" id="unavailable-body" role="status"></p>
+      </section>
+
+      <section class="card auth-card" id="signed-out-panel" aria-labelledby="signin-title" hidden>
         <h2 id="signin-title" data-i18n="signinTitle">Đăng nhập</h2>
         <p class="muted" data-i18n="signinHelp">Dùng số điện thoại hoặc email đã xác minh cùng mật khẩu NexaChat của bạn.</p>
         <form id="login-form" method="post" novalidate>
@@ -75,7 +85,7 @@
         <textarea class="text-input post-input" id="post-body" maxlength="1000" rows="4"></textarea>
         <label class="field-label" for="post-media" data-i18n="mediaLabel">Ảnh hoặc video</label>
         <input class="text-input media-input" id="post-media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4">
-        <p class="muted media-help" data-i18n="mediaHelp">JPEG, PNG, WebP hoặc MP4 tối đa 4 MiB. Ảnh có thể đăng một mình; video cần kèm nội dung chú thích.</p>
+        <p class="muted media-help" id="media-help" data-i18n="mediaHelp">JPEG, PNG, WebP hoặc MP4 tối đa 4 MiB. Ảnh có thể đăng một mình; video cần kèm nội dung chú thích.</p>
         <div class="media-selected" id="media-selected" hidden>
           <span class="media-name" id="media-name"></span>
           <button class="icon-text-button" id="media-remove" type="button" data-i18n="mediaRemove">Gỡ tệp</button>
@@ -88,7 +98,7 @@
         <p class="status-message" id="composer-status" role="alert"></p>
       </section>
 
-      <section class="feed-panel" aria-labelledby="feed-title">
+      <section class="feed-panel" id="feed-panel" aria-labelledby="feed-title">
         <div class="feed-heading-row">
           <h2 id="feed-title" data-i18n="feedTitle">Bảng tin</h2>
           <button class="icon-text-button" id="refresh-button" type="button" data-i18n="refresh" hidden>Làm mới</button>

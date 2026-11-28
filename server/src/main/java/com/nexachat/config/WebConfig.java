@@ -5,6 +5,7 @@ import com.nexachat.auth.SensitiveCredentialRateLimitInterceptor;
 import com.nexachat.contact.ContactAddRateLimitInterceptor;
 import com.nexachat.user.UserSearchRateLimitInterceptor;
 import com.nexachat.message.MessageRateLimitInterceptor;
+import com.nexachat.social.SocialFeatureInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -24,17 +25,20 @@ public class WebConfig implements WebMvcConfigurer {
     private final ContactAddRateLimitInterceptor contactAddRateLimitInterceptor;
     private final MessageRateLimitInterceptor messageRateLimitInterceptor;
     private final SensitiveCredentialRateLimitInterceptor sensitiveCredentialRateLimitInterceptor;
+    private final SocialFeatureInterceptor socialFeatureInterceptor;
 
     public WebConfig(RateLimitInterceptor rateLimitInterceptor,
                      UserSearchRateLimitInterceptor userSearchRateLimitInterceptor,
                      ContactAddRateLimitInterceptor contactAddRateLimitInterceptor,
                      MessageRateLimitInterceptor messageRateLimitInterceptor,
-                     SensitiveCredentialRateLimitInterceptor sensitiveCredentialRateLimitInterceptor) {
+                     SensitiveCredentialRateLimitInterceptor sensitiveCredentialRateLimitInterceptor,
+                     SocialFeatureInterceptor socialFeatureInterceptor) {
         this.rateLimitInterceptor = rateLimitInterceptor;
         this.userSearchRateLimitInterceptor = userSearchRateLimitInterceptor;
         this.contactAddRateLimitInterceptor = contactAddRateLimitInterceptor;
         this.messageRateLimitInterceptor = messageRateLimitInterceptor;
         this.sensitiveCredentialRateLimitInterceptor = sensitiveCredentialRateLimitInterceptor;
+        this.socialFeatureInterceptor = socialFeatureInterceptor;
     }
 
     @Override
@@ -50,5 +54,11 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/v1/conversations/**");
         registry.addInterceptor(sensitiveCredentialRateLimitInterceptor)
                 .addPathPatterns("/api/v1/auth/password", "/api/v1/users/me");
+        // The web alias kill switch covers every Social feed route; the
+        // public config bootstrap stays reachable so the page can learn the
+        // surface is disabled. /api/v1/feed is deliberately not listed.
+        registry.addInterceptor(socialFeatureInterceptor)
+                .addPathPatterns("/api/social/v1/**")
+                .excludePathPatterns("/api/social/v1/config");
     }
 }

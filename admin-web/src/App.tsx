@@ -6,6 +6,7 @@ import OverviewPage from './pages/OverviewPage';
 import UsersPage from './pages/UsersPage';
 import AlertsPage from './pages/AlertsPage';
 import FeedPage from './pages/FeedPage';
+import SocialPage from './pages/SocialPage';
 import RulesPage from './pages/RulesPage';
 import AuditPage from './pages/AuditPage';
 import SystemPage from './pages/SystemPage';
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/feed" element={<FeedPage />} />
+        <Route path="/social" element={<SocialPage />} />
         <Route path="/rules" element={<RulesPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/system" element={<SystemPage />} />

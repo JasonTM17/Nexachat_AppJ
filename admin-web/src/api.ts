@@ -399,6 +399,22 @@ export interface FeedReport {
   targetHasVideo?: boolean;
 }
 
+export interface SocialAnnouncement {
+  titleVi: string;
+  bodyVi: string;
+  titleEn: string;
+  bodyEn: string;
+}
+
+export interface SocialAdminState {
+  revision: number;
+  webEnabled: boolean;
+  videoUploadsEnabled: boolean;
+  draft: SocialAnnouncement | null;
+  published: SocialAnnouncement | null;
+  publishedAt: string | null;
+}
+
 export function feedReportsPath(status: FeedReportStatus, page: number, size: number): string {
   const q = new URLSearchParams({ status, page: String(page), size: String(size) });
   return `/api/v1/admin/feed/reports?${q.toString()}`;

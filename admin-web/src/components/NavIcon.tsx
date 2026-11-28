@@ -3,6 +3,7 @@ export type NavIconName =
   | 'users'
   | 'alerts'
   | 'feed'
+  | 'social'
   | 'rules'
   | 'audit'
   | 'system'
@@ -64,6 +65,13 @@ function iconPaths(name: NavIconName) {
           <path d="M3.5 6.2 5.1 7.8 7.4 5" />
           <path d="M3.5 12.2 5.1 13.8 7.4 11" />
           <path d="M3.5 18.2 5.1 19.8 7.4 17" />
+        </>
+      );
+    case 'social':
+      return (
+        <>
+          <path d="M3 10.5v3a1.5 1.5 0 0 0 1.5 1.5H7l8 5V4l-8 5H4.5A1.5 1.5 0 0 0 3 10.5Z" />
+          <path d="M18.5 8.5a4.5 4.5 0 0 1 0 7" />
         </>
       );
     case 'audit':

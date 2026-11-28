@@ -58,6 +58,44 @@ function apiError(response, payload) {
   return new SocialApiError(response.status, payload, message);
 }
 
+/**
+ * Anonymous bootstrap read of the public feature configuration. Not part of
+ * the session client on purpose: it must work before login, must never carry
+ * credentials, and a malformed or unreachable answer must fail closed — the
+ * caller treats any throw as "unavailable".
+ */
+export async function fetchSocialConfig(fetchImpl = globalThis.fetch) {
+  if (typeof fetchImpl !== 'function') {
+    throw new TypeError('fetchSocialConfig requires a fetch implementation');
+  }
+  const response = await fetchImpl(`${API}/config`, {
+    method: 'GET',
+    credentials: 'omit',
+    cache: 'no-store',
+    redirect: 'error',
+  });
+  if (!response.ok) {
+    throw new SocialApiError(response.status, null, 'Config request failed');
+  }
+  const payload = await readPayload(response, false);
+  if (!payload || typeof payload.webEnabled !== 'boolean'
+      || typeof payload.videoUploadsEnabled !== 'boolean') {
+    throw new SocialApiError(response.status, payload, 'Config response was malformed');
+  }
+  const announcement = payload.announcement == null ? null : payload.announcement;
+  if (announcement !== null) {
+    const fields = [announcement.titleVi, announcement.bodyVi, announcement.titleEn, announcement.bodyEn];
+    if (fields.some((value) => typeof value !== 'string' || !value.trim())) {
+      throw new SocialApiError(response.status, payload, 'Config announcement was malformed');
+    }
+  }
+  return {
+    webEnabled: payload.webEnabled,
+    videoUploadsEnabled: payload.videoUploadsEnabled,
+    announcement,
+  };
+}
+
 export function createSocialClient(fetchImpl = globalThis.fetch) {
   if (typeof fetchImpl !== 'function') {
     throw new TypeError('createSocialClient requires a fetch implementation');
