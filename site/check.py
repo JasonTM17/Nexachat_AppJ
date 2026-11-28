@@ -8,7 +8,7 @@ Validates:
    android/app/build.gradle, and 32 colon-separated uppercase hex byte fingerprints.
 3. Assetlinks serving criteria: Content-Type: application/json, no redirect, no Set-Cookie, status 200.
 4. Required security headers and rewrites exist in vercel.json.
-5. No external URLs (CDNs, fonts, analytics, third-party scripts) in HTML/CSS/JS.
+5. No third-party resources in HTML/CSS/JS beyond approved GitHub release and support URLs.
 6. No inline scripts, styles, or event handlers in HTML.
 7. Token validator matches Android InviteLinkParser rules on valid/invalid test vectors.
 8. Optional live HTTP check against --url <base-url>.
@@ -47,8 +47,10 @@ OFFICIAL_RELEASE_PAGE_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases
 OFFICIAL_RELEASES_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases"
 OFFICIAL_DIRECT_APK_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk"
 OFFICIAL_DIRECT_CHECKSUM_URL = f"{OFFICIAL_DIRECT_APK_URL}.sha256"
+OFFICIAL_LATEST_RELEASE_API_URL = "https://api.github.com/repos/JasonTM17/Nexachat_AppJ/releases/latest"
 SUPPORT_ISSUES_URL = "https://github.com/JasonTM17/Nexachat_AppJ/issues"
 DOWNLOAD_PAGE = "download.html"
+DOWNLOAD_SCRIPT = "download.js"
 DOWNLOAD_ALLOWED_EXTERNAL_URLS = frozenset({
     OFFICIAL_RELEASE_PAGE_URL,
     OFFICIAL_RELEASES_URL,
@@ -755,6 +757,8 @@ def test_no_external_urls():
                         continue
                     if rel_path == DOWNLOAD_PAGE and m in DOWNLOAD_ALLOWED_EXTERNAL_URLS:
                         continue
+                    if rel_path == DOWNLOAD_SCRIPT and m in (OFFICIAL_RELEASES_URL, OFFICIAL_LATEST_RELEASE_API_URL):
+                        continue
                     if m == SUPPORT_ISSUES_URL:
                         continue
                     disallowed.append(m)
@@ -762,7 +766,7 @@ def test_no_external_urls():
                     failures.append(f"External URL(s) found in {rel_path}: {disallowed}")
 
     if not failures:
-        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s) (allowed: official GitHub release/support links)")
+        log_pass(f"No unapproved external URLs across {scanned} HTML/CSS/JS file(s)")
     return failures
 
 
@@ -1705,9 +1709,8 @@ def test_download_page():
     for needle, description in (
         ("tải apk nexachat", "Vietnamese direct-download button label"),
         ("download nexachat apk", "English direct-download button label"),
-        ("v1.2.22", "current release version"),
-        ("tháng 11/2026", "Vietnamese release date"),
-        ("november 2026", "English release date"),
+        ("phiên bản ổn định", "Vietnamese stable release label"),
+        ("stable version", "English stable release label"),
         ("không được phân phối qua google play", "Vietnamese no-Google-Play statement"),
         ("not distributed through google play", "English no-Google-Play statement"),
         ("play protect", "Play Protect sideloading guidance"),
