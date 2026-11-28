@@ -6,14 +6,15 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
-## [1.2.34] - 2026-11-28
+## [1.2.35] - 2026-11-29
 
-See [the release notes](docs/release-notes/v1.2.34.md).
+See [the release notes](docs/release-notes/v1.2.35.md).
 
 ### Fixed
 
-- Group invite sign-in instructions describe the existing return to the invitation
-  after sign-in.
+- The Android group invite screen hides the preview card until group details
+  are available. The sign-in instruction uses the normal guidance color and
+  the app automatically returns to the same invitation after sign-in.
 
 ## [1.2.33] - 2026-11-28
 
