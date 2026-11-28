@@ -6,6 +6,24 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.32] - 2026-11-28
+
+See [the Android release notes](docs/release-notes/v1.2.32.md).
+
+### Added
+
+- This release includes the Social changes already merged into main. Web Social
+  and new video uploads are off by default.
+
+### Fixed
+
+- Ask handles conversational Vietnamese questions about what a named person
+  said, where or when something happened, and how many items are needed. It can
+  use times and counts written in words.
+- Tapping a citation opens the original message. Ask abstains when a fact is
+  missing or contradictory, or when its only source was recalled or excluded
+  from AI processing.
+
 ## [1.2.31] - 2026-11-28
 
 See [the Android release notes](docs/release-notes/v1.2.31.md).
@@ -1507,7 +1525,9 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.30...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.32...HEAD
+[1.2.32]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.31...v1.2.32
+[1.2.31]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.30...v1.2.31
 [1.2.30]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.29...v1.2.30
 [1.2.29]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.26...v1.2.29
 [1.2.28]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.26...v1.2.28
