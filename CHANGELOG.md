@@ -6,6 +6,18 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.31] - 2026-11-28
+
+See [the Android release notes](docs/release-notes/v1.2.31.md).
+
+### Fixed
+
+- Ask answers Vietnamese place questions about a named person's own statement
+  and opens the original message.
+- Ask can use a confirmed reservation that gives the event date. It keeps
+  abstaining when the mentioned date belongs to the booking itself or the
+  available information is incomplete or contradictory.
+
 ## [1.2.30] - 2026-11-28
 
 See [the Android release notes](docs/release-notes/v1.2.30.md).
