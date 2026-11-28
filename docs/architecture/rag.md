@@ -137,12 +137,17 @@ Explicit attribution such as `According to <name>, …` or
 the reader's admission boundary. No match or multiple eligible senders return
 `NO_EVIDENCE`. Ask ranks only that sender's messages for the rest of the
 question. The attribution name is resolved before prompt construction.
+Vietnamese questions also accept forms such as `Theo lời <tên>, …`,
+`Theo <Tên> thì …`, and `<Tên> nhắn là …`.
 With consent, the answer provider receives complete messages from the selected
 sender and may return one complete source sentence with its single citation.
-The server checks the quote against the redacted text actually sent. For a named
-Vietnamese date lookup, the server rejects a date attached only to a reference
+The server checks the quote against the redacted text actually sent. A Vietnamese
+event-date lookup accepts colloquial endings such as `ngày bao nhiêu rồi` or
+`mùng mấy vậy` and rejects a date attached only to a reference
 event introduced by `trước` or `sau`. A date stated explicitly before the
-reference can remain in its full supporting quote. Named lookups bypass the
+reference can remain in its full supporting quote. A clock-time or count
+lookup requires a clock value or the requested numeric unit in its evidence.
+Named lookups bypass the
 answer cache and recheck attribution before publication because a profile
 rename can leave the message revision unchanged.
 

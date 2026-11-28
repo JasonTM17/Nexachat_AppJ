@@ -15,10 +15,16 @@ import java.util.regex.Pattern;
 /** Direct Vietnamese date lookups with an explicit event label and a settled date. */
 record RagVietnameseDateLookup(String event) {
 
-    static final String QUESTION_END = "(?:\\s+(?:ạ|a))?\\s*[?!]*\\z";
+    static final String QUESTION_END =
+            "(?:\\s+(?:ạ|á|a|vậy|vay|nhỉ|nhi|rồi|roi|ta|thế|the|nhé|nhe|nha)){0,3}\\s*[?!]*\\z";
+    private static final String DATE_REQUEST =
+            "(?:(?:ngày|ngay) (?:nào|nao|mấy|may|bao nhiêu|bao nhieu)"
+                    + "|(?:hôm|hom) (?:nào|nao)|(?:mùng|mung|mồng|mong) (?:mấy|may))";
+    private static final String SHIFT = "(?:dời|đổi|chuyển|doi|chuyen) (?:sang|qua)";
     private static final Pattern QUESTION = Pattern.compile(
-            "\\A(?<event>[^,;?!]+?) (?:là|la) (?:(?:ngày|ngay) (?:nào|nao|mấy|may)"
-                    + "|(?:hôm|hom) (?:nào|nao))" + QUESTION_END);
+            "\\A(?<event>[^,;?!]+?) (?:(?:là|la|vào|vao|chốt|chot|diễn ra|dien ra|" + SHIFT + ") )?"
+                    + DATE_REQUEST + QUESTION_END);
+    private static final Pattern DATE_CUE = Pattern.compile("(?<![\\p{L}\\p{N}])" + DATE_REQUEST + QUESTION_END);
     private static final Pattern WHITESPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern ASSERTION_INTRO = Pattern.compile(
             "\\A(?:(?:tôi|toi|mình|minh|tớ|to|chúng tôi|chung toi) (?:(?:đã|da) )?"
@@ -38,7 +44,7 @@ record RagVietnameseDateLookup(String event) {
     private static final String UNIT = "(?:mot|hai|ba|bon|tu|nam|lam|sau|bay|tam|chin)";
     private static final String WRITTEN_DAY = "(?:ba muoi(?: mot)?|hai muoi(?: " + UNIT + ")?|muoi(?: "
             + UNIT + ")?|" + UNIT + ")";
-    private static final String CALENDAR_VALUE = "(?<dateMarker>ngay )?"
+    private static final String CALENDAR_VALUE = "(?<dateMarker>(?:ngay|mung|mong) )?"
             + "(?:(?<weekday>thu (?:hai|ba|tu|nam|sau|bay|[2-7])|chu nhat)"
                     + "|(?<digitDay>[0-9]{1,2})(?<separator>[/.-])(?<numberMonth>[0-9]{1,2})"
                     + "(?:\\k<separator>(?<numberYear>[1-9][0-9]{3}))?(?![/.-][0-9])"
@@ -47,13 +53,14 @@ record RagVietnameseDateLookup(String event) {
                     + "(?: nam (?<wordYear>[1-9][0-9]{3}))?)";
     private static final Pattern DATED_PREDICATE = Pattern.compile(
             "(?<binding> *: *| (?:la|vao) | (?:(?:da )?duoc |da )?(?:chot(?: lai)?|an dinh|xac nhan)(?: la| vao)? "
+                    + "| (?:da |se )?(?:duoc )?(?:doi|chuyen) (?:sang|qua) "
                     + "| (?:da |se )?(?:duoc )?(?:dien ra|bat dau|ket thuc|to chuc|mo cua|dong cua|len lich)(?: vao)? )"
                     + CALENDAR_VALUE
                     + "(?=$|[.,;:!?]| (?:nhe|nha|ne|nghen|luc|sau|truoc|theo)\\b)");
     private static final Pattern DATE_MENTION = Pattern.compile(
             "(?<![\\p{L}\\p{N}])(?<binding>)" + CALENDAR_VALUE + "(?![\\p{L}\\p{N}])");
+    private static final Pattern WAITS_UNTIL = Pattern.compile(" (?:đã |sẽ )?(?:được )?(?:đợi|chờ) (?:sang|qua) ");
     private static final Pattern SEPARATE_CLAUSE = Pattern.compile("[;,]\\s*| (?:còn|con|nhưng|nhung|trong khi) ");
-    private static final Pattern TEMPORAL_INTRO = Pattern.compile("(?:vào|vao|từ|tu|đến|den)?");
     private static final Pattern OTHER_SUBJECT = Pattern.compile(
             "\\b(?:cua|(?:ket thuc|tong ket|be mac|dien tap|tap duot)(?: cua| cho)?)\\z");
     private static final String RESERVATION = "dat(?: truoc)? (?:phong|hoi truong|sanh|dia diem|cho)\\b[^,;:?!]*? cho\\z";
@@ -72,21 +79,25 @@ record RagVietnameseDateLookup(String event) {
             "mot", "hai", "ba", "tu", "nam", "sau", "bay", "tam", "chin", "muoi", "muoi mot", "muoi hai");
     private static final List<String> WEEKDAY_NAMES = List.of("hai", "ba", "tu", "nam", "sau", "bay");
 
-    static RagVietnameseDateLookup parse(String question, SummaryLanguage language, boolean namedSpeaker) {
-        if (!namedSpeaker || language != SummaryLanguage.VI) {
+    static boolean isDateQuestion(String question) {
+        return DATE_CUE.matcher(normalize(question)).find();
+    }
+
+    static RagVietnameseDateLookup parse(String question, SummaryLanguage language) {
+        if (language != SummaryLanguage.VI) {
             return null;
         }
         Matcher matcher = QUESTION.matcher(normalize(question));
         if (!matcher.matches()) {
             return null;
         }
-        String event = matcher.group("event").strip();
+        String event = OCCURRENCE_LABEL.matcher(matcher.group("event")).replaceFirst("").strip();
         return event.codePoints().anyMatch(Character::isLetterOrDigit) ? new RagVietnameseDateLookup(event) : null;
     }
 
     // Match the predicate immediately after the same event. A date elsewhere in the
     // sentence is not evidence for that event, even when all query terms are present.
-    List<String> dates(String statement) {
+    private DateEvidence directDate(String statement) {
         String normalized = normalize(statement);
         if (!normalized.startsWith(event)) {
             normalized = ASSERTION_INTRO.matcher(normalized).replaceFirst("");
@@ -98,71 +109,79 @@ record RagVietnameseDateLookup(String event) {
         if (!normalized.startsWith(event)) {
             int start = eventStart(normalized);
             if (start < 0) {
-                return List.of();
+                return null;
             }
             String prefix = Tokenizer.foldForMatching(normalized.substring(0, start)).strip();
             if (!COMPLETED_RESERVATION.matcher(prefix).matches() || DATE_MENTION.matcher(prefix).find()) {
-                return List.of();
+                return null;
             }
             normalized = normalized.substring(start);
             reservation = true;
         }
-        String predicate = Tokenizer.foldForMatching(normalized.substring(event.length()));
+        String originalPredicate = normalized.substring(event.length());
+        if (WAITS_UNTIL.matcher(originalPredicate).lookingAt()) {
+            return new DateEvidence(List.of(), false);
+        }
+        String predicate = Tokenizer.foldForMatching(originalPredicate);
         Matcher matcher = DATED_PREDICATE.matcher(predicate);
         if (!matcher.lookingAt()) {
-            return List.of();
+            return null;
         }
         String tail = predicate.substring(matcher.end());
         if (UNCERTAIN_TAIL.matcher(tail).find()
                 || reservation && (!"vao".equals(matcher.group("binding").strip())
                     || !RESERVATION_SCHEDULE.matcher(tail).matches())) {
-            return List.of();
+            return new DateEvidence(List.of(), false);
         }
         String date = calendarValue(matcher);
         if (date == null) {
-            return List.of();
+            return new DateEvidence(List.of(), false);
         }
         String otherDate = conflictingDateForEvent(tail, date);
-        return otherDate == null ? List.of(date) : List.of(date, otherDate);
+        return otherDate == null ? new DateEvidence(List.of(date), true)
+                : new DateEvidence(List.of(date, otherDate), false);
     }
 
     DateEvidence inspect(String statement) {
-        List<String> direct = dates(statement);
+        DateEvidence direct = directDate(statement);
         String normalized = normalize(statement);
-        if (direct.size() > 1) {
-            return new DateEvidence(direct, false, false);
+        if (direct != null && !direct.usable()) {
+            // A recognized but unconfirmed, stale, invalid or conflicting date cannot be
+            // rescued by the looser calendar-mention fallback.
+            return direct;
         }
-        var compatible = new LinkedHashSet<>(direct);
-        boolean otherDatedAssertion = false;
-        boolean invalidDate = false;
+        var compatible = new LinkedHashSet<String>();
+        if (direct != null) {
+            compatible.addAll(direct.values());
+        }
         for (String clause : SEPARATE_CLAUSE.split(normalized)) {
             int eventStart = eventStart(clause);
-            String prefix = eventStart < 0 ? "" : Tokenizer.foldForMatching(clause.substring(0, eventStart)).strip();
+            if (eventStart < 0) {
+                continue;
+            }
+            String prefix = Tokenizer.foldForMatching(clause.substring(0, eventStart)).strip();
             // A reservation can be dated independently of the event. Only the explicit
             // scheduling form checked by dates() supplies an event date in that clause.
-            boolean target = eventStart >= 0 && !OTHER_SUBJECT.matcher(prefix).find()
-                    && !RESERVATION_MENTION.matcher(prefix).find();
-            String folded = Tokenizer.foldForMatching(clause);
-            Matcher dates = DATE_MENTION.matcher(folded);
+            if (OTHER_SUBJECT.matcher(prefix).find() || RESERVATION_MENTION.matcher(prefix).find()
+                    || WAITS_UNTIL.matcher(clause.substring(eventStart + event.length())).lookingAt()) {
+                continue;
+            }
+            Matcher dates = DATE_MENTION.matcher(Tokenizer.foldForMatching(clause));
             while (dates.find()) {
                 String value = calendarValue(dates);
-                if (value == null) {
-                    invalidDate |= target && (dates.group("dateMarker") != null || "/".equals(dates.group("separator")));
-                } else if (target) {
+                if (value != null) {
                     compatible.add(value);
-                } else if (!TEMPORAL_INTRO.matcher(folded.substring(0, dates.start()).strip()).matches()) {
-                    otherDatedAssertion = true;
                 }
             }
         }
-        // Preserve ordinary phrasing when its attachment is uncertain. Reject a date
-        // asserted only for a different subject, or an invalid date stated for this one.
-        boolean disproven = compatible.isEmpty() && (invalidDate || otherDatedAssertion && eventStart(normalized) >= 0);
-        return new DateEvidence(List.copyOf(compatible), disproven, direct.size() == 1);
+        return new DateEvidence(List.copyOf(compatible), direct != null);
     }
 
     boolean statesDateIsUnsettled(String statement) {
         String text = ASSERTION_INTRO.matcher(normalize(statement)).replaceFirst("");
+        if (eventStart(text) == 0) {
+            return EVENT_DATE_UNSET.matcher(Tokenizer.foldForMatching(text.substring(event.length()))).matches();
+        }
         Matcher subject = OCCURRENCE_LABEL.matcher(text);
         if (!subject.lookingAt()) {
             subject = DATE_STATUS_SUBJECT.matcher(text);
@@ -188,9 +207,9 @@ record RagVietnameseDateLookup(String event) {
         return -1;
     }
 
-    record DateEvidence(List<String> values, boolean disproven, boolean directlyBound) {
+    record DateEvidence(List<String> values, boolean directlyBound) {
         boolean usable() {
-            return !disproven && values.size() < 2;
+            return values.size() == 1;
         }
     }
 

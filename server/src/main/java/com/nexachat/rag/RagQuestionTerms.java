@@ -21,10 +21,13 @@ public final class RagQuestionTerms {
     private static final List<String> VI_QUERY_SCAFFOLD_PHRASES = List.of(
             "giai thich", "tim kiem", "tim hieu", "tim cach", "bao nhieu", "chi tiet",
             "vui long", "the nao", "khi nao", "goi y");
-    // Check these cues before folding, which would otherwise also strip e.g. "ở đầu" or "máy".
-    private static final Pattern VI_INTERROGATIVE_CUES = Pattern.compile(
-            "(?iu)(?<![\\p{L}\\p{N}])(?:ở\\s+đâu|o\\s+dau|mấy(?=\\s+giờ\\b)|may(?=\\s+gio\\b))"
-                    + "(?![\\p{L}\\p{N}])");
+    // Match before folding to preserve words such as "ở đầu", "máy" and the name "Nhi".
+    static final String VI_PLACE_VALUE = "(?:đâu|dau|(?:chỗ|cho|phòng|phong|địa điểm|dia diem)\\s+(?:nào|nao))";
+    private static final Pattern VI_PLACE_CUE = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}])(?:ở|o|tại|tai)\\s+" + VI_PLACE_VALUE + "(?![\\p{L}\\p{N}])");
+    private static final Pattern VI_CLOCK_CUE = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}])(?:(?:lúc|luc)\\s+)?(?:mấy\\s+giờ|may\\s+gio)(?![\\p{L}\\p{N}])");
+    private static final Pattern VI_QUESTION_PARTICLE = Pattern.compile("(?iu)\\s+nhỉ\\s*(?=[?!]*\\z)");
 
     private RagQuestionTerms() {
     }
@@ -37,7 +40,15 @@ public final class RagQuestionTerms {
     }
 
     static boolean hasVietnamesePlaceOrTimeCue(String question) {
-        return VI_INTERROGATIVE_CUES.matcher(Tokenizer.nfc(question)).find();
+        return hasVietnamesePlaceCue(question) || hasVietnameseClockCue(question);
+    }
+
+    static boolean hasVietnamesePlaceCue(String question) {
+        return VI_PLACE_CUE.matcher(Tokenizer.nfc(question)).find();
+    }
+
+    static boolean hasVietnameseClockCue(String question) {
+        return VI_CLOCK_CUE.matcher(Tokenizer.nfc(question)).find();
     }
 
     static List<String> answerTerms(String question, SummaryLanguage language, int limit) {
@@ -47,7 +58,9 @@ public final class RagQuestionTerms {
                     .toList();
         }
 
-        String withoutCues = VI_INTERROGATIVE_CUES.matcher(Tokenizer.nfc(question)).replaceAll(" ");
+        String withoutCues = VI_PLACE_CUE.matcher(Tokenizer.nfc(question)).replaceAll(" ");
+        withoutCues = VI_CLOCK_CUE.matcher(withoutCues).replaceAll(" ");
+        withoutCues = VI_QUESTION_PARTICLE.matcher(withoutCues).replaceFirst("");
         String normalized = " " + RagQuestionNormalizer.normalize(withoutCues) + " ";
         Set<String> scaffold = new HashSet<>(VI_QUERY_SCAFFOLD_TERMS);
         for (String phrase : VI_QUERY_SCAFFOLD_PHRASES) {

@@ -32,7 +32,7 @@ public class RagQuestionCache {
 
     private static final int SEMANTIC_SCAN_LIMIT = 200;
     private static final String CONVERSATION_LOCK_PREFIX = "rag-question-cache:";
-    private static final String ANSWER_POLICY = "ask-grounding-v4:";
+    private static final String ANSWER_POLICY = "ask-grounding-v5:";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;

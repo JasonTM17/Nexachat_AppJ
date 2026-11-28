@@ -12,11 +12,20 @@ import java.util.regex.Pattern;
 record AskSpeakerLookup(String name, String question, boolean ambiguous) {
     private static final String NAME_CHARACTERS = "[\\p{L}\\p{M}\\p{Nd} .’'-]";
     private static final String NAME = "(?<name>" + NAME_CHARACTERS + "{1,60}?)";
+    private static final String VI_ATTRIBUTION = "theo (?:chính )?lời(?: của)?";
+    private static final String NAME_WORD = "\\p{Lu}[\\p{L}\\p{M}’'-]*";
+    private static final String VI_PROPER_NAME = "(?<name>(?-i:" + NAME_WORD + "(?: " + NAME_WORD + "){0,5}))";
     private static final Pattern PREFIX = Pattern.compile(
-            "(?iu)\\A(?:according to|theo (?:chính )?lời của)\\s+" + NAME + "\\s*,\\s*(?<fact>.+)\\z");
+            "(?iu)\\A(?:according to|" + VI_ATTRIBUTION + ")\\s+" + NAME + "\\s*,\\s*(?<fact>.+)\\z");
     private static final Pattern VI_SPEAKER_CONNECTOR = Pattern.compile(
-            "(?iu)\\Atheo (?:chính )?lời của\\s+(?<name>" + NAME_CHARACTERS + "{1,60})"
+            "(?iu)\\A" + VI_ATTRIBUTION + "\\s+(?<name>" + NAME_CHARACTERS + "{1,60})"
                     + "\\s+(?<connector>thì)\\s+(?<fact>.+)\\z");
+    // Bare "theo" also introduces documents and schedules. Require a name-shaped label
+    // before treating the shorter question as a person attribution.
+    private static final Pattern VI_SHORT_ATTRIBUTION = Pattern.compile(
+            "(?iu)\\Atheo\\s+" + VI_PROPER_NAME + "\\s+(?<connector>thì)\\s+(?<fact>.+)\\z");
+    private static final Pattern VI_REPORTED_QUESTION = Pattern.compile(
+            "(?iu)\\A" + VI_PROPER_NAME + "\\s+(?:(?:nhắn|bảo)(?:\\s+là)?|nói\\s+(?:là|rằng))\\s+(?<fact>.+)\\z");
     private static final Pattern VI_CONNECTOR_TOKEN = Pattern.compile("(?iu)(?<!\\S)thì(?!\\S)");
     private static final Pattern OWN_MESSAGE = Pattern.compile(
             "(?iu)\\Ain (?:her|his|their) own (?:message|words),\\s*"
@@ -30,11 +39,18 @@ record AskSpeakerLookup(String name, String question, boolean ambiguous) {
             return new AskSpeakerLookup(prefix.group("name").strip(), prefix.group("fact").strip(), false);
         }
         Matcher conversational = VI_SPEAKER_CONNECTOR.matcher(normalized);
+        if (!conversational.matches()) {
+            conversational = VI_SHORT_ATTRIBUTION.matcher(normalized);
+        }
         if (conversational.matches() && !conversational.group("fact").isBlank()) {
             String name = conversational.group("name").strip();
             String fact = conversational.group("fact").strip();
             boolean ambiguous = ambiguousConnector(name, conversational.group("connector"), fact);
             return new AskSpeakerLookup(name, fact, ambiguous);
+        }
+        Matcher reported = VI_REPORTED_QUESTION.matcher(normalized);
+        if (reported.matches() && !reported.group("fact").isBlank()) {
+            return new AskSpeakerLookup(reported.group("name"), reported.group("fact").strip(), false);
         }
         Matcher own = OWN_MESSAGE.matcher(normalized);
         if (own.matches()) {

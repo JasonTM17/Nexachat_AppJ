@@ -216,16 +216,17 @@ public class RagRetrievalService {
             lexicalCandidateIds.add(candidate.id());
         }
         boolean needsSettledEvidence = RagExtractiveAnswerer.needsSettledEvidence(question, language);
-        boolean attributedDate = namedSpeaker && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
-        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
+        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language);
+        boolean dated = dateLookup != null || namedSpeaker && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
         RagVietnamesePlaceLookup placeLookup = RagVietnamesePlaceLookup.parse(question, language, namedSpeaker);
+        var valueEvidence = RagExtractiveAnswerer.vietnameseValueEvidence(question, language, namedSpeaker, questionTerms);
         double requiredCoverage = config.getLexicalAnswerMinCoverage();
         for (RagMessage candidate : vectorCandidates) {
-            List<String> statements = namedSpeaker
-                    ? RagExtractiveAnswerer.attributedStatements(candidate.content(), attributedDate, dateLookup)
+            List<String> statements = namedSpeaker || dated
+                    ? RagExtractiveAnswerer.attributedStatements(candidate.content(), dated, dateLookup)
                     : needsSettledEvidence ? RagExtractiveAnswerer.settledStatements(candidate.content())
                     : List.of(candidate.content());
-            boolean covered = statements.stream().anyMatch(text -> placeLookup != null
+            boolean covered = statements.stream().filter(valueEvidence).anyMatch(text -> placeLookup != null
                     ? !placeLookup.places(text).isEmpty()
                     : dateLookup != null && dateLookup.inspect(text).directlyBound()
                         || hasCoverage(text, language, questionTerms, requiredCoverage));
