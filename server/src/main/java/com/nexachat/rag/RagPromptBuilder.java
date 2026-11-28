@@ -55,7 +55,7 @@ public final class RagPromptBuilder {
         Map<Integer, List<UUID>> messageIdsByIndex = new LinkedHashMap<>();
         Map<Integer, String> quoteSources = new LinkedHashMap<>();
         boolean attributedDate = speakerQuote && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
-        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, speakerQuote);
+        RagVietnameseDateLookup dateLookup = attributedDate ? RagVietnameseDateLookup.parse(question, language) : null;
         for (RagContextItem item : context) {
             ObjectNode node = messages.addObject();
             node.put("i", item.index());

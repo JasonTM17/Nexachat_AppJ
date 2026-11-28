@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -65,11 +67,11 @@ final class RagExtractiveAnswerer {
                     + "|(?:have|has)n['’]t (?:yet )?(?:set|fixed|decided|confirmed|assigned|chosen|scheduled)"
                     + "|chưa (?:chốt|ấn định|xác nhận|biết|chọn)|không rõ"
                     + "|chua (?:chot|an dinh|xac nhan|biet|chon)|khong ro)\\b");
+    private static final Pattern VI_VALUE_NOT_SHARED = Pattern.compile(
+            "\\b(?:chua (?:duoc )?(?:gui|chia se|cung cap|cong bo|cap)|se (?:gui|chia se|cung cap|cong bo|cap) (?:lai )?sau)\\b");
+    private static final Pattern VI_VALUE_QUESTION = Pattern.compile(
+            "(?iu)\\b(?:là|la)\\s+(?:gì|gi)" + RagVietnameseDateLookup.QUESTION_END);
     private static final int VI_GRAMMAR_FLAGS = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS;
-    private static final Pattern VI_DATE_REQUEST = Pattern.compile(
-            "\\b(?:(?:ngày|ngay)\\s+(?:nào|nao|mấy|may)|(?:hôm|hom)\\s+(?:nào|nao))"
-                    + RagVietnameseDateLookup.QUESTION_END,
-            VI_GRAMMAR_FLAGS);
     private static final Pattern VI_DATE_PENDING_CONFIRMATION = Pattern.compile(
             "\\b(?:chờ|đợi|cho|doi)\\s+(?:thông báo|thong bao|xác nhận|xac nhan|phê duyệt|phe duyet)"
                     + "\\s+(?:chính thức|chinh thuc|cuối cùng|cuoi cung)\\b"
@@ -94,15 +96,27 @@ final class RagExtractiveAnswerer {
             List<RagMessage> candidates,
             AskDeadline deadline,
             boolean namedSpeaker) {
-        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
+        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language);
         if (dateLookup != null) {
             return hasUnsettledOrConflictingDates(candidates, deadline, dateLookup);
         }
         RagVietnamesePlaceLookup placeLookup = RagVietnamesePlaceLookup.parse(question, language, namedSpeaker);
         if (placeLookup != null) {
-            return hasConflictingPlaces(candidates, deadline, placeLookup);
+            return hasConflictingGroundedValues(candidates, deadline, placeLookup::places);
         }
         String foldedQuestion = RagQuestionNormalizer.normalize(question);
+        if (namedSpeaker && language == SummaryLanguage.VI && RagQuestionTerms.hasVietnamesePlaceCue(question)
+                && !asksForUrl(foldedQuestion)) {
+            List<String> terms = RagQuestionTerms.answerTerms(question, language, Integer.MAX_VALUE);
+            return !terms.isEmpty() && hasConflictingGroundedValues(candidates, deadline,
+                    statement -> groundedValues(statement, terms, RagVietnamesePlaceLookup::locationsInStatement));
+        }
+        RagVietnameseMeasureLookup measure = RagVietnameseMeasureLookup.parse(question, language);
+        if (measure != null) {
+            List<String> terms = RagQuestionTerms.answerTerms(question, language, Integer.MAX_VALUE);
+            return !terms.isEmpty() && hasConflictingGroundedValues(candidates, deadline,
+                    statement -> groundedValues(statement, terms, measure::values));
+        }
         Matcher quantityQuestion = QUANTITY_QUESTION.matcher(foldedQuestion);
         String unit = quantityQuestion.find() ? quantityQuestion.group(1) : null;
         boolean asksForMaximum = MAXIMUM_QUANTITY.matcher(foldedQuestion).find();
@@ -178,19 +192,34 @@ final class RagExtractiveAnswerer {
         return unsettled;
     }
 
-    private static boolean hasConflictingPlaces(
-            List<RagMessage> candidates, AskDeadline deadline, RagVietnamesePlaceLookup lookup) {
-        Set<String> places = new LinkedHashSet<>();
+    private static boolean hasConflictingGroundedValues(
+            List<RagMessage> candidates, AskDeadline deadline, Function<String, Set<String>> evidence) {
+        Set<String> values = new LinkedHashSet<>();
         for (RagMessage candidate : candidates) {
             deadline.check();
             for (String statement : attributedStatements(candidate.content())) {
-                places.addAll(lookup.places(statement));
-                if (places.size() > 1) {
+                values.addAll(evidence.apply(statement));
+                if (values.size() > 1) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    private static Set<String> groundedValues(String statement, List<String> terms,
+                                               Function<String, Set<String>> evidence) {
+        if (!isAttributedStatement(statement, false)) {
+            return Set.of();
+        }
+        Set<String> values = new LinkedHashSet<>();
+        for (String clause : CLAUSE_BOUNDARY.split(statement)) {
+            if (!VALUE_NEGATION.matcher(clause).find()
+                    && matchedTermCount(clause, terms, SummaryLanguage.VI) == terms.size()) {
+                values.addAll(evidence.apply(clause));
+            }
+        }
+        return values;
     }
 
     private static ClaimValue claimValue(
@@ -243,9 +272,10 @@ final class RagExtractiveAnswerer {
         }
         String content = message.content();
         boolean needsSettledEvidence = needsSettledEvidence(question, language);
-        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, namedSpeaker);
+        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language);
         RagVietnamesePlaceLookup placeLookup = RagVietnamesePlaceLookup.parse(question, language, namedSpeaker);
-        boolean attributedDate = namedSpeaker && asksForVietnameseDate(question, language);
+        boolean dated = dateLookup != null || namedSpeaker && asksForVietnameseDate(question, language);
+        Predicate<String> valueEvidence = vietnameseValueEvidence(question, language, namedSpeaker, terms);
         Set<ValueType> requestedTypes = dateLookup == null && placeLookup == null ? requestedValueTypes(question) : Set.of();
         boolean identifierLookup = isIdentifierLookup(question, requestedTypes);
         Span best = null;
@@ -254,8 +284,11 @@ final class RagExtractiveAnswerer {
         boolean conflictingValues = false;
         for (Span sentence : sentences(content)) {
             String text = content.substring(sentence.start(), sentence.end());
-            if (namedSpeaker ? !isAttributedStatement(text, attributedDate)
+            if (namedSpeaker || dated ? !isAttributedStatement(text, dated)
                     : !isEvidenceSentence(text, needsSettledEvidence)) {
+                continue;
+            }
+            if (!valueEvidence.test(text)) {
                 continue;
             }
             RagVietnameseDateLookup.DateEvidence date = dateLookup == null ? null : dateLookup.inspect(text);
@@ -340,6 +373,31 @@ final class RagExtractiveAnswerer {
                 && containsAnyWord(Tokenizer.foldForMatching(question), "should", "where", "when");
     }
 
+    static Predicate<String> vietnameseValueEvidence(
+            String question, SummaryLanguage language, boolean namedSpeaker, List<String> terms) {
+        if (language != SummaryLanguage.VI || RagVietnameseDateLookup.isDateQuestion(question)) {
+            return text -> true;
+        }
+        String folded = RagQuestionNormalizer.normalize(question);
+        if (namedSpeaker && RagQuestionTerms.hasVietnamesePlaceCue(question)) {
+            if (RagVietnamesePlaceLookup.parse(question, language, true) != null) {
+                return text -> true;
+            }
+            return asksForUrl(folded) ? text -> URL.matcher(text).find()
+                    : text -> groundedValues(text, terms, RagVietnamesePlaceLookup::locationsInStatement).size() == 1;
+        }
+        if (VI_VALUE_QUESTION.matcher(Tokenizer.nfc(question)).find()) {
+            if (asksForUrl(folded)) {
+                return text -> URL.matcher(text).find();
+            }
+            if (isIdentifierLookup(question, requestedValueTypes(question))) {
+                return text -> !VI_VALUE_NOT_SHARED.matcher(RagQuestionNormalizer.normalize(text)).find();
+            }
+        }
+        RagVietnameseMeasureLookup measure = RagVietnameseMeasureLookup.parse(question, language);
+        return measure == null ? text -> true : text -> groundedValues(text, terms, measure::values).size() == 1;
+    }
+
     static List<String> settledStatements(String content) {
         return sentences(content).stream()
                 .map(span -> content.substring(span.start(), span.end()))
@@ -363,7 +421,7 @@ final class RagExtractiveAnswerer {
     }
 
     static boolean asksForVietnameseDate(String question, SummaryLanguage language) {
-        return language == SummaryLanguage.VI && VI_DATE_REQUEST.matcher(Tokenizer.nfc(question)).find();
+        return language == SummaryLanguage.VI && RagVietnameseDateLookup.isDateQuestion(question);
     }
 
     private static boolean isAttributedStatement(String text, boolean attributedDate) {
@@ -392,6 +450,8 @@ final class RagExtractiveAnswerer {
             return false;
         }
         return CueLike.interrogative(folded)
+                || RagVietnameseDateLookup.isDateQuestion(question)
+                || RagQuestionTerms.hasVietnamesePlaceOrTimeCue(question)
                 || startsWithAny(folded, "find ", "tell me ", "show me ", "tim ", "cho toi biet ")
                 || !requestedValueTypes(question).isEmpty();
     }
@@ -482,8 +542,7 @@ final class RagExtractiveAnswerer {
         if (containsAnyWord(folded, "email", "e-mail", "mail")) {
             types.add(ValueType.EMAIL);
         }
-        if (containsAnyWord(folded, "url", "link", "website", "domain")
-                || folded.contains("web site") || folded.contains("duong dan")) {
+        if (asksForUrl(folded)) {
             types.add(ValueType.URL);
         }
         if (types.isEmpty() && (folded.contains("lien he") || containsAnyWord(folded, "contact"))) {
@@ -496,6 +555,11 @@ final class RagExtractiveAnswerer {
             types.add(ValueType.NUMBER);
         }
         return types;
+    }
+
+    private static boolean asksForUrl(String folded) {
+        return containsAnyWord(folded, "url", "link", "website", "domain")
+                || folded.contains("web site") || folded.contains("duong dan");
     }
 
     private static boolean containsAnyWord(String text, String... words) {

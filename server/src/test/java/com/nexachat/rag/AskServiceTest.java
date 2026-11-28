@@ -827,6 +827,122 @@ class AskServiceTest {
         assertThat(response.citations()).isEmpty();
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Theo Tú Anh thì buổi nghiệm thu dời sang ngày bao nhiêu rồi | Buổi nghiệm thu dời sang ngày 16 tháng 10. | Buổi nghiệm thu dời sang ngày 20 tháng 10. | 16 tháng 10",
+            "Theo lời Tú Anh, lịch ráp sân là mùng mấy vậy? | Lịch ráp sân là mùng 8 tháng 9. | Lịch ráp sân là mùng 9 tháng 9. | mùng 8 tháng 9",
+            "Tú Anh nhắn là điểm đón đoàn ở chỗ nào nhỉ? | Điểm đón đoàn ở Cửa Nam. | Điểm đón đoàn ở Cửa Đông. | Cửa Nam",
+            "Tú Anh bảo hạn gửi biên bản là ngày mấy nhỉ? | Hạn gửi biên bản là ngày 22/10. | Hạn gửi biên bản là ngày 20/10. | 22/10",
+            "Theo lời của Tú Anh, cô ấy sẽ hướng dẫn ở phòng nào vậy? | Tôi sẽ hướng dẫn ở phòng Sen Trắng. | Tôi sẽ hướng dẫn ở phòng Hoa Đá. | phòng Sen Trắng",
+            "Hạn nộp hồ sơ là ngày mấy vậy? | Hạn nộp hồ sơ là ngày 18 tháng 8. | Mình rà hồ sơ vào ngày 16 tháng 8. | 18 tháng 8",
+            "Buổi tập dợt bắt đầu lúc mấy giờ vậy? | Buổi tập dợt bắt đầu lúc 14:30. | Buổi tập dợt kết thúc lúc 16:45. | 14:30",
+            "Buổi tập dợt bắt đầu lúc mấy giờ vậy? | Buổi tập dợt bắt đầu lúc hai giờ chiều. | Buổi tập dợt kết thúc lúc bốn giờ chiều. | hai giờ chiều",
+            "Buổi ráp sân cần chuẩn bị bao nhiêu ghế vậy? | Buổi ráp sân cần chuẩn bị mười tám ghế. | Buổi ráp sân có 15 túi đồ. | mười tám ghế",
+            "Mã tủ mẫu của nhóm Gió là gì nhỉ? | Mã tủ mẫu của nhóm Gió là 4821. | Mã tủ mẫu của nhóm Mây là 4397. | 4821",
+            "Đường dẫn xem lịch trực là gì nhỉ? | Đường dẫn xem lịch trực là https://example.com/lich-truc | Lịch làm vệ sinh là https://example.com/lich-phong | https://example.com/lich-truc"
+    })
+    void everydayVietnameseQuestionCitesTheExactEvidence(
+            String question, String evidence, String distractor, String fact) {
+        RagMessage source = addNamedMessage(conversationId, senderId, 1, "Tú Anh", evidence);
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Bình An", distractor);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains(fact);
+        assertThat(response.citations()).singleElement().satisfies(citation -> {
+            assertThat(citation.messageId()).isEqualTo(source.id());
+            assertThat(citation.seq()).isEqualTo(source.seq());
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Cần chuẩn bị bao nhiêu ghế cho buổi ráp sân vậy? | Buổi ráp sân cần chuẩn bị ghế, chưa đếm số lượng. Hẹn mang ghế ra sau 15:30.",
+            "Cần chuẩn bị bao nhiêu ghế cho buổi ráp sân vậy? | Buổi ráp sân cần chuẩn bị ghế, buổi chiếu phim có 12 ghế.",
+            "Cần chuẩn bị bao nhiêu ghế cho buổi ráp sân vậy? | Buổi ráp sân cần chuẩn bị 18 đến 20 ghế.",
+            "Buổi tập dợt bắt đầu lúc mấy giờ vậy? | Buổi tập dợt bắt đầu lúc khách đã vào đủ.",
+            "Buổi tập dợt bắt đầu lúc mấy giờ vậy? | Buổi tập dợt bắt đầu sau 2 giờ chuẩn bị.",
+            "Buổi tập dợt bắt đầu lúc mấy giờ vậy? | Buổi tập dợt bắt đầu sau khi khách vào, kết thúc lúc 16:45.",
+            "Buổi duyệt mẫu diễn ra ngày nào? | Ngày 17/9 tôi đã đặt phòng cho buổi duyệt mẫu."
+    })
+    void everydayVietnameseQuestionAbstainsWhenTheRequestedValueIsMissing(String question, String content) {
+        addMessage(conversationId, senderId, 1, content);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void everydayAttributionDoesNotSelectSomeoneElseOrAnAmbiguousName() {
+        addNamedMessage(conversationId, senderId, 1, "Tú Anh", "Điểm đón đoàn còn chờ chốt.");
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Bình An", "Tú Anh bảo điểm đón đoàn ở Cửa Đông.");
+        AskRequest question = new AskRequest("Theo Tú Anh thì điểm đón đoàn ở đâu vậy?", SummaryLanguage.AUTO);
+
+        assertThat(service.ask(conversationId, userId, question).citations()).isEmpty();
+
+        addNamedMessage(conversationId, UUID.randomUUID(), 3, "Tú Anh", "Điểm đón đoàn ở Cửa Nam.");
+        assertThat(service.ask(conversationId, userId, question).mode()).isEqualTo(AskMode.NOT_FOUND);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Mã tủ mẫu của nhóm Gió là gì nhỉ? | Mã tủ mẫu của nhóm Gió chưa được gửi lại.",
+            "Đường dẫn xem lịch trực là gì nhỉ? | Đường dẫn xem lịch trực sẽ gửi sau."
+    })
+    void everydayVietnameseQuestionDoesNotQuoteAnUnsharedCodeOrLink(String question, String content) {
+        addMessage(conversationId, senderId, 1, content);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void everydayAttributionAbstainsWhenTheNamedSpeakerGivesTwoDifferentLocations() {
+        addNamedMessage(conversationId, senderId, 1, "Tú Anh", "Điểm đón đoàn ở Cửa Nam.");
+        addNamedMessage(conversationId, senderId, 2, "Tú Anh", "Điểm đón đoàn ở Cửa Đông.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo Tú Anh thì điểm đón đoàn ở chỗ nào vậy?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Buổi nghiệm thu dời sang ngày 16 tháng 10, nhưng đây là lịch cũ.",
+            "Buổi nghiệm thu đợi sang ngày 16 tháng 10 mới xem có thể xếp lịch không."
+    })
+    void everydayDateQuestionRejectsAStaleOrUnconfirmedDate(String statement) {
+        addNamedMessage(conversationId, senderId, 1, "Tú Anh", statement);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo Tú Anh thì buổi nghiệm thu dời sang ngày bao nhiêu rồi?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Buổi tập dợt bắt đầu lúc mấy giờ vậy? | Buổi tập dợt bắt đầu lúc hai giờ chiều. | Buổi tập dợt bắt đầu 16:45.",
+            "Buổi ráp sân cần chuẩn bị bao nhiêu ghế vậy? | Buổi ráp sân cần chuẩn bị mười tám ghế. | Buổi ráp sân cần chuẩn bị 24 ghế."
+    })
+    void everydayVietnameseQuestionRejectsConflictingTimesOrCounts(String question, String first, String second) {
+        addMessage(conversationId, senderId, 1, first);
+        addMessage(conversationId, UUID.randomUUID(), 2, second);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
     @Test
     void multipleVietnameseConnectorsDoNotChooseBetweenTwoEligibleNames() {
         addNamedMessage(conversationId, senderId, 1, "Thu Ngân", "Hạn nộp là ngày 14/8.");
@@ -998,7 +1114,7 @@ class AskServiceTest {
 
     @Test
     void namedSpeakerDateLookupRequiresAnEventLabel() {
-        assertThat(RagVietnameseDateLookup.parse("\u0301 là ngày nào?", SummaryLanguage.VI, true)).isNull();
+        assertThat(RagVietnameseDateLookup.parse("\u0301 là ngày nào?", SummaryLanguage.VI)).isNull();
     }
 
     @Test

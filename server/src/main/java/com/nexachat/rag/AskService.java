@@ -791,7 +791,9 @@ public class AskService {
         if (question.codePointCount(0, question.length()) > LOOKUP_QUESTION_MAX_CHARS) {
             return false;
         }
-        return CueDetector.isQuestion(new SummaryMessage("probe", 0, "probe", "", question));
+        return CueDetector.isQuestion(new SummaryMessage("probe", 0, "probe", "", question))
+                || RagVietnameseDateLookup.isDateQuestion(question)
+                || RagQuestionTerms.hasVietnamesePlaceOrTimeCue(question);
     }
 
     private SummaryLanguage detectQuestionLanguage(String question) {
