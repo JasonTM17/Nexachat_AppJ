@@ -6,12 +6,12 @@ import { tokenStore } from '../api';
 import { NavIcon, type NavIconName } from './NavIcon';
 import { ThemeToggle } from './ThemeToggle';
 
-const NAV: { to: string; key: StringKey; icon: NavIconName }[] = [
+const NAV: { to: string; key: StringKey; icon: NavIconName; adminOnly?: boolean }[] = [
   { to: '/overview', key: 'nav.overview', icon: 'overview' },
   { to: '/users', key: 'nav.users', icon: 'users' },
   { to: '/alerts', key: 'nav.alerts', icon: 'alerts' },
   { to: '/feed', key: 'nav.feed', icon: 'feed' },
-  { to: '/social', key: 'nav.social', icon: 'social' },
+  { to: '/social', key: 'nav.social', icon: 'social', adminOnly: true },
   { to: '/rules', key: 'nav.rules', icon: 'rules' },
   { to: '/audit', key: 'nav.audit', icon: 'audit' },
   { to: '/system', key: 'nav.system', icon: 'system' },
@@ -41,7 +41,7 @@ const BLURBS: Record<string, StringKey> = {
 
 export default function Layout() {
   const { t, lang, setLang } = useI18n();
-  const { signOut, me } = useSession();
+  const { signOut, me, isAdmin } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -61,7 +61,7 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="brand">{t('app.name')}</div>
         <nav aria-label={t('nav.primary')}>
-          {NAV.map((item) => (
+          {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

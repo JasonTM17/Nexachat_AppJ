@@ -263,13 +263,14 @@ export default function FeedPage() {
                           {text}
                         </div>
                         {((open && r.details) || (!body && r.details)) && (
-                          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                          <div className="muted feed-report-details">
                             {r.details}
                           </div>
                         )}
                         {body && (longBody || r.details) && (
                           <button
-                            className="btn ghost sm"
+                            type="button"
+                            className="btn ghost sm feed-expand-btn"
                             aria-expanded={open}
                             onClick={() => toggle(r.id)}
                           >

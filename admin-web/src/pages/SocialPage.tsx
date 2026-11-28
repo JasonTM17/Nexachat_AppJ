@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiException, type SocialAdminState, type SocialAnnouncement } from '../api';
+import { useSession } from '../auth';
 import { useI18n } from '../i18n';
 import {
   Chip,
@@ -35,6 +36,7 @@ type PendingAction =
  */
 export default function SocialPage() {
   const { t } = useI18n();
+  const { isAdmin, loading: sessionLoading } = useSession();
   const formatError = useApiErrorMessage();
   const toast = useToast();
 
@@ -97,8 +99,8 @@ export default function SocialPage() {
   }, [adopt]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!sessionLoading && isAdmin) load();
+  }, [sessionLoading, isAdmin, load]);
 
   // A stale revision means another admin saved first: never overwrite their
   // change — surface the conflict and reload the authoritative state.
@@ -173,6 +175,16 @@ export default function SocialPage() {
     }
   };
 
+  if (sessionLoading) return <Loading />;
+  if (!isAdmin) {
+    return (
+      <div className="empty" role="status">
+        <div className="state-icon" aria-hidden="true">!</div>
+        <p className="state-title">{t('social.adminOnly.title')}</p>
+        <p className="state-hint">{t('social.adminOnly.hint')}</p>
+      </div>
+    );
+  }
   if (failed) return <ErrorBlock onRetry={() => load()} />;
   if (!state) return <Loading />;
 
@@ -186,142 +198,170 @@ export default function SocialPage() {
 
   return (
     <>
-      {conflict && (
-        <div className="error-block" role="alert">
-          <p className="state-hint">{t('social.conflict')}</p>
-        </div>
-      )}
-      {actionError != null && (
-        <div className="error-block" role="alert">
-          <p className="state-hint">{formatError(actionError)}</p>
-        </div>
-      )}
-
-      <section className="card" aria-labelledby="social-flags-title">
-        <h2 id="social-flags-title">{t('social.flags.title')}</h2>
-        <p className="page-blurb">{t('social.flags.blurb')}</p>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={webEnabled}
-            onChange={(e) => setWebEnabled(e.target.checked)}
-          />
-          <span>
-            {t('social.flags.web')}
-            <Chip tone={state.webEnabled ? 'success' : undefined}>
-              {state.webEnabled ? t('common.on') : t('common.off')}
-            </Chip>
-          </span>
-        </label>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={videoEnabled}
-            onChange={(e) => setVideoEnabled(e.target.checked)}
-          />
-          <span>
-            {t('social.flags.video')}
-            <Chip tone={state.videoUploadsEnabled ? 'success' : undefined}>
-              {state.videoUploadsEnabled ? t('common.on') : t('common.off')}
-            </Chip>
-          </span>
-        </label>
-        <button
-          className="btn"
-          disabled={!flagsDirty || flagsBusy || pendingBusy}
-          onClick={() => setPending({ kind: 'flags', webEnabled, videoUploadsEnabled: videoEnabled })}
-        >
-          {t('social.flags.save')}
-        </button>
-      </section>
-
-      <section className="card" aria-labelledby="social-cms-title">
-        <h2 id="social-cms-title">{t('social.cms.title')}</h2>
-        <p className="page-blurb">{t('social.cms.blurb')}</p>
-
-        {state.published ? (
-          <div className="social-live">
-            <h3>{t('social.cms.liveNow')}</h3>
-            <p className="state-hint">
-              {previewLang === 'vi' ? state.published.titleVi : state.published.titleEn}
-              {' — '}
-              {previewLang === 'vi' ? state.published.bodyVi : state.published.bodyEn}
-            </p>
-            <button
-              className="btn ghost"
-              disabled={pendingBusy}
-              onClick={() => setPending({ kind: 'unpublish' })}
-            >
-              {t('social.cms.unpublish')}
-            </button>
+      <div className="social-stack">
+        {conflict && (
+          <div className="social-banner is-warn" role="alert">
+            {t('social.conflict')}
           </div>
-        ) : (
-          <p className="state-hint">{t('social.cms.nothingLive')}</p>
+        )}
+        {actionError != null && (
+          <div className="social-banner is-error" role="alert">
+            {formatError(actionError)}
+          </div>
         )}
 
-        <div className="social-draft-grid">
-          {(['Vi', 'En'] as const).map((suffix) => (
-            <fieldset key={suffix} className="social-draft-lang">
-              <legend>{suffix === 'Vi' ? 'Tiếng Việt' : 'English'}</legend>
-              <label className="field">
-                <span>
-                  {t('social.cms.fieldTitle')} — {(draftForm[`title${suffix}`] as string).length}/{TITLE_MAX}
-                </span>
-                <input
-                  className="input"
-                  maxLength={TITLE_MAX + 20}
-                  value={draftForm[`title${suffix}`] as string}
-                  onChange={(e) => setDraftForm({ ...draftForm, [`title${suffix}`]: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>
-                  {t('social.cms.fieldBody')} — {(draftForm[`body${suffix}`] as string).length}/{BODY_MAX}
-                </span>
-                <textarea
-                  className="input"
-                  rows={3}
-                  maxLength={BODY_MAX + 50}
-                  value={draftForm[`body${suffix}`] as string}
-                  onChange={(e) => setDraftForm({ ...draftForm, [`body${suffix}`]: e.target.value })}
-                />
-              </label>
-            </fieldset>
-          ))}
-        </div>
-
-        <div className="social-preview">
-          <div className="social-preview-head">
-            <h3>{t('social.cms.preview')}</h3>
-            <select
-              className="select"
-              aria-label={t('social.cms.previewLang')}
-              value={previewLang}
-              onChange={(e) => setPreviewLang(e.target.value as 'vi' | 'en')}
-            >
-              <option value="vi">VI</option>
-              <option value="en">EN</option>
-            </select>
-          </div>
-          <div className="social-preview-card">
-            <strong>{previewTitle.trim() || '—'}</strong>
-            <p>{previewBody.trim() || '—'}</p>
-          </div>
-        </div>
-
-        <div className="social-cms-actions">
-          <button className="btn ghost" disabled={!draftValid || draftBusy} onClick={() => void saveDraft()}>
-            {t('social.cms.saveDraft')}
-          </button>
+        <section className="card" aria-labelledby="social-flags-title">
+          <h2 id="social-flags-title">{t('social.flags.title')}</h2>
+          <p className="page-blurb">{t('social.flags.blurb')}</p>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={webEnabled}
+              onChange={(e) => setWebEnabled(e.target.checked)}
+            />
+            <span>
+              {t('social.flags.web')}
+              <Chip tone={state.webEnabled ? 'success' : undefined}>
+                {state.webEnabled ? t('common.on') : t('common.off')}
+              </Chip>
+            </span>
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={videoEnabled}
+              onChange={(e) => setVideoEnabled(e.target.checked)}
+            />
+            <span>
+              {t('social.flags.video')}
+              <Chip tone={state.videoUploadsEnabled ? 'success' : undefined}>
+                {state.videoUploadsEnabled ? t('common.on') : t('common.off')}
+              </Chip>
+            </span>
+          </label>
           <button
-            className="btn"
-            disabled={!state.draft || pendingBusy}
-            onClick={() => setPending({ kind: 'publish' })}
+            className="btn primary"
+            disabled={!flagsDirty || flagsBusy || pendingBusy}
+            onClick={() => setPending({ kind: 'flags', webEnabled, videoUploadsEnabled: videoEnabled })}
           >
-            {t('social.cms.publish')}
+            {t('social.flags.save')}
           </button>
-        </div>
-      </section>
+        </section>
+
+        <section className="card" aria-labelledby="social-cms-title">
+          <h2 id="social-cms-title">{t('social.cms.title')}</h2>
+          <p className="page-blurb">{t('social.cms.blurb')}</p>
+
+          {state.published ? (
+            <div className="social-live">
+              <h3>{t('social.cms.liveNow')}</h3>
+              <p className="state-hint">
+                {previewLang === 'vi' ? state.published.titleVi : state.published.titleEn}
+                {' — '}
+                {previewLang === 'vi' ? state.published.bodyVi : state.published.bodyEn}
+              </p>
+              <button
+                className="btn ghost"
+                disabled={pendingBusy}
+                onClick={() => setPending({ kind: 'unpublish' })}
+              >
+                {t('social.cms.unpublish')}
+              </button>
+            </div>
+          ) : (
+            <p className="state-hint">{t('social.cms.nothingLive')}</p>
+          )}
+
+          <div className="social-draft-grid">
+            {(['Vi', 'En'] as const).map((suffix) => {
+              const titleValue = draftForm[`title${suffix}`] as string;
+              const bodyValue = draftForm[`body${suffix}`] as string;
+              const titleTooLong = titleValue.trim().length > TITLE_MAX;
+              const bodyTooLong = bodyValue.trim().length > BODY_MAX;
+              const titleErrorId = `social-title-${suffix}-error`;
+              const bodyErrorId = `social-body-${suffix}-error`;
+              return (
+                <fieldset key={suffix} className="social-draft-lang">
+                  <legend>{suffix === 'Vi' ? 'Tiếng Việt' : 'English'}</legend>
+                  <label className="field">
+                    <span>
+                      {t('social.cms.fieldTitle')} — {titleValue.length}/{TITLE_MAX}
+                    </span>
+                    <input
+                      className="input"
+                      maxLength={TITLE_MAX + 20}
+                      value={titleValue}
+                      aria-invalid={titleTooLong || undefined}
+                      aria-describedby={titleTooLong ? titleErrorId : undefined}
+                      onChange={(e) => setDraftForm({ ...draftForm, [`title${suffix}`]: e.target.value })}
+                    />
+                    {titleTooLong && (
+                      <span id={titleErrorId} className="form-error">
+                        {t('social.cms.tooLong', { max: TITLE_MAX })}
+                      </span>
+                    )}
+                  </label>
+                  <label className="field">
+                    <span>
+                      {t('social.cms.fieldBody')} — {bodyValue.length}/{BODY_MAX}
+                    </span>
+                    <textarea
+                      className="input"
+                      rows={3}
+                      maxLength={BODY_MAX + 50}
+                      value={bodyValue}
+                      aria-invalid={bodyTooLong || undefined}
+                      aria-describedby={bodyTooLong ? bodyErrorId : undefined}
+                      onChange={(e) => setDraftForm({ ...draftForm, [`body${suffix}`]: e.target.value })}
+                    />
+                    {bodyTooLong && (
+                      <span id={bodyErrorId} className="form-error">
+                        {t('social.cms.tooLong', { max: BODY_MAX })}
+                      </span>
+                    )}
+                  </label>
+                </fieldset>
+              );
+            })}
+          </div>
+
+          <div className="social-preview">
+            <div className="social-preview-head">
+              <h3>{t('social.cms.preview')}</h3>
+              <select
+                className="select"
+                aria-label={t('social.cms.previewLang')}
+                value={previewLang}
+                onChange={(e) => setPreviewLang(e.target.value as 'vi' | 'en')}
+              >
+                <option value="vi">VI</option>
+                <option value="en">EN</option>
+              </select>
+            </div>
+            <div className="social-preview-card">
+              <strong>{previewTitle.trim() || '—'}</strong>
+              <p>{previewBody.trim() || '—'}</p>
+            </div>
+          </div>
+
+          <div className="social-cms-actions">
+            <button
+              className="btn ghost"
+              disabled={!draftValid || draftBusy || pendingBusy}
+              onClick={() => void saveDraft()}
+            >
+              {t('social.cms.saveDraft')}
+            </button>
+            <button
+              className="btn primary"
+              disabled={!state.draft || pendingBusy}
+              onClick={() => setPending({ kind: 'publish' })}
+            >
+              {t('social.cms.publish')}
+            </button>
+          </div>
+        </section>
+      </div>
 
       {pending && (
         <ConfirmDialog

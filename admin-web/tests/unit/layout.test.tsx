@@ -16,11 +16,11 @@ import { api } from '../../src/api';
 
 const apiMock = api as ReturnType<typeof vi.fn>;
 
-const renderLayout = (route: string) => {
+const renderLayout = (route: string, role: 'ADMIN' | 'MODERATOR' = 'ADMIN') => {
   sessionStorage.setItem('admin.accessToken', 'tok');
   apiMock.mockImplementation((path: string) => {
     if (path === '/api/v1/admin/me') {
-      return Promise.resolve({ userId: 'me-admin', role: 'ADMIN', displayName: 'Root' });
+      return Promise.resolve({ userId: `me-${role.toLowerCase()}`, role, displayName: 'Root' });
     }
     return Promise.reject(new Error(`unstubbed ${path}`));
   });
@@ -32,6 +32,7 @@ const renderLayout = (route: string) => {
             <Route element={<Layout />}>
               <Route path="/overview" element={<div>overview-page</div>} />
               <Route path="/users" element={<div>users-page</div>} />
+              <Route path="/social" element={<div>social-page</div>} />
             </Route>
           </Routes>
         </SessionProvider>
@@ -93,5 +94,23 @@ describe('Layout', () => {
     await userEvent.click(toggle);
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(localStorage.getItem(THEME_KEY)).toBe('light');
+  });
+
+  it('shows Social nav link for ADMIN and hides it for MODERATOR', async () => {
+    const adminRender = renderLayout('/overview', 'ADMIN');
+    await screen.findByText('Root');
+    const socialLink = await screen.findByRole('link', { name: 'Social' });
+    await userEvent.click(socialLink);
+    await screen.findByText('social-page');
+    await waitFor(() => expect(document.title).toBe('Social · NexaChat Admin'));
+    adminRender.unmount();
+
+    apiMock.mockReset();
+    sessionStorage.clear();
+    renderLayout('/overview', 'MODERATOR');
+    await screen.findByText('MODERATOR');
+    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Feed' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Social' })).toBeNull();
   });
 });

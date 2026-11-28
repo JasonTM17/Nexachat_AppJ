@@ -66,8 +66,9 @@ function validAnnouncement(value: unknown): value is SocialAnnouncement {
 
 async function mockSocialAdmin(
   page: Page,
-  options: { conflictFlags?: boolean } = {},
+  options: { conflictFlags?: boolean; role?: 'ADMIN' | 'MODERATOR' } = {},
 ): Promise<Mock> {
+  const role = options.role ?? 'ADMIN';
   const mock: Mock = { calls: [], getSettingsCount: 0, state: initialState() };
 
   await page.addInitScript(() => {
@@ -93,7 +94,7 @@ async function mockSocialAdmin(
     const path = url.pathname;
 
     if (path === '/api/v1/admin/me') {
-      return json(route, 200, { userId: 'staff-1', role: 'ADMIN', displayName: 'Admin QA' });
+      return json(route, 200, { userId: 'staff-1', role, displayName: `${role === 'ADMIN' ? 'Admin' : 'Moderator'} QA` });
     }
 
     if (method === 'GET' && path === '/api/v1/admin/social/settings') {
@@ -351,7 +352,7 @@ test.describe('social settings', () => {
     await expect.poll(() => mock.state.draft?.titleVi).toBe('Tiêu đề đang sửa');
     expect(mock.calls[1].body).toMatchObject({ expectedRevision: 2, titleVi: 'Tiêu đề đang sửa' });
   });
-test('a draft conflict keeps local edits even when the server draft changed', async ({ page }) => {
+  test('a draft conflict keeps local edits even when the server draft changed', async ({ page }) => {
     const mock = await mockSocialAdmin(page);
     mock.state.draft = {
       titleVi: 'Tiêu đề gốc',
@@ -375,5 +376,72 @@ test('a draft conflict keeps local edits even when the server draft changed', as
     await page.getByRole('button', { name: 'Save draft' }).click();
     await expect(page.getByText(/Another admin saved changes first/)).toBeVisible();
     await expect(vi.locator('input')).toHaveValue('Bản nháp của tôi');
+  });
+
+  test('MODERATOR hides Social nav entry and direct /social navigation shows localized admin-only notice without requesting settings', async ({
+    page,
+  }) => {
+    const mock = await mockSocialAdmin(page, { role: 'MODERATOR' });
+    await page.goto('/overview');
+
+    await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Social' })).toHaveCount(0);
+
+    await page.goto('/social');
+    await expect(page.getByText('Admin access required')).toBeVisible();
+    await expect(
+      page.getByText('Only administrators can view or manage Web Social settings and announcements.'),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+    expect(mock.getSettingsCount).toBe(0);
+
+    await page.getByLabel('Language').selectOption('vi');
+    await expect(page.getByText('Cần quyền quản trị viên')).toBeVisible();
+    await expect(
+      page.getByText('Chỉ quản trị viên mới có thể xem hoặc quản lý cài đặt và thông báo Mạng xã hội web.'),
+    ).toBeVisible();
+    expect(mock.getSettingsCount).toBe(0);
+  });
+
+  test('saveDraft 409 conflict preserves unsaved bilingual edits and retries with refreshed expectedRevision', async ({
+    page,
+  }) => {
+    const mock = await mockSocialAdmin(page);
+    mock.state.draft = {
+      titleVi: 'Tiêu đề đã lưu',
+      bodyVi: 'Nội dung đã lưu',
+      titleEn: 'Saved title',
+      bodyEn: 'Saved body',
+    };
+    await page.goto('/social');
+
+    const vi = page.getByRole('group', { name: 'Tiếng Việt' });
+    const en = page.getByRole('group', { name: 'English' });
+    await vi.locator('input').fill('Tiêu đề chưa lưu');
+    await en.locator('textarea').fill('Unsaved bilingual edit');
+
+    // Simulate another admin toggling a flag (revision 1 -> 2, server draft unchanged)
+    mock.state.revision += 1;
+    mock.state.webEnabled = true;
+
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect(page.getByText(/Another admin saved changes first/)).toBeVisible();
+    await expectFlagChip(page, 'Web Social feed', 'on');
+    await expect(vi.locator('input')).toHaveValue('Tiêu đề chưa lưu');
+    await expect(en.locator('textarea')).toHaveValue('Unsaved bilingual edit');
+
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect.poll(() => mock.state.revision).toBe(3);
+    expect(mock.state.draft).toEqual({
+      titleVi: 'Tiêu đề chưa lưu',
+      bodyVi: 'Nội dung đã lưu',
+      titleEn: 'Saved title',
+      bodyEn: 'Unsaved bilingual edit',
+    });
+    expect(mock.calls[1].body).toMatchObject({
+      expectedRevision: 2,
+      titleVi: 'Tiêu đề chưa lưu',
+      bodyEn: 'Unsaved bilingual edit',
+    });
   });
 });

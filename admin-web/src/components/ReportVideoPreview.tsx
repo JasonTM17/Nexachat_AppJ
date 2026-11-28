@@ -98,11 +98,12 @@ export function ReportVideoPreview({ reportId }: { reportId: string }) {
         type="button"
         className="btn sm"
         disabled={loading}
+        aria-busy={loading || undefined}
         onClick={() => void load()}
       >
         {t('feed.video.open')}
       </button>
-      <span role="status" className="report-video-status">
+      <span role="status" className={failed ? 'report-video-status error' : 'report-video-status'}>
         {loading ? t('feed.video.loading') : null}
         {failed ? t('feed.video.failed') : null}
       </span>

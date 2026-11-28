@@ -499,4 +499,30 @@ describe('FeedPage', () => {
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
     expect(screen.getByText('Mai')).toBeInTheDocument();
   });
+
+  it('renders ReportVideoPreview only when targetHasVideo is true and targetDeleted is false', async () => {
+    apiMock.mockResolvedValueOnce(
+      page([
+        report({ id: 'r-vid', targetBody: 'clip', messageSnapshot: 'clip', targetHasVideo: true }),
+        report({
+          id: 'r-del',
+          targetBody: 'deleted clip',
+          messageSnapshot: 'deleted clip',
+          targetHasVideo: true,
+          targetDeleted: true,
+        }),
+        report({ id: 'r-txt', targetBody: 'plain text', messageSnapshot: 'plain text', targetHasVideo: false }),
+      ]),
+    );
+    renderPage();
+    await screen.findByText('clip');
+
+    const videoRow = screen.getByText('clip').closest('tr') as HTMLElement;
+    const deletedRow = screen.getByText('deleted clip').closest('tr') as HTMLElement;
+    const textRow = screen.getByText('plain text').closest('tr') as HTMLElement;
+
+    expect(within(videoRow).getByRole('button', { name: 'Load reported video' })).toBeInTheDocument();
+    expect(within(deletedRow).queryByRole('button', { name: 'Load reported video' })).toBeNull();
+    expect(within(textRow).queryByRole('button', { name: 'Load reported video' })).toBeNull();
+  });
 });
