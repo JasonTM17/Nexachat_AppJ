@@ -285,4 +285,44 @@ test.describe('social settings', () => {
     await expect.poll(() => mock.getSettingsCount).toBe(baselineGets + 1);
     await expectFlagChip(page, 'Web Social feed', 'off');
   });
+
+  test('saving switches keeps edits to a stored draft and uses the new revision to save them', async ({ page }) => {
+    const mock = await mockSocialAdmin(page);
+    mock.state.draft = {
+      titleVi: 'Tiêu đề đã lưu',
+      bodyVi: 'Nội dung đã lưu',
+      titleEn: 'Saved title',
+      bodyEn: 'Saved body',
+    };
+    await page.goto('/social');
+
+    const vi = page.getByRole('group', { name: 'Tiếng Việt' });
+    const en = page.getByRole('group', { name: 'English' });
+    await vi.locator('input').fill('Tiêu đề đang sửa');
+    await en.locator('textarea').fill('New English body');
+
+    await flagRow(page, 'Web Social feed').locator('input[type="checkbox"]').check();
+    await page.getByRole('button', { name: 'Save switches' }).click();
+    await page.getByRole('alertdialog', { name: 'Apply these switches?' })
+      .getByRole('button', { name: 'Confirm' }).click();
+
+    await expectFlagChip(page, 'Web Social feed', 'on');
+    await expect(vi.locator('input')).toHaveValue('Tiêu đề đang sửa');
+    await expect(en.locator('textarea')).toHaveValue('New English body');
+    expect(mock.state.draft?.titleVi).toBe('Tiêu đề đã lưu');
+
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect.poll(() => mock.state.revision).toBe(3);
+    expect(mock.calls[1]).toEqual({
+      method: 'PUT',
+      path: '/api/v1/admin/social/settings/announcement/draft',
+      body: {
+        expectedRevision: 2,
+        titleVi: 'Tiêu đề đang sửa',
+        bodyVi: 'Nội dung đã lưu',
+        titleEn: 'Saved title',
+        bodyEn: 'New English body',
+      },
+    });
+  });
 });

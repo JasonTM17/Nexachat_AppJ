@@ -47,10 +47,14 @@ export default function SocialPage() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
 
-  const adopt = useCallback((next: SocialAdminState) => {
+  const updateSettings = useCallback((next: SocialAdminState) => {
     setState(next);
     setWebEnabled(next.webEnabled);
     setVideoEnabled(next.videoUploadsEnabled);
+  }, []);
+
+  const adopt = useCallback((next: SocialAdminState) => {
+    updateSettings(next);
     if (next.draft) {
       setDraftForm({
         titleVi: next.draft.titleVi,
@@ -59,7 +63,7 @@ export default function SocialPage() {
         bodyEn: next.draft.bodyEn,
       });
     }
-  }, []);
+  }, [updateSettings]);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -88,7 +92,7 @@ export default function SocialPage() {
     setFlagsBusy(true);
     setActionError(null);
     try {
-      adopt(await api<SocialAdminState>('/api/v1/admin/social/settings/flags', {
+      updateSettings(await api<SocialAdminState>('/api/v1/admin/social/settings/flags', {
         method: 'PATCH',
         body: { expectedRevision: state.revision, webEnabled: web, videoUploadsEnabled: video },
       }));
@@ -131,7 +135,7 @@ export default function SocialPage() {
         await saveFlags(pending.webEnabled, pending.videoUploadsEnabled);
         return;
       }
-      adopt(await api<SocialAdminState>(
+      updateSettings(await api<SocialAdminState>(
         `/api/v1/admin/social/settings/announcement/${pending.kind}`,
         { method: 'POST', body },
       ));

@@ -264,6 +264,7 @@ let uiEpoch = 0;
 // an unreachable or malformed config fails closed to 'unavailable'.
 let surfaceState = 'loading';
 let featureConfig = null;
+let configRequest = 0;
 let postDraft = { id: crypto.randomUUID(), submittedBody: null, file: null };
 
 function t(key, values = {}) {
@@ -329,12 +330,16 @@ function applyVideoGate() {
 }
 
 async function bootstrapConfig() {
-  try {
-    const config = await fetchSocialConfig();
-    featureConfig = config;
+  const request = ++configRequest;
+  const config = await fetchSocialConfig().catch(() => null);
+  // An earlier refresh can finish after the current tab's config read.
+  if (request !== configRequest) {
+    return;
+  }
+  featureConfig = config;
+  if (config) {
     surfaceState = config.webEnabled ? 'enabled' : 'disabled';
-  } catch {
-    featureConfig = null;
+  } else {
     surfaceState = 'unavailable';
   }
   applySurfaceState();
