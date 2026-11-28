@@ -684,9 +684,13 @@ function handleError(error, fallbackKey, statusElement) {
   }
   if (error instanceof SocialApiError && error.payload && error.payload.error
       && error.payload.error.code === 'SOCIAL_FEATURE_DISABLED') {
+    featureConfig = null;
     surfaceState = 'disabled';
     applySurfaceState();
     applyLanguage();
+    // This error may also mean uploads alone are off. Re-read the current flags
+    // and supersede any read started before the request was refused.
+    void bootstrapConfig();
     return;
   }
   setStatus(statusElement, fallbackKey);

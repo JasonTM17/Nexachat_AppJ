@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiException, type SocialAdminState } from '../api';
+import { api, ApiException, type SocialAdminState, type SocialAnnouncement } from '../api';
 import { useI18n } from '../i18n';
 import {
   Chip,
@@ -13,6 +13,13 @@ import {
 
 const TITLE_MAX = 100;
 const BODY_MAX = 500;
+const EMPTY_DRAFT: SocialAnnouncement = { titleVi: '', bodyVi: '', titleEn: '', bodyEn: '' };
+
+function sameDraft(left: SocialAnnouncement | null, right: SocialAnnouncement | null): boolean {
+  if (left === null || right === null) return left === right;
+  return left.titleVi === right.titleVi && left.bodyVi === right.bodyVi
+    && left.titleEn === right.titleEn && left.bodyEn === right.bodyEn;
+}
 
 type PendingAction =
   | { kind: 'flags'; webEnabled: boolean; videoUploadsEnabled: boolean }
@@ -40,7 +47,7 @@ export default function SocialPage() {
   const [videoEnabled, setVideoEnabled] = useState(false);
   const [flagsBusy, setFlagsBusy] = useState(false);
 
-  const [draftForm, setDraftForm] = useState({ titleVi: '', bodyVi: '', titleEn: '', bodyEn: '' });
+  const [draftForm, setDraftForm] = useState(EMPTY_DRAFT);
   const [draftBusy, setDraftBusy] = useState(false);
   const [previewLang, setPreviewLang] = useState<'vi' | 'en'>('vi');
 
@@ -55,22 +62,22 @@ export default function SocialPage() {
 
   const adopt = useCallback((next: SocialAdminState) => {
     updateSettings(next);
-    if (next.draft) {
-      setDraftForm({
-        titleVi: next.draft.titleVi,
-        bodyVi: next.draft.bodyVi,
-        titleEn: next.draft.titleEn,
-        bodyEn: next.draft.bodyEn,
-      });
-    }
+    const draft = next.draft ?? EMPTY_DRAFT;
+    setDraftForm({ titleVi: draft.titleVi, bodyVi: draft.bodyVi, titleEn: draft.titleEn, bodyEn: draft.bodyEn });
   }, [updateSettings]);
 
-  const load = useCallback(() => {
+  const load = useCallback((before?: SocialAdminState) => {
     setFailed(false);
     api<SocialAdminState>('/api/v1/admin/social/settings')
-      .then(adopt)
+      .then((next) => {
+        if (before && sameDraft(before.draft, next.draft)) {
+          updateSettings(next);
+        } else {
+          adopt(next);
+        }
+      })
       .catch(() => setFailed(true));
-  }, [adopt]);
+  }, [adopt, updateSettings]);
 
   useEffect(() => {
     load();
@@ -78,10 +85,10 @@ export default function SocialPage() {
 
   // A stale revision means another admin saved first: never overwrite their
   // change — surface the conflict and reload the authoritative state.
-  const handleMutationError = useCallback((err: unknown) => {
+  const handleMutationError = useCallback((err: unknown, before?: SocialAdminState) => {
     if (err instanceof ApiException && err.code === 'SOCIAL_SETTINGS_CONFLICT') {
       setConflict(true);
-      load();
+      load(before);
       return;
     }
     setActionError(err);
@@ -99,7 +106,7 @@ export default function SocialPage() {
       setConflict(false);
       toast.show(t('social.flags.saved'));
     } catch (err) {
-      handleMutationError(err);
+      handleMutationError(err, state);
     } finally {
       setFlagsBusy(false);
       setPendingBusy(false);
@@ -142,14 +149,14 @@ export default function SocialPage() {
       setConflict(false);
       toast.show(t(pending.kind === 'publish' ? 'social.cms.published' : 'social.cms.unpublished'));
     } catch (err) {
-      handleMutationError(err);
+      handleMutationError(err, state);
     } finally {
       setPendingBusy(false);
       setPending(null);
     }
   };
 
-  if (failed) return <ErrorBlock onRetry={load} />;
+  if (failed) return <ErrorBlock onRetry={() => load()} />;
   if (!state) return <Loading />;
 
   const flagsDirty = webEnabled !== state.webEnabled || videoEnabled !== state.videoUploadsEnabled;
