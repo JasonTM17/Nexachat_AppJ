@@ -7,10 +7,14 @@ type SocialConfig = {
   announcement: { titleVi: string; bodyVi: string; titleEn: string; bodyEn: string } | null;
 };
 
-type ConfigFixture = Window & {
-  socialConfigRequests: () => number;
-  respondToSocialConfig: (index: number, config: SocialConfig | null) => Promise<void>;
-};
+declare global {
+  interface Window {
+    socialConfigFixture: {
+      requestCount: () => number;
+      respond: (index: number, config: SocialConfig | null) => Promise<void>;
+    };
+  }
+}
 
 const origin = 'https://nexachat-social.test';
 const site = new URL('../../../site/', import.meta.url);
@@ -21,7 +25,7 @@ const enabled: SocialConfig = {
 };
 const disabled: SocialConfig = { webEnabled: false, videoUploadsEnabled: false, announcement: null };
 
-async function openWithOverlappingConfigReads(page: Page) {
+async function openSocialWithControlledConfig(page: Page) {
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== origin) return route.abort();
@@ -33,7 +37,6 @@ async function openWithOverlappingConfigReads(page: Page) {
     }
   });
   await page.addInitScript(() => {
-    const fixture = window as ConfigFixture;
     const pending: Array<(response: Response) => void> = [];
     const fetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
@@ -42,36 +45,42 @@ async function openWithOverlappingConfigReads(page: Page) {
       }
       return fetch(input, init);
     };
-    fixture.socialConfigRequests = () => pending.length;
-    fixture.respondToSocialConfig = (index, config) => new Promise<void>((done) => {
-      if (config === null) {
-        pending[index](new Response(null, { status: 503 }));
-        window.setTimeout(done, 0);
-        return;
-      }
-      const response = Response.json(config);
-      const text = response.text.bind(response);
-      response.text = async () => {
-        const body = await text();
-        // Wait for the app to consume the response and take its UI update turn.
-        window.setTimeout(done, 0);
-        return body;
-      };
-      pending[index](response);
-    });
+    window.socialConfigFixture = {
+      requestCount: () => pending.length,
+      respond: (index, config) => new Promise<void>((done) => {
+        if (config === null) {
+          pending[index](new Response(null, { status: 503 }));
+          window.setTimeout(done, 0);
+          return;
+        }
+        const response = Response.json(config);
+        const text = response.text.bind(response);
+        response.text = async () => {
+          const body = await text();
+          // Wait for the app to consume the response and take its UI update turn.
+          window.setTimeout(done, 0);
+          return body;
+        };
+        pending[index](response);
+      }),
+    };
   });
   await page.goto(origin + '/social/');
-  await page.waitForFunction(() => (window as ConfigFixture).socialConfigRequests() === 1);
-  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  await page.waitForFunction(() => (window as ConfigFixture).socialConfigRequests() === 2);
+  await page.waitForFunction(() => window.socialConfigFixture.requestCount() === 1);
 }
 
 function respond(page: Page, index: number, config: SocialConfig | null) {
-  return page.evaluate(({ index, config }) => (window as ConfigFixture).respondToSocialConfig(index, config), { index, config });
+  return page.evaluate(({ index, config }) => window.socialConfigFixture.respond(index, config), { index, config });
+}
+
+async function requestConfigOnReturn(page: Page) {
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(() => window.socialConfigFixture.requestCount() === 2);
 }
 
 test('an older enabled response cannot reopen a disabled Social page or restore its announcement', async ({ page }) => {
-  await openWithOverlappingConfigReads(page);
+  await openSocialWithControlledConfig(page);
+  await requestConfigOnReturn(page);
   await respond(page, 1, disabled);
   await expect(page.locator('#unavailable-panel')).toBeVisible();
 
@@ -82,7 +91,8 @@ test('an older enabled response cannot reopen a disabled Social page or restore 
 });
 
 test('an older config failure cannot hide a page enabled by the latest response', async ({ page }) => {
-  await openWithOverlappingConfigReads(page);
+  await openSocialWithControlledConfig(page);
+  await requestConfigOnReturn(page);
   await respond(page, 1, enabled);
   await expect(page.locator('#signed-out-panel')).toBeVisible();
 
@@ -90,4 +100,29 @@ test('an older config failure cannot hide a page enabled by the latest response'
   await expect(page.locator('#signed-out-panel')).toBeVisible();
   await expect(page.locator('#announcement-card')).toBeVisible();
   await expect(page.locator('#unavailable-panel')).toBeHidden();
+});
+
+test('a config read older than a server denial cannot reopen the signed-in surface', async ({ page }) => {
+  await openSocialWithControlledConfig(page);
+  await page.route(origin + '/api/social/v1/session/login', (route) => route.fulfill({
+    json: { accessToken: 'fixture-access', refreshToken: 'fixture-refresh', accessTokenExpiresIn: 1800,
+      user: { id: 'fixture-user', displayName: 'QA Social' } },
+  }));
+  await page.route((url) => url.origin === origin && url.pathname === '/api/social/v1/posts', (route) => route.fulfill({
+    status: 403, json: { error: { code: 'SOCIAL_FEATURE_DISABLED' } },
+  }));
+
+  await respond(page, 0, enabled);
+  await expect(page.locator('#signed-out-panel')).toBeVisible();
+  await requestConfigOnReturn(page);
+  await page.locator('#login-identifier').fill('qa@example.test');
+  await page.locator('#login-password').fill('synthetic-credential');
+  await page.locator('#login-button').click();
+  await expect(page.locator('#unavailable-panel')).toBeVisible();
+
+  await respond(page, 1, enabled);
+  await expect(page.locator('#session-panel')).toBeHidden();
+  await expect(page.locator('#announcement-card')).toBeHidden();
+  await respond(page, 2, disabled);
+  await expect(page.locator('#unavailable-panel')).toBeVisible();
 });

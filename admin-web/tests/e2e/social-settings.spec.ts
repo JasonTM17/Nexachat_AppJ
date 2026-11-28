@@ -325,4 +325,30 @@ test.describe('social settings', () => {
       },
     });
   });
+
+  test('a switch conflict reloads the revision without discarding edits to an unchanged draft', async ({ page }) => {
+    const mock = await mockSocialAdmin(page);
+    mock.state.draft = {
+      titleVi: 'Tiêu đề đã lưu',
+      bodyVi: 'Nội dung đã lưu',
+      titleEn: 'Saved title',
+      bodyEn: 'Saved body',
+    };
+    await page.goto('/social');
+    const vi = page.getByRole('group', { name: 'Tiếng Việt' });
+    await vi.locator('input').fill('Tiêu đề đang sửa');
+
+    mock.state.revision += 1;
+    await flagRow(page, 'Web Social feed').locator('input[type="checkbox"]').check();
+    await page.getByRole('button', { name: 'Save switches' }).click();
+    await page.getByRole('alertdialog', { name: 'Apply these switches?' })
+      .getByRole('button', { name: 'Confirm' }).click();
+
+    await expect(page.getByText(/Another admin saved changes first/)).toBeVisible();
+    await expect(flagRow(page, 'Web Social feed').locator('input[type="checkbox"]')).not.toBeChecked();
+    await expect(vi.locator('input')).toHaveValue('Tiêu đề đang sửa');
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect.poll(() => mock.state.draft?.titleVi).toBe('Tiêu đề đang sửa');
+    expect(mock.calls[1].body).toMatchObject({ expectedRevision: 2, titleVi: 'Tiêu đề đang sửa' });
+  });
 });
