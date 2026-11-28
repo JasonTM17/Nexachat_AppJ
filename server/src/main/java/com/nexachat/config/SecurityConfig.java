@@ -164,7 +164,7 @@ public class SecurityConfig {
         if (!adminOrigins.isEmpty()) {
             CorsConfiguration adminConfig = new CorsConfiguration();
             adminConfig.setAllowedOrigins(adminOrigins);
-            adminConfig.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+            adminConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
             adminConfig.setAllowedHeaders(List.of("*"));
             adminConfig.setExposedHeaders(List.of("Authorization"));
             adminConfig.setAllowCredentials(false);

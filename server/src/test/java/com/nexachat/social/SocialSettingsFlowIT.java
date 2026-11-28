@@ -139,6 +139,25 @@ class SocialSettingsFlowIT extends FeatureItSupport {
         getAs(plain, "/api/v1/admin/social/settings").andExpect(status().isForbidden());
         getAs(moderator, "/api/v1/admin/social/settings").andExpect(status().isForbidden());
         getAs(admin, "/api/v1/admin/social/settings").andExpect(status().isOk());
+
+        // Mutations are ADMIN-only too: a moderator passing the staff filter
+        // chain is still stopped by the in-guard role check, with no side effects.
+        long revBefore = currentRevision(admin);
+        patchAs(moderator, "/api/v1/admin/social/settings/flags", Map.of(
+                "expectedRevision", revBefore,
+                "webEnabled", true,
+                "videoUploadsEnabled", true))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_ADMIN"));
+        assertThat(currentRevision(admin)).isEqualTo(revBefore);
+    }
+
+    @Test
+    void configIsNotMappedOnTheLegacyFeedAlias() throws Exception {
+        // The bootstrap is single-mapped: the legacy Android alias must never
+        // answer it, so there is no second public config surface to keep in sync.
+        Actor user = newUser("Config Negative");
+        getAs(user, "/api/v1/feed/config").andExpect(status().isNotFound());
     }
 
     // --------------------------------------------------------- flags + audit

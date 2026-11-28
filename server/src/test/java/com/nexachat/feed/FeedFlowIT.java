@@ -837,7 +837,7 @@ class FeedFlowIT extends FeatureItSupport {
         String videoId = asset.get("videoId").asText();
         assertThat(asset.has("imageId")).isFalse();
         assertThat(asset.get("mimeType").asText()).isEqualTo("video/mp4");
-        assertThat(asset.get("url").asText()).isEqualTo("/api/social/v1/videos/" + videoId);
+        assertThat(asset.get("url").asText()).isEqualTo("/api/v1/feed/videos/" + videoId);
 
         // Unbound: the owner can read it back, nobody else can.
         getAs(author, "/api/social/v1/videos/" + videoId).andExpect(status().isOk());
@@ -852,7 +852,7 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(status().isCreated()).andReturn());
         String postId = created.get("id").asText();
         assertThat(created.get("video").get("url").asText())
-                .isEqualTo("/api/social/v1/videos/" + videoId);
+                .isEqualTo("/api/v1/feed/videos/" + videoId);
         assertThat(created.get("video").get("mimeType").asText()).isEqualTo("video/mp4");
         assertThat(created.get("image").isNull()).isTrue();
         assertThat(created.get("body").asText()).isEqualTo("watch this");
@@ -869,7 +869,7 @@ class FeedFlowIT extends FeatureItSupport {
         assertThat(item.get("body").asText()).isEqualTo("watch this");
         assertThat(item.get("image").isNull()).isTrue();
         assertThat(item.get("video").get("url").asText())
-                .isEqualTo("/api/social/v1/videos/" + videoId);
+                .isEqualTo("/api/v1/feed/videos/" + videoId);
 
         // Authenticated playback: exact bytes, video MIME, no-store.
         getAs(reader, "/api/social/v1/videos/" + videoId)

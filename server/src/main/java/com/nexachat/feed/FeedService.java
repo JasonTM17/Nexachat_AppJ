@@ -72,8 +72,14 @@ public class FeedService {
     /** Feed images are served only through this path, never through {@code /files/**}. */
     static final String IMAGE_PATH = "/api/v1/feed/images/";
 
-    /** Feed videos are served only through this path, never through {@code /files/**}. */
-    static final String VIDEO_PATH = "/api/social/v1/videos/";
+    /**
+     * Feed videos are served only through this path, never through {@code /files/**}.
+     * Like images, the advertised URL uses the legacy alias: it is never behind the
+     * web kill switch, so existing videos stay readable for every client in every
+     * flag state. The canonical {@code /api/social/v1/videos} mapping still answers
+     * the same bytes for the web client, which normalizes either alias.
+     */
+    static final String VIDEO_PATH = "/api/v1/feed/videos/";
 
     /** Outcome of a create: the row plus whether this call stored it. */
     public record Result(PostResponse post, boolean created) {
