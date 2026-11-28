@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,6 +59,13 @@ MAIN_ACTIVITY = "com.nexachat.MainActivity"
 EMULATOR_LOOPBACK_PORT = 8080
 EMULATOR_API_BASE_URL = f"http://127.0.0.1:{EMULATOR_LOOPBACK_PORT}"
 EMULATOR_STACK_PORT_RANGE = (18700, 18999)
+DEFAULT_APP_LINK_URL = "https://nexachat.io.vn/join/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef0123456789_"
+_INVITE_JOIN_VIEW_IDS = frozenset(
+    {"toolbar", "groupTitle", "statusText", "joinButton", "retryButton", "signInButton", "loading"}
+)
+_BROWSER_PACKAGES = frozenset(
+    {"com.android.chrome", "com.android.browser", "org.mozilla.firefox", "com.sec.android.app.sbrowser"}
+)
 
 USER_A = {"phone": "+84900000701", "name": "An Nguyen"}
 USER_B = {"phone": "+84900000702", "name": "Binh Tran"}
@@ -107,6 +115,61 @@ class HarnessFailure(RuntimeError):
 # ---------------------------------------------------------------------------
 # Pure command builders & fixture helpers (unit-tested offline)
 # ---------------------------------------------------------------------------
+
+
+def is_loopback_url(url: str) -> bool:
+    """Returns True when `url` targets a local loopback host."""
+    parsed = urllib.parse.urlsplit(str(url or ""))
+    host = (parsed.hostname or "").strip().lower()
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def build_app_link_view_cmd(
+    serial: str, url: str, package: str | None = None
+) -> list[str]:
+    """Builds `adb -s <serial> shell am start -W -a android.intent.action.VIEW -d <url>`."""
+    cmd = [
+        "adb",
+        "-s",
+        serial,
+        "shell",
+        "am",
+        "start",
+        "-W",
+        "-a",
+        "android.intent.action.VIEW",
+        "-d",
+        url,
+    ]
+    if package:
+        cmd.extend(["-p", package])
+    return cmd
+
+
+def verify_app_link_ui(nodes: Sequence[Any], expected_package: str) -> dict[str, Any]:
+    """Verifies App Link opened expected_package InviteJoinFragment (never a browser)."""
+    packages = {str(n.attrs.get("package", "")).strip() for n in nodes if n.attrs.get("package")}
+    browser_hits = sorted(p for p in packages if p in _BROWSER_PACKAGES)
+    if browser_hits:
+        raise ProductFailure(
+            f"App Link fell back to browser package(s) {browser_hits} instead of {expected_package}"
+        )
+    if expected_package not in packages:
+        raise ProductFailure(
+            f"App Link UI hierarchy missing package {expected_package!r}; observed={sorted(packages)}"
+        )
+    found_ids = {
+        a11y_oracle.rid_suffix(n)
+        for n in nodes
+        if str(n.attrs.get("package", "")).strip() == expected_package
+        and a11y_oracle.rid_suffix(n) in _INVITE_JOIN_VIEW_IDS
+    }
+    if not found_ids:
+        raise ProductFailure(
+            f"App Link opened {expected_package} without InviteJoinFragment view IDs "
+            f"(expected one of {sorted(_INVITE_JOIN_VIEW_IDS)})"
+        )
+    return {"package": expected_package, "matched_ids": sorted(found_ids)}
 
 
 def build_gradle_assemble_cmd(
@@ -215,8 +278,9 @@ def parse_crash_logcat(log_text: str, package: str = PACKAGE) -> list[str]:
                 findings.append("\n".join(block))
             continue
         if "ANR in" in line:
-            if package in "\n".join(block):
-                findings.append("\n".join(block))
+            block_text = "\n".join(block)
+            if re.search(rf"(?<![A-Za-z0-9_.]){re.escape(package)}(?:$|:|[^A-Za-z0-9_.])", block_text):
+                findings.append(block_text)
             continue
         if any(_APP_FRAME_RE.search(entry) for entry in block):
             findings.append("\n".join(block))
@@ -423,6 +487,11 @@ class RunConfig:
     build_apk: bool = True
     jar_path: Path | None = None
     keep_stack: bool = False
+    package: str = PACKAGE
+    api_base_url: str = EMULATOR_API_BASE_URL
+    verify_app_link: bool = False
+    app_link_url: str = DEFAULT_APP_LINK_URL
+    i_know_this_is_not_prod: bool = False
 
 
 class SocialEmulatorRunner:
@@ -495,7 +564,7 @@ class SocialEmulatorRunner:
                 raise HarnessFailure(f"Explicit APK not found: {apk}")
             return apk
         if self.config.build_apk:
-            cmd = build_gradle_assemble_cmd(self.config.repo_root, EMULATOR_API_BASE_URL)
+            cmd = build_gradle_assemble_cmd(self.config.repo_root, self.config.api_base_url)
             self._cmd_runner(cmd, timeout=600.0, check=True)
         default_apk = (
             Path(self.config.repo_root)
@@ -618,29 +687,30 @@ class SocialEmulatorRunner:
         raise ProductFailure(f"Expected UI text {list(candidates)} did not appear within {timeout}s")
 
     def _launch_app(self, clear_data: bool = False) -> None:
+        pkg = self.config.package
         if clear_data:
-            self._adb("shell", "pm", "clear", PACKAGE, timeout=30.0)
+            self._adb("shell", "pm", "clear", pkg, timeout=30.0)
         for perm in (
             "android.permission.POST_NOTIFICATIONS",
             "android.permission.READ_MEDIA_IMAGES",
             "android.permission.READ_MEDIA_VIDEO",
             "android.permission.RECORD_AUDIO",
         ):
-            self._adb("shell", "pm", "grant", PACKAGE, perm, timeout=15.0, check=False)
-        self._adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30.0)
+            self._adb("shell", "pm", "grant", pkg, perm, timeout=15.0, check=False)
+        self._adb("shell", "am", "start", "-n", f"{pkg}/{MAIN_ACTIVITY}", timeout=30.0)
         self._sleep(3.0)
 
-    def _sign_in_user_a(self, ui: adb_ui.Device) -> None:
+    def _sign_in_credentials(self, ui: adb_ui.Device, phone: str, password: str) -> None:
         phone_node = self._wait_rid(ui, "phoneInput", timeout=30.0)
         ui.tap_node(phone_node)
         self._sleep(0.4)
-        ui.type_text(USER_A["phone"])
+        ui.type_text(phone)
         ui.key("KEYCODE_BACK")
         self._sleep(0.3)
         pw_node = self._wait_rid(ui, "passwordInput", timeout=15.0)
         ui.tap_node(pw_node)
         self._sleep(0.4)
-        ui.type_text(SEED_PASSWORD)
+        ui.type_text(password)
         ui.key("KEYCODE_BACK")
         self._sleep(0.4)
         action = self._wait_rid(ui, "primaryAction", timeout=15.0)
@@ -657,7 +727,10 @@ class SocialEmulatorRunner:
             if self._by_rid(nodes, "conversationList") is not None or self._by_rid(nodes, "inboxUserAvatar") is not None:
                 return
             self._sleep(0.8)
-        raise ProductFailure("User A did not reach Inbox after signing in")
+        raise ProductFailure("User did not reach Inbox after signing in")
+
+    def _sign_in_user_a(self, ui: adb_ui.Device) -> None:
+        self._sign_in_credentials(ui, USER_A["phone"], SEED_PASSWORD)
 
     def _open_public_feed_from_inbox(self, ui: adb_ui.Device) -> None:
         nodes = self._nodes(ui)
@@ -785,8 +858,159 @@ class SocialEmulatorRunner:
         ui.tap_node(submit)
         self._wait_any_text(ui, REPORT_SENT_LABELS, timeout=15.0)
 
+    def _clear_logcat_buffers(self) -> None:
+        self._adb("logcat", "-b", "main,system,crash", "-c", timeout=15.0, check=False)
+
+    def _check_crash_and_anr(self) -> None:
+        crash_log = self._adb(
+            "logcat", "-d", "-v", "brief", "-b", "main", "-b", "system", "-b", "crash",
+            timeout=20.0, check=False,
+        )
+        crashes = parse_crash_logcat(crash_log, self.config.package)
+        if crashes:
+            raise ProductFailure(f"Logcat has NexaChat crashes/ANRs:\n{crashes[0]}")
+
+    def _verify_app_link_flow(self, ui: adb_ui.Device) -> dict[str, Any]:
+        app_links_out = self._adb(
+            "shell", "pm", "get-app-links", self.config.package, timeout=15.0, check=False
+        )
+        self._cmd_runner(
+            build_app_link_view_cmd(
+                self.config.serial, self.config.app_link_url, self.config.package
+            ),
+            timeout=20.0,
+        )
+        self._sleep(1.5)
+        ui_res = verify_app_link_ui(self._nodes(ui), self.config.package)
+        return {
+            "url": self.config.app_link_url,
+            "pm_get_app_links": app_links_out,
+            **ui_res,
+        }
+
     def run_all(self) -> dict[str, Any]:
-        """Executes the full real-emulator verification suite against a fresh stack."""
+        """Executes emulator verification in loopback (full) or live/non-loopback mode."""
+        if not is_loopback_url(self.config.api_base_url):
+            return self._run_live_mode()
+        return self._run_loopback_mode()
+
+    def _run_live_mode(self) -> dict[str, Any]:
+        """Executes release/live verification without DisposableStack, adb reverse, or admin mutations."""
+        if not self.config.i_know_this_is_not_prod:
+            raise HarnessFailure(
+                f"Refusing non-loopback --api-base-url {self.config.api_base_url!r} "
+                "without --i-know-this-is-not-prod"
+            )
+        if self.config.apk_path is None:
+            raise HarnessFailure("Non-loopback --api-base-url requires an explicit --apk / --apk-path")
+
+        apk_path = self.resolve_or_build_apk()
+        density_dpi = self.verify_emulator_ready()
+        snapshot = self.snapshot_device_state()
+
+        client = self._client_factory(self.config.api_base_url)
+        eph_phone = ""
+        eph_password = f"Nx7@{uuid.uuid4().hex[:8]}Zq"
+        eph_token = ""
+        created_post_id: str | None = None
+
+        for _ in range(4):
+            candidate_phone = f"+84908{uuid.uuid4().int % 1000000:06d}"
+            reg = client.post(
+                "/api/v1/auth/register",
+                body={
+                    "phone": candidate_phone,
+                    "password": eph_password,
+                    "displayName": "NexaChat Live E2E",
+                },
+            )
+            if reg.status in (200, 201):
+                data = reg.json() or {}
+                eph_phone = candidate_phone
+                eph_token = str(data.get("accessToken") or "")
+                break
+            if reg.status == 409 and reg.error_code() == "PHONE_EXISTS":
+                continue
+            raise HarnessFailure(f"Ephemeral live registration failed: {reg}")
+        if not eph_phone or not eph_token:
+            raise HarnessFailure("Failed to register ephemeral +84908xxxxxx account for live mode")
+
+        report: dict[str, Any] = {
+            "mode": "live",
+            "serial": self.config.serial,
+            "package": self.config.package,
+            "api_base_url": self.config.api_base_url,
+            "density_dpi": density_dpi,
+            "apk": str(apk_path),
+            "screenshots": {},
+            "journeys": {},
+        }
+
+        try:
+            self._adb("install", "-r", str(apk_path), timeout=180.0)
+            self._clear_logcat_buffers()
+            ui = self._ui_factory(self.config.serial)
+
+            self._cmd_runner(build_uimode_night_cmd(self.config.serial, False), timeout=15.0)
+            self._adb("shell", "cmd", "locale", "set-device-locale", "en-US", timeout=15.0, check=False)
+            self._launch_app(clear_data=True)
+
+            self._sign_in_credentials(ui, eph_phone, eph_password)
+            self._open_public_feed_from_inbox(ui)
+
+            feed_nodes = self._nodes(ui)
+            toolbar_dp = verify_toolbar_height_dp(feed_nodes, "feedToolbar", density_dpi, min_dp=64.0)
+            a11y_light = check_feed_a11y(feed_nodes, density_dpi=density_dpi, screen_name="feed_light")
+            report["screenshots"]["feed_light"] = str(self.capture_screenshot(ui, "feed_light"))
+
+            # Ephemeral post round-trip via API (with strict delete cleanup) if feed is open
+            stamp = uuid.uuid4().hex[:6]
+            post_resp = client.post(
+                "/api/v1/feed/posts",
+                token=eph_token,
+                body={"clientPostId": str(uuid.uuid4()), "body": f"Live E2E smoke {stamp}"},
+            )
+            if post_resp.status in (200, 201):
+                created_post_id = str((post_resp.json() or {}).get("id") or "") or None
+                feed_get = client.get("/api/v1/feed/posts", token=eph_token, params={"limit": "5"})
+                check(feed_get.status == 200, f"Live GET /api/v1/feed/posts returned {feed_get.status}")
+                if created_post_id:
+                    del_resp = client.delete(f"/api/v1/feed/posts/{created_post_id}", token=eph_token)
+                    check(del_resp.status == 204, f"Live DELETE ephemeral post returned {del_resp.status}")
+                    created_post_id = None
+
+            report["journeys"]["live_feed_smoke"] = {
+                "toolbar_dp": toolbar_dp,
+                "a11y_light": a11y_light,
+            }
+
+            if self.config.verify_app_link:
+                report["journeys"]["app_link"] = self._verify_app_link_flow(ui)
+
+            self._check_crash_and_anr()
+            report["crash_count"] = 0
+            report["status"] = "PASS"
+            return report
+        finally:
+            if created_post_id and eph_token:
+                try:
+                    client.delete(f"/api/v1/feed/posts/{created_post_id}", token=eph_token)
+                except Exception:
+                    pass
+            if eph_token:
+                try:
+                    client.request(
+                        "DELETE",
+                        "/api/v1/users/me",
+                        token=eph_token,
+                        body={"password": eph_password},
+                    )
+                except Exception:
+                    pass
+            self.restore_device_state(snapshot)
+
+    def _run_loopback_mode(self) -> dict[str, Any]:
+        """Executes the full real-emulator verification suite against a fresh DisposableStack."""
         density_dpi = self.verify_emulator_ready()
         apk_path = self.resolve_or_build_apk()
         snapshot = self.snapshot_device_state()
@@ -795,8 +1019,12 @@ class SocialEmulatorRunner:
         run_dir.mkdir(parents=True, exist_ok=True)
         stack = self._stack_factory(str(run_dir), self.config.repo_root)
         reverse_active = False
+        reverse_port = urllib.parse.urlsplit(self.config.api_base_url).port or EMULATOR_LOOPBACK_PORT
         report: dict[str, Any] = {
+            "mode": "loopback",
             "serial": self.config.serial,
+            "package": self.config.package,
+            "api_base_url": self.config.api_base_url,
             "density_dpi": density_dpi,
             "apk": str(apk_path),
             "screenshots": {},
@@ -816,9 +1044,9 @@ class SocialEmulatorRunner:
             report["stack_base_url"] = base_url
             report["db_name"] = state["db_name"]
 
-            # Map emulator 127.0.0.1:8080 -> host isolated 18xxx port
+            # Map emulator 127.0.0.1:<reverse_port> -> host isolated 18xxx port
             self._cmd_runner(
-                build_adb_reverse_cmd(self.config.serial, EMULATOR_LOOPBACK_PORT, app_port),
+                build_adb_reverse_cmd(self.config.serial, reverse_port, app_port),
                 timeout=15.0,
             )
             reverse_active = True
@@ -848,8 +1076,7 @@ class SocialEmulatorRunner:
             mp4_bytes = Path(fixtures["mp4_local"]).read_bytes()
 
             self._adb("install", "-r", str(apk_path), timeout=180.0)
-            self._adb("logcat", "-c", timeout=15.0)
-            self._adb("logcat", "-b", "crash", "-c", timeout=15.0, check=False)
+            self._clear_logcat_buffers()
 
             ui = self._ui_factory(self.config.serial)
 
@@ -930,7 +1157,7 @@ class SocialEmulatorRunner:
                 self._sleep(0.5)
 
             exo_log = self._adb("logcat", "-d", "-v", "brief", timeout=30.0)
-            exo_errors = parse_exoplayer_errors(exo_log)
+            exo_errors = parse_exoplayer_errors(exo_log, self.config.package)
             if exo_errors:
                 raise ProductFailure(f"ExoPlayer/AndroidRuntime errors in logcat: {exo_errors[:3]}")
 
@@ -1223,11 +1450,11 @@ class SocialEmulatorRunner:
 
             report["journeys"]["journey_5_flag_gate"] = {"video_uploads_disabled_gracefully": True}
 
-            # ---- Final Crash Buffer Gate ----
-            crash_log = self._adb("logcat", "-d", "-b", "crash", timeout=20.0, check=False)
-            crashes = parse_crash_logcat(crash_log, PACKAGE)
-            if crashes:
-                raise ProductFailure(f"Crash buffer has NexaChat crashes:\n{crashes[0]}")
+            if self.config.verify_app_link:
+                report["journeys"]["app_link"] = self._verify_app_link_flow(ui)
+
+            # ---- Final Crash & ANR Logcat Gate ----
+            self._check_crash_and_anr()
             report["crash_count"] = 0
             report["status"] = "PASS"
             return report
@@ -1236,7 +1463,7 @@ class SocialEmulatorRunner:
             if reverse_active:
                 try:
                     self._cmd_runner(
-                        build_adb_reverse_remove_cmd(self.config.serial, EMULATOR_LOOPBACK_PORT),
+                        build_adb_reverse_remove_cmd(self.config.serial, reverse_port),
                         timeout=15.0,
                         check=False,
                     )
@@ -1287,16 +1514,25 @@ class SocialEmulatorRunner:
             self._sleep(1.5)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", default=SERIAL)
     parser.add_argument("--screenshots-dir", required=True)
     parser.add_argument("--run-dir", default=None)
-    parser.add_argument("--apk", default=None)
+    parser.add_argument("--apk", "--apk-path", dest="apk", default=None)
     parser.add_argument("--no-build-apk", action="store_true")
     parser.add_argument("--jar", default=None)
     parser.add_argument("--keep-stack", action="store_true")
-    args = parser.parse_args(argv)
+    parser.add_argument("--package", default=PACKAGE, help="Android applicationId (e.g. com.nexachat or com.nexachat.debug)")
+    parser.add_argument("--api-base-url", default=EMULATOR_API_BASE_URL, help="Target API base URL")
+    parser.add_argument("--verify-app-link", action="store_true", help="Verify App Link opens InviteJoinFragment")
+    parser.add_argument("--app-link-url", default=DEFAULT_APP_LINK_URL, help="Invite URL for App Link verification")
+    parser.add_argument("--i-know-this-is-not-prod", action="store_true", help="Required for non-loopback --api-base-url")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     cfg = RunConfig(
         serial=args.serial,
@@ -1306,6 +1542,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         build_apk=not args.no_build_apk,
         jar_path=Path(args.jar).resolve() if args.jar else None,
         keep_stack=bool(args.keep_stack),
+        package=args.package,
+        api_base_url=args.api_base_url,
+        verify_app_link=bool(args.verify_app_link),
+        app_link_url=args.app_link_url,
+        i_know_this_is_not_prod=bool(args.i_know_this_is_not_prod),
     )
     runner = SocialEmulatorRunner(cfg)
     report = runner.run_all()

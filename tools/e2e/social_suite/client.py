@@ -361,6 +361,8 @@ class SuiteContext:
         admin_base_url: str = "",
         android_enabled: bool = False,
         android_serial: str = "emulator-5554",
+        android_apk: Optional[str] = None,
+        android_package: Optional[str] = None,
         screenshots_dir: Optional[str] = None,
     ) -> None:
         self.spring = spring_client
@@ -372,6 +374,8 @@ class SuiteContext:
         self.admin_base_url = admin_base_url or (f"{proxy_base_url.rstrip('/')}/admin" if proxy_base_url else "")
         self.android_enabled = android_enabled
         self.android_serial = android_serial
+        self.android_apk = android_apk
+        self.android_package = android_package
         self.screenshots_dir: Optional[Path] = Path(screenshots_dir) if screenshots_dir else None
         self.screenshots_saved: List[str] = []
         self.nonce = uuid.uuid4().hex[:8]

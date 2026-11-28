@@ -44,6 +44,8 @@ class StubState:
         self.tokens: dict[str, str] = {}
         self.avatars: dict[str, bytes] = {}
         self.avatar_owner: dict[str, str] = {}
+        self.posts: dict[str, dict] = {}
+        self.post_owner: dict[str, str] = {}
         self.next_id = 0
         self.otp_requests = 0
         self.lock = threading.Lock()
@@ -143,6 +145,59 @@ def make_handler(state: StubState):
                     return
                 self._json(200, {"id": state.users[phone]["id"]})
                 return
+            if path == "/api/social/v1/config":
+                if state.mode == "degraded":
+                    self._error(500, "INTERNAL_ERROR")
+                    return
+                self._send(
+                    200,
+                    json.dumps(
+                        {
+                            "webEnabled": True,
+                            "videoUploadsEnabled": True,
+                            "announcement": None,
+                        }
+                    ).encode("utf-8"),
+                    "application/json",
+                    headers={"Cache-Control": "private, no-store"},
+                )
+                return
+            if path == "/api/v1/calls/ice-config":
+                if state.mode == "degraded":
+                    self._json(200, {"iceServers": [], "ttlSeconds": 60})
+                    return
+                authorization = self.headers.get("Authorization")
+                if not authorization:
+                    self._error(401, "UNAUTHORIZED")
+                    return
+                phone = state.active_phone(authorization)
+                if phone is None:
+                    self._error(401, "TOKEN_INVALID")
+                    return
+                self._json(
+                    200,
+                    {
+                        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}],
+                        "ttlSeconds": 3600,
+                    },
+                )
+                return
+            if path in ("/api/v1/feed/posts", "/api/social/v1/posts"):
+                if state.mode == "degraded":
+                    self._error(500, "INTERNAL_ERROR")
+                    return
+                authorization = self.headers.get("Authorization")
+                if not authorization:
+                    self._error(401, "UNAUTHORIZED")
+                    return
+                phone = state.active_phone(authorization)
+                if phone is None:
+                    self._error(401, "TOKEN_INVALID")
+                    return
+                with state.lock:
+                    items = list(state.posts.values())
+                self._json(200, {"items": items})
+                return
             if path.startswith("/api/v1/files/avatars/"):
                 if state.mode == "degraded":
                     self._json(200, {"avatarUrl": path})
@@ -159,7 +214,36 @@ def make_handler(state: StubState):
                 if data is None:
                     self._error(404, "FILE_NOT_FOUND")
                     return
-                self._send(200, data, "image/png", {"X-Content-Type-Options": "nosniff"})
+                range_hdr = self.headers.get("Range")
+                if range_hdr:
+                    m = re.fullmatch(r"bytes=(\d+)-(\d*)", range_hdr.strip())
+                    if not m:
+                        self._send(416, b"", headers={"Content-Range": f"bytes */{len(data)}"})
+                        return
+                    start = int(m.group(1))
+                    end = int(m.group(2)) if m.group(2) else len(data) - 1
+                    end = min(end, len(data) - 1)
+                    if start >= len(data) or start > end:
+                        self._send(416, b"", headers={"Content-Range": f"bytes */{len(data)}"})
+                        return
+                    chunk = data[start : end + 1]
+                    self._send(
+                        206,
+                        chunk,
+                        "image/png",
+                        {
+                            "X-Content-Type-Options": "nosniff",
+                            "Accept-Ranges": "bytes",
+                            "Content-Range": f"bytes {start}-{end}/{len(data)}",
+                        },
+                    )
+                    return
+                self._send(
+                    200,
+                    data,
+                    "image/png",
+                    {"X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes"},
+                )
                 return
             if path == "/ws":
                 if state.mode == "degraded":
@@ -286,11 +370,55 @@ def make_handler(state: StubState):
                     state.users[phone]["avatar_url"] = url
                 self._json(200, {"avatarUrl": url})
                 return
+            if path == "/api/v1/feed/posts":
+                if state.mode == "degraded":
+                    self._error(500, "INTERNAL_ERROR")
+                    return
+                phone = state.active_phone(self.headers.get("Authorization"))
+                if phone is None:
+                    self._error(401, "UNAUTHORIZED")
+                    return
+                try:
+                    payload = json.loads(body.decode("utf-8"))
+                except ValueError:
+                    self._error(400, "VALIDATION_FAILED")
+                    return
+                with state.lock:
+                    state.next_id += 1
+                    post_id = f"stub-post-{state.next_id}"
+                    post_obj = {
+                        "id": post_id,
+                        "body": payload.get("body", ""),
+                        "authorId": state.users[phone]["id"],
+                    }
+                    state.posts[post_id] = post_obj
+                    state.post_owner[post_id] = phone
+                self._json(201, post_obj)
+                return
             self._error(404, "NOT_FOUND")
 
         def do_DELETE(self) -> None:
             path = self.path.split("?", 1)[0]
             body = self._body()
+            if path.startswith("/api/v1/feed/posts/"):
+                post_id = path[len("/api/v1/feed/posts/"):]
+                phone = state.active_phone(self.headers.get("Authorization"))
+                if phone is None:
+                    self._error(401, "TOKEN_INVALID")
+                    return
+                with state.lock:
+                    if post_id not in state.posts:
+                        self._error(404, "POST_NOT_FOUND")
+                        return
+                    if state.post_owner.get(post_id) != phone:
+                        self._error(403, "FORBIDDEN")
+                        return
+                    del state.posts[post_id]
+                    del state.post_owner[post_id]
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if path != "/api/v1/users/me":
                 self._error(404, "NOT_FOUND")
                 return
@@ -323,6 +451,114 @@ def make_handler(state: StubState):
             self.end_headers()
 
     return Handler
+
+
+EXPECTED_RELEASE_FP = (
+    "E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:"
+    "CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF"
+)
+
+
+def make_site_handler(site_mode: str):
+    class SiteHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *_args) -> None:
+            return
+
+        def _send(
+            self,
+            status: int,
+            payload: bytes = b"",
+            content_type: str | None = None,
+            headers: dict[str, str] | None = None,
+        ) -> None:
+            self.send_response(status)
+            if content_type:
+                self.send_header("Content-Type", content_type)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            if payload and self.command != "HEAD":
+                self.wfile.write(payload)
+
+        def do_GET(self) -> None:
+            path = self.path.split("?", 1)[0]
+            if path == "/":
+                self._send(
+                    200,
+                    b"<!doctype html><html><title>NexaChat</title></html>",
+                    "text/html; charset=utf-8",
+                    {
+                        "Content-Security-Policy": (
+                            "default-src 'none'; style-src 'self'; script-src 'self'; "
+                            "connect-src https://api.nexachat.io.vn; img-src 'self'"
+                        )
+                    },
+                )
+                return
+            if path == "/social/":
+                self._send(
+                    200,
+                    b'<!doctype html><html><title>NexaChat Social</title><script type="module" src="/social/social-app.js"></script></html>',
+                    "text/html; charset=utf-8",
+                    {
+                        "Content-Security-Policy": (
+                            "default-src 'none'; style-src 'self'; script-src 'self'; "
+                            "connect-src 'self'; img-src 'self' blob:; media-src blob:"
+                        )
+                    },
+                )
+                return
+            if path == "/admin/":
+                if site_mode == "site-degraded":
+                    self._send(
+                        302,
+                        b"",
+                        "text/plain",
+                        {"Location": "https://vercel.com/sso?next=/admin/"},
+                    )
+                    return
+                self._send(
+                    200,
+                    b'<!doctype html><html><title>NexaChat Admin</title><script src="/admin/assets/index.js"></script></html>',
+                    "text/html; charset=utf-8",
+                )
+                return
+            if path.startswith("/join/"):
+                headers = {} if site_mode == "site-degraded" else {"Cache-Control": "no-store"}
+                self._send(
+                    200,
+                    b'<!doctype html><html><div id="invite-valid"></div><script src="/join/join.js"></script></html>',
+                    "text/html; charset=utf-8",
+                    headers,
+                )
+                return
+            if path == "/.well-known/assetlinks.json":
+                fp = (
+                    "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:"
+                    "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+                    if site_mode == "site-degraded"
+                    else EXPECTED_RELEASE_FP
+                )
+                payload = json.dumps(
+                    [
+                        {
+                            "relation": ["delegate_permission/common.handle_all_urls"],
+                            "target": {
+                                "namespace": "android_app",
+                                "package_name": "com.nexachat",
+                                "sha256_cert_fingerprints": [fp],
+                            },
+                        }
+                    ]
+                ).encode("utf-8")
+                self._send(200, payload, "application/json")
+                return
+            self._send(404, b"Not Found", "text/plain")
+
+    return SiteHandler
 
 
 def find_bash() -> str | None:
@@ -364,17 +600,35 @@ class StubServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-def run_case(name: str, mode: str, extra_args: list[str], expect_success: bool,
-             markers: list[str], timeout: int = 120) -> bool:
+def run_case(
+    name: str,
+    mode: str,
+    extra_args: list[str],
+    expect_success: bool,
+    markers: list[str],
+    timeout: int = 120,
+    site_mode: str | None = None,
+    expected_exit_code: int | None = None,
+) -> bool:
     state = StubState(mode)
     server = StubServer(("127.0.0.1", 0), make_handler(state))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     port = server.server_address[1]
     base_url = f"http://127.0.0.1:{port}"
+
+    site_server = None
+    args_to_pass = list(extra_args)
+    if site_mode is not None:
+        site_server = StubServer(("127.0.0.1", 0), make_site_handler(site_mode))
+        site_thread = threading.Thread(target=site_server.serve_forever, daemon=True)
+        site_thread.start()
+        site_port = site_server.server_address[1]
+        args_to_pass.extend(["--site-url", f"http://127.0.0.1:{site_port}"])
+
     # Run from tools/ with a relative script name: Git Bash on Windows cannot
     # open a native D:\... path passed by Python.
-    command = [str(BASH_BIN), SMOKE_SCRIPT.name, *extra_args, base_url]
+    command = [str(BASH_BIN), SMOKE_SCRIPT.name, *args_to_pass, base_url]
     proc = None
     output = ""
     try:
@@ -389,17 +643,28 @@ def run_case(name: str, mode: str, extra_args: list[str], expect_success: bool,
     finally:
         server.shutdown()
         server.server_close()
-    ok = proc is not None and (proc.returncode == 0) == expect_success
+        if site_server is not None:
+            site_server.shutdown()
+            site_server.server_close()
+    if expected_exit_code is not None:
+        ok = proc is not None and proc.returncode == expected_exit_code
+    else:
+        ok = proc is not None and (proc.returncode == 0) == expect_success
     details: list[str] = []
     if proc is None:
         details.append(f"timed out after {timeout}s")
     elif not ok:
-        details.append(f"exit code {proc.returncode}, expected success={expect_success}")
+        details.append(
+            f"exit code {proc.returncode}, expected "
+            + (f"exit={expected_exit_code}" if expected_exit_code is not None else f"success={expect_success}")
+        )
     for marker in markers:
         if marker not in output:
             details.append(f"missing output: {marker!r}")
-    if mode == "healthy" and state.otp_requests != 1:
+    if mode == "healthy" and expected_exit_code is None and state.otp_requests != 1:
         details.append(f"expected exactly one OTP request, got {state.otp_requests}")
+    if "--write" in extra_args and mode == "healthy" and state.posts:
+        details.append(f"expected ephemeral feed posts to be cleaned up, left {list(state.posts)}")
     if ok and not details:
         print(f"PASS  self-test: {name}")
         return True
@@ -466,22 +731,48 @@ def main() -> int:
                 "PASS  unauthenticated GET /api/v1/users/me: 401 UNAUTHORIZED",
                 "PASS  OTP request: 202 {}",
                 "PASS  WebSocket: /ws upgraded",
+                "PASS  social config: 200 no-store",
+                "PASS  unauthenticated GET /api/v1/calls/ice-config: 401 UNAUTHORIZED",
                 "PASS  prod smoke: all checks passed",
             ],
+            None,
+            None,
         ),
         (
-            "healthy --write run proves account and avatar cleanup",
+            "healthy read-only run with --site-url passes",
+            "healthy",
+            ["--wait", "5"],
+            True,
+            [
+                "PASS  social config: 200 no-store",
+                "PASS  site /: 200 with CSP",
+                "PASS  site /social/: 200 with strict CSP",
+                "PASS  site /admin/: 200 without SSO redirect",
+                "PASS  site /join/<token>: 200 no-store",
+                "PASS  site /.well-known/assetlinks.json: 200 valid com.nexachat release fingerprint",
+                "PASS  prod smoke: all checks passed",
+            ],
+            "site-healthy",
+            None,
+        ),
+        (
+            "healthy --write run proves account, avatar, Range 206, ice-config, and feed cleanup",
             "healthy",
             ["--write", "--wait", "5"],
             True,
             [
                 "PASS  write: registered disposable subject account",
                 "PASS  write: avatar fetched back byte-for-byte",
+                "PASS  write: authenticated GET /api/v1/calls/ice-config returned 200",
+                "PASS  write: avatar Range bytes=0-15 returned 206 matching uploaded bytes",
+                "PASS  write: ephemeral feed post create/read/delete verified",
                 "PASS  write: deleted disposable subject account",
                 "PASS  write: avatar bytes removed after deletion",
                 "PASS  write: deleted disposable observer account",
                 "PASS  write: account, avatar and session cleanup verified",
             ],
+            None,
+            None,
         ),
         (
             "sleeping server is reported as a health failure",
@@ -489,6 +780,8 @@ def main() -> int:
             ["--wait", "1"],
             False,
             ["FAIL  health: not UP within 1s"],
+            None,
+            None,
         ),
         (
             "degraded server fails every read-only check",
@@ -501,7 +794,33 @@ def main() -> int:
                 "FAIL  unauthenticated GET /api/v1/users/me: expected HTTP 401, got 200",
                 "FAIL  OTP request: expected HTTP 202",
                 "FAIL  WebSocket: expected HTTP 101",
+                "FAIL  social config: expected HTTP 200",
+                "FAIL  unauthenticated GET /api/v1/calls/ice-config: expected HTTP 401",
             ],
+            None,
+            None,
+        ),
+        (
+            "degraded site detects SSO redirect, missing no-store, and wrong assetlinks fingerprint",
+            "healthy",
+            ["--wait", "5"],
+            False,
+            [
+                "FAIL  site /admin/: expected HTTP 200, got 302",
+                "FAIL  site /join/<token>: Cache-Control 'missing' missing no-store",
+                "FAIL  site /.well-known/assetlinks.json: invalid package_name or release SHA-256 fingerprint",
+            ],
+            "site-degraded",
+            1,
+        ),
+        (
+            "invalid --site-url with path exits with usage code 2",
+            "healthy",
+            ["--site-url", "https://nexachat.io.vn/bad"],
+            False,
+            ["ERROR --site-url must be an http(s) origin without a path, query or fragment"],
+            None,
+            2,
         ),
         (
             "avatar that survives deletion is detected",
@@ -509,10 +828,20 @@ def main() -> int:
             ["--write", "--wait", "5"],
             False,
             ["FAIL  write: avatar file still served after account deletion"],
+            None,
+            None,
         ),
     ]
-    for name, mode, extra_args, expect_success, markers in cases:
-        if not run_case(name, mode, extra_args, expect_success, markers):
+    for name, mode, extra_args, expect_success, markers, site_mode, expected_exit_code in cases:
+        if not run_case(
+            name,
+            mode,
+            extra_args,
+            expect_success,
+            markers,
+            site_mode=site_mode,
+            expected_exit_code=expected_exit_code,
+        ):
             failures += 1
 
     if failures:

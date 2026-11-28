@@ -20,7 +20,9 @@ from tools.e2e.social_suite.browser_driver import (  # noqa: E402
     parse_css_color,
 )
 from tools.e2e.social_suite.client import (  # noqa: E402
+    BlockedCapability,
     CheckOutcome,
+    E2EFailure,
     SocialApiClient,
     SuiteContext,
     build_multipart_body,
@@ -58,7 +60,8 @@ from tools.e2e.social_suite.stack_harness import is_executable_spring_jar, is_lo
 from tools.e2e.social_suite.tier1_feature_api import get_tier1_checks  # noqa: E402
 from tools.e2e.social_suite.tier2_boundary_edge import get_tier2_checks  # noqa: E402
 from tools.e2e.social_suite.tier3_cross_feature import get_tier3_checks  # noqa: E402
-from tools.e2e.social_suite.tier4_browser_e2e import get_tier4_checks  # noqa: E402
+from tools.e2e.social_suite import tier4_browser_e2e  # noqa: E402
+from tools.e2e.social_suite.tier4_browser_e2e import _expected_avatar_tone, _t4_s7_android_emulator_ui, get_tier4_checks  # noqa: E402
 
 
 class TestProxyRewritesAndHeaders(unittest.TestCase):
@@ -76,6 +79,10 @@ class TestProxyRewritesAndHeaders(unittest.TestCase):
         self.assertEqual(
             rewrite_api_path("/api/social/v1/authors/1234"),
             "/api/social/v1/authors/1234",
+        )
+        self.assertEqual(
+            rewrite_api_path("/api/v1/files/avatars/u1.png"),
+            "/api/v1/files/avatars/u1.png",
         )
         self.assertEqual(rewrite_api_path("/api/v1/admin/feed/reports"), "/api/v1/admin/feed/reports")
         self.assertIsNone(rewrite_api_path("/api/social/v1/unknown/wildcard"))
@@ -95,6 +102,11 @@ class TestProxyRewritesAndHeaders(unittest.TestCase):
         api_headers = dict(headers_for_path("/api/social/v1/posts"))
         self.assertEqual(api_headers["Cache-Control"], "private, no-store")
         self.assertEqual(api_headers["CDN-Cache-Control"], "no-store")
+
+        file_headers = dict(headers_for_path("/api/v1/files/avatars/u1.png"))
+        self.assertEqual(file_headers["Cache-Control"], "private, no-store")
+        self.assertEqual(file_headers["CDN-Cache-Control"], "no-store")
+        self.assertEqual(file_headers["Vercel-CDN-Cache-Control"], "no-store")
 
     def test_static_spa_rewrites(self) -> None:
         self.assertEqual(resolve_static_subpath("/social"), "/social/index.html")
@@ -282,6 +294,111 @@ class TestRunnerSelectionAndModes(unittest.TestCase):
             assert saved is not None
             self.assertTrue(saved.is_file())
             self.assertEqual(len(ctx.screenshots_saved), 1)
+
+    def test_avatar_palette_index_matches_js(self) -> None:
+        self.assertEqual(_expected_avatar_tone(""), 0)
+        self.assertEqual(_expected_avatar_tone("   "), 0)
+        self.assertEqual(_expected_avatar_tone("Social E2E Reader"), 6)
+        self.assertEqual(_expected_avatar_tone("An Nguyen"), 1)
+        self.assertEqual(_expected_avatar_tone("  an nguyen "), 1)
+        self.assertEqual(_expected_avatar_tone("Nguyễn Văn A"), 0)
+        self.assertEqual(_expected_avatar_tone("🔥Test"), 2)
+
+    def test_t4_s7_blocked_vs_run_vs_fail(self) -> None:
+        import json
+        import tempfile
+        from unittest import mock
+
+        args = build_parser().parse_args(
+            ["--android", "--android-apk", "custom.apk", "--android-package", "com.nexachat"]
+        )
+        self.assertTrue(args.android)
+        self.assertEqual(args.android_apk, "custom.apk")
+        self.assertEqual(args.android_package, "com.nexachat")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # (a) --android off -> BlockedCapability
+            ctx_off = SuiteContext(
+                SocialApiClient("http://127.0.0.1:8080"),
+                SocialApiClient("http://127.0.0.1:8081"),
+                SessionStore(),
+                android_enabled=False,
+                screenshots_dir=tmp,
+            )
+            with self.assertRaises(BlockedCapability):
+                _t4_s7_android_emulator_ui(ctx_off)
+
+            # (b1) adb missing -> BlockedCapability
+            ctx_on = SuiteContext(
+                SocialApiClient("http://127.0.0.1:8080"),
+                SocialApiClient("http://127.0.0.1:8081"),
+                SessionStore(),
+                android_enabled=True,
+                android_apk="custom.apk",
+                android_package="com.nexachat",
+                screenshots_dir=tmp,
+            )
+            ctx_on.caps.m4_android_apk = True
+
+            with mock.patch.object(tier4_browser_e2e.shutil, "which", return_value=None):
+                with self.assertRaises(BlockedCapability):
+                    _t4_s7_android_emulator_ui(ctx_on)
+
+            # (b2) adb get-state != device -> BlockedCapability
+            class FakeProc:
+                def __init__(self, returncode: int, stdout: str = "", stderr: str = ""):
+                    self.returncode = returncode
+                    self.stdout = stdout
+                    self.stderr = stderr
+
+            with mock.patch.object(tier4_browser_e2e.shutil, "which", return_value="adb"):
+                with mock.patch.object(
+                    tier4_browser_e2e.subprocess,
+                    "run",
+                    return_value=FakeProc(1, stdout="", stderr="error: device offline"),
+                ):
+                    with self.assertRaises(BlockedCapability):
+                        _t4_s7_android_emulator_ui(ctx_on)
+
+                # (c) adb ready + social_emulator_e2e.py exit 0 + PASS -> passes
+                invoked_cmds = []
+
+                def run_pass(cmd, **_kwargs):
+                    invoked_cmds.append(list(cmd))
+                    if cmd[:3] == ["adb", "-s", "emulator-5554"] and cmd[3] == "get-state":
+                        return FakeProc(0, stdout="device\n")
+                    return FakeProc(0, stdout=json.dumps({"status": "PASS", "crash_count": 0}))
+
+                with mock.patch.object(tier4_browser_e2e.subprocess, "run", side_effect=run_pass):
+                    _t4_s7_android_emulator_ui(ctx_on)
+
+                emu_cmd = invoked_cmds[-1]
+                self.assertIn("social_emulator_e2e.py", emu_cmd[1])
+                self.assertIn("--apk", emu_cmd)
+                self.assertIn("custom.apk", emu_cmd)
+                self.assertIn("--no-build-apk", emu_cmd)
+                self.assertIn("--package", emu_cmd)
+                self.assertIn("com.nexachat", emu_cmd)
+
+                # (d) adb ready + social_emulator_e2e.py exit 1 -> E2EFailure (never BlockedCapability)
+                def run_fail_exit(cmd, **_kwargs):
+                    if cmd[:3] == ["adb", "-s", "emulator-5554"] and cmd[3] == "get-state":
+                        return FakeProc(0, stdout="device\n")
+                    return FakeProc(1, stdout="", stderr="ProductFailure: toolbar < 64dp")
+
+                with mock.patch.object(tier4_browser_e2e.subprocess, "run", side_effect=run_fail_exit):
+                    with self.assertRaises(E2EFailure):
+                        _t4_s7_android_emulator_ui(ctx_on)
+
+                # (e) adb ready + exit 0 + crash_count > 0 -> E2EFailure
+                def run_fail_crash(cmd, **_kwargs):
+                    if cmd[:3] == ["adb", "-s", "emulator-5554"] and cmd[3] == "get-state":
+                        return FakeProc(0, stdout="device\n")
+                    return FakeProc(0, stdout=json.dumps({"status": "PASS", "crash_count": 1}))
+
+                with mock.patch.object(tier4_browser_e2e.subprocess, "run", side_effect=run_fail_crash):
+                    with self.assertRaises(E2EFailure):
+                        _t4_s7_android_emulator_ui(ctx_on)
 
 
 if __name__ == "__main__":

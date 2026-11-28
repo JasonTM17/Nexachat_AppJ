@@ -159,6 +159,25 @@ def probe_capabilities(ctx: SuiteContext) -> None:
             ctx.caps.m3_moderator_gate = ("social.adminOnly" in adm_js) or ("adminOnly" in adm_js)
             ctx.caps.m3_draft_conflict_fix = ctx.caps.m3_moderator_gate
 
+    # M4 probe: verify Android feed sources & emulator E2E runner (or explicit --android-apk)
+    repo_root = Path(__file__).resolve().parents[3]
+    has_feed_fragment = (
+        repo_root
+        / "android"
+        / "app"
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "nexachat"
+        / "feature"
+        / "feed"
+        / "PublicFeedFragment.java"
+    ).is_file()
+    has_emu_runner = (repo_root / "tools" / "e2e" / "device" / "social_emulator_e2e.py").is_file()
+    has_explicit_apk = bool(ctx.android_apk and Path(ctx.android_apk).is_file())
+    ctx.caps.m4_android_apk = (has_feed_fragment or has_explicit_apk) and has_emu_runner
+
 
 def evaluate_exit_code(outcomes: Sequence[CheckOutcome], mode: str) -> int:
     failed = sum(1 for o in outcomes if o.status == "FAIL")
@@ -226,6 +245,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--screenshots-dir", default=None, help="Save Tier 4 Playwright full-page screenshots to directory")
     p.add_argument("--android", action="store_true", help="Run optional emulator UI journey on emulator-5554")
     p.add_argument("--android-serial", default="emulator-5554", help="ADB serial for --android")
+    p.add_argument("--android-apk", default=None, help="Explicit APK path for --android T4.S7")
+    p.add_argument("--android-package", default=None, help="Android package name for --android T4.S7 (e.g. com.nexachat)")
     p.add_argument("--list", action="store_true", help="List selected checks and exit")
     return p
 
@@ -274,6 +295,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             admin_base_url=harness.admin_base_url,
             android_enabled=args.android,
             android_serial=args.android_serial,
+            android_apk=args.android_apk,
+            android_package=args.android_package,
             screenshots_dir=args.screenshots_dir,
         )
         probe_capabilities(ctx)

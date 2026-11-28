@@ -67,6 +67,11 @@ def rewrite_api_path(path_with_query: str) -> Optional[str]:
     if path in exact_map:
         return exact_map[path] + query
 
+    # NOTE (site/vercel.json parity): on reconciled main (15b57759), site/vercel.json
+    # does not yet define explicit rewrites for /api/social/v1/authors/:path* or
+    # /api/v1/files/:path* (owned by M2). This proxy intentionally forwards both
+    # /api/social/v1/authors/ and /api/v1/* (including /api/v1/files/*) to Spring Boot
+    # so browser avatar/author tests execute cleanly while M2 updates site/vercel.json.
     social_subtrees = (
         "/api/social/v1/posts/",
         "/api/social/v1/comments/",
@@ -77,7 +82,7 @@ def rewrite_api_path(path_with_query: str) -> Optional[str]:
     if any(path.startswith(prefix) for prefix in social_subtrees):
         return path + query
 
-    # Admin SPA (built with VITE_API_URL="") and Android legacy API calls
+    # Admin SPA (built with VITE_API_URL="") and Android / avatar file API calls
     if path.startswith("/api/v1/"):
         return path + query
 
@@ -93,7 +98,7 @@ def headers_for_path(path: str) -> List[Tuple[str, str]]:
         ("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload"),
     ]
 
-    if path.startswith("/api/social/v1/"):
+    if path.startswith("/api/social/v1/") or path.startswith("/api/v1/files/"):
         headers.extend(
             [
                 ("Cache-Control", "private, no-store"),

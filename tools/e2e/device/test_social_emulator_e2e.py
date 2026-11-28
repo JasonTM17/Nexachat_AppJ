@@ -383,5 +383,222 @@ class RunnerCleanupTest(unittest.TestCase):
         self.assertTrue(len(ui.deleted) >= 1)
 
 
+class ReleaseAndLiveModeTest(unittest.TestCase):
+    def test_cli_release_flags_and_apk_path_alias(self):
+        args = see.build_parser().parse_args(
+            [
+                "--screenshots-dir",
+                "s",
+                "--package",
+                "com.nexachat",
+                "--api-base-url",
+                "https://api.nexachat.io.vn",
+                "--apk-path",
+                "rel.apk",
+                "--verify-app-link",
+                "--i-know-this-is-not-prod",
+            ]
+        )
+        self.assertEqual(args.package, "com.nexachat")
+        self.assertEqual(args.api_base_url, "https://api.nexachat.io.vn")
+        self.assertEqual(args.apk, "rel.apk")
+        self.assertTrue(args.verify_app_link)
+        self.assertTrue(args.i_know_this_is_not_prod)
+        self.assertFalse(see.is_loopback_url(args.api_base_url))
+        self.assertTrue(see.is_loopback_url("http://127.0.0.1:8080"))
+        self.assertTrue(see.is_loopback_url("http://localhost:8080"))
+
+    def test_launch_app_uses_configured_package(self):
+        adb_calls: list[list[str]] = []
+
+        class FakeProc:
+            stdout = ""
+            stderr = ""
+            returncode = 0
+
+        def fake_cmd(argv, **_kwargs):
+            adb_calls.append(list(argv))
+            return FakeProc()
+
+        cfg = see.RunConfig(package="com.nexachat", build_apk=False)
+        runner = see.SocialEmulatorRunner(cfg, cmd_runner=fake_cmd, sleep=lambda _s: None)
+        runner._launch_app(clear_data=True)
+
+        self.assertIn(["adb", "-s", "emulator-5554", "shell", "pm", "clear", "com.nexachat"], adb_calls)
+        self.assertIn(
+            ["adb", "-s", "emulator-5554", "shell", "pm", "grant", "com.nexachat", "android.permission.POST_NOTIFICATIONS"],
+            adb_calls,
+        )
+        self.assertIn(
+            ["adb", "-s", "emulator-5554", "shell", "am", "start", "-n", "com.nexachat/com.nexachat.MainActivity"],
+            adb_calls,
+        )
+        for call in adb_calls:
+            self.assertNotIn("com.nexachat.debug", call)
+
+    def test_parse_crash_logcat_detects_release_anr_and_fatal(self):
+        log = (
+            "E AndroidRuntime: FATAL EXCEPTION: main\n"
+            "E AndroidRuntime: Process: com.nexachat.debug, PID: 1001\n"
+            "E AndroidRuntime: java.lang.RuntimeException: debug only\n"
+            "E ActivityManager: ANR in com.nexachat.debug (com.nexachat.debug/.MainActivity)\n"
+            "E ActivityManager: Reason: Input dispatching timed out\n"
+            "E AndroidRuntime: FATAL EXCEPTION: main\n"
+            "E AndroidRuntime: Process: com.nexachat, PID: 2002\n"
+            "E AndroidRuntime: java.lang.IllegalStateException: release crash\n"
+            "E ActivityManager: ANR in com.nexachat (com.nexachat/.MainActivity)\n"
+            "E ActivityManager: Reason: Executing service com.nexachat/.SyncService\n"
+        )
+        findings = see.parse_crash_logcat(log, "com.nexachat")
+        self.assertEqual(len(findings), 2)
+        self.assertIn("Process: com.nexachat, PID: 2002", findings[0])
+        self.assertIn("ANR in com.nexachat", findings[1])
+        for finding in findings:
+            self.assertNotIn("com.nexachat.debug", finding)
+
+    def test_app_link_cmd_and_ui_oracle(self):
+        import adb_ui
+        import xml.etree.ElementTree as ET
+
+        url = "https://nexachat.io.vn/join/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef0123456789_"
+        cmd = see.build_app_link_view_cmd("emulator-5554", url, "com.nexachat")
+        self.assertEqual(
+            cmd,
+            [
+                "adb",
+                "-s",
+                "emulator-5554",
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-a",
+                "android.intent.action.VIEW",
+                "-d",
+                url,
+                "-p",
+                "com.nexachat",
+            ],
+        )
+
+        ok_xml = (
+            '<hierarchy>'
+            '<node package="com.nexachat" resource-id="com.nexachat:id/toolbar" bounds="[0,0][320,64]" />'
+            '<node package="com.nexachat" resource-id="com.nexachat:id/statusText" text="Invite valid" bounds="[16,100][304,140]" />'
+            '<node package="com.nexachat" resource-id="com.nexachat:id/signInButton" text="Sign in" bounds="[16,200][304,248]" />'
+            '</hierarchy>'
+        )
+        ok_nodes = [adb_ui.Node(el) for el in ET.fromstring(ok_xml).iter("node")]
+        res = see.verify_app_link_ui(ok_nodes, "com.nexachat")
+        self.assertEqual(res["package"], "com.nexachat")
+        self.assertIn("statusText", res["matched_ids"])
+        self.assertIn("signInButton", res["matched_ids"])
+
+        chrome_xml = (
+            '<hierarchy>'
+            '<node package="com.android.chrome" resource-id="com.android.chrome:id/url_bar" text="nexachat.io.vn" bounds="[0,0][320,64]" />'
+            '</hierarchy>'
+        )
+        chrome_nodes = [adb_ui.Node(el) for el in ET.fromstring(chrome_xml).iter("node")]
+        with self.assertRaises(see.ProductFailure):
+            see.verify_app_link_ui(chrome_nodes, "com.nexachat")
+
+    def test_live_mode_safety_guard_and_no_disposable_stack(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            apk = Path(tmp) / "app-release.apk"
+            apk.write_bytes(b"apk")
+
+            # Guard: non-loopback without --i-know-this-is-not-prod fails immediately
+            stack_called = False
+            cmd_called = False
+
+            def fail_stack(*_a, **_kw):
+                nonlocal stack_called
+                stack_called = True
+                raise AssertionError("DisposableStack must never be called in live mode")
+
+            def fail_cmd(*_a, **_kw):
+                nonlocal cmd_called
+                cmd_called = True
+                raise AssertionError("adb must not run when safety guard blocks")
+
+            guarded_cfg = see.RunConfig(
+                package="com.nexachat",
+                api_base_url="https://api.nexachat.io.vn",
+                apk_path=apk,
+                build_apk=False,
+                i_know_this_is_not_prod=False,
+            )
+            guarded_runner = see.SocialEmulatorRunner(
+                guarded_cfg, cmd_runner=fail_cmd, stack_factory=fail_stack, sleep=lambda _s: None
+            )
+            with self.assertRaises(see.HarnessFailure):
+                guarded_runner.run_all()
+            self.assertFalse(stack_called)
+            self.assertFalse(cmd_called)
+
+            # With --i-know-this-is-not-prod: no DisposableStack, no adb reverse, no admin calls, DELETE /users/me in finally
+            commands: list[list[str]] = []
+            api_calls: list[tuple[str, str, str | None]] = []
+
+            class FakeProc:
+                def __init__(self, stdout: str = ""):
+                    self.stdout = stdout
+                    self.stderr = ""
+                    self.returncode = 0
+
+            def live_cmd_runner(argv, **_kwargs):
+                argv_list = list(argv)
+                commands.append(argv_list)
+                if argv_list[:3] == ["adb", "devices", "-l"]:
+                    return FakeProc("emulator-5554 device product:emu64xa\n")
+                if "sys.boot_completed" in argv_list:
+                    return FakeProc("1\n")
+                if "density" in argv_list:
+                    return FakeProc("Physical density: 160\n")
+                if "install" in argv_list:
+                    raise see.HarnessFailure("simulated install failure after registration")
+                return FakeProc("")
+
+            class FakeClient:
+                def request(self, method, path, token=None, body=None, params=None, headers=None):
+                    api_calls.append((method, path, token))
+                    return Response(204, {}, b"")
+
+                def post(self, path, token=None, body=None, headers=None):
+                    api_calls.append(("POST", path, token))
+                    if path == "/api/v1/auth/register":
+                        self.assert_phone = (body or {}).get("phone", "")
+                        return Response(201, {}, b'{"accessToken":"eph-tok-1","user":{"id":"u-eph"}}')
+                    return Response(404, {}, b"{}")
+
+                def get(self, path, token=None, params=None, headers=None):
+                    api_calls.append(("GET", path, token))
+                    return Response(200, {}, b"{}")
+
+            live_cfg = see.RunConfig(
+                package="com.nexachat",
+                api_base_url="https://api.nexachat.io.vn",
+                apk_path=apk,
+                build_apk=False,
+                screenshots_dir=Path(tmp) / "screens",
+                i_know_this_is_not_prod=True,
+            )
+            live_runner = see.SocialEmulatorRunner(
+                live_cfg,
+                cmd_runner=live_cmd_runner,
+                stack_factory=fail_stack,
+                client_factory=lambda _u: FakeClient(),
+                sleep=lambda _s: None,
+            )
+            with self.assertRaises(see.HarnessFailure):
+                live_runner.run_all()
+
+            self.assertFalse(stack_called)
+            self.assertFalse(any("reverse" in c for c in commands))
+            self.assertFalse(any("/api/v1/admin" in path for _, path, _ in api_calls))
+            self.assertIn(("DELETE", "/api/v1/users/me", "eph-tok-1"), api_calls)
+
+
 if __name__ == "__main__":
     unittest.main()

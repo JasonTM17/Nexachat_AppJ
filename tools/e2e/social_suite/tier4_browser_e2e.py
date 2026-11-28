@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 from typing import List
@@ -11,6 +14,7 @@ from .browser_driver import BrowserDriver, audit_page_design, normalize_hex_colo
 from .client import (
     BlockedCapability,
     CheckCase,
+    E2EFailure,
     SuiteContext,
     check,
     expect_error,
@@ -23,6 +27,22 @@ from .fixtures import (
     load_valid_mp4_bytes,
     make_png_bytes,
 )
+
+
+def _expected_avatar_tone(display_name: str) -> int:
+    """Matches site/social/social-app.js avatarPaletteIndex(name) (0..7)."""
+    trimmed = str(display_name or "").strip()
+    if not trimmed:
+        return 0
+    normalized = trimmed.lower()
+    utf16 = normalized.encode("utf-16-le")
+    h = 0
+    for i in range(0, len(utf16), 2):
+        ch = int.from_bytes(utf16[i : i + 2], "little")
+        h = ((h * 31) + ch) & 0xFFFFFFFF
+        if h & 0x80000000:
+            h -= 0x100000000
+    return (h & 0x7FFFFFFF) % 8
 
 
 def _tmp_file_path(ctx: SuiteContext, name: str, data: bytes) -> Path:
@@ -255,11 +275,30 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                 lead = page.inner_text("#social-lead")
                 check("existing images" not in lead, f"stale EN lead text: {lead!r}")
 
+                # Upload avatar for author before signing in so login payload carries /api/v1/files/...
+                av_resp = ctx.spring.upload_multipart(
+                    "/api/v1/users/me/avatar",
+                    token=ctx.token("author"),
+                    files=[("file", "s1b_avatar.png", "image/png", make_png_bytes(32, 32, (115, 63, 104)))],
+                )
+                expect_status(av_resp, 200, "S1b upload author avatar")
+                av_url = (av_resp.json() or {}).get("avatarUrl") or ""
+                check(av_url.startswith("/api/v1/files/"), f"S1b unexpected author avatarUrl: {av_url!r}")
+
                 # Switch to VI and sign in (also refreshes author's token after T4.S1 logout)
                 page.click("#lang-vi-button")
                 check("ảnh đã có" not in page.inner_text("#social-lead"), "stale VI lead text")
                 _social_login(page, rec, ctx, "author")
                 check(page.locator("#session-panel .header-user-pill").is_visible(), "header user pill missing")
+                for avatar_sel in ("#session-avatar img.avatar-img", "#composer-avatar img.avatar-img"):
+                    page.wait_for_function(
+                        """(sel) => {
+                          const img = document.querySelector(sel);
+                          return Boolean(img && img.complete && img.naturalWidth > 0 && (img.src || '').startsWith('blob:'));
+                        }""",
+                        arg=avatar_sel,
+                        timeout=15000,
+                    )
 
                 # Seed posts now that author has a fresh valid token
                 r_resp = ctx.create_post_safe("reader", f"C\u00e0 ph\u00ea {unique_tag} s\u1eefa \u0111\u00e1")
@@ -327,6 +366,14 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                 # Multi-emoji picker & active reaction pills + Range video playback
                 vid_card = page.locator(f".post-card[data-post-id='{author_vid_post['id']}']")
                 vid_card.wait_for(state="visible", timeout=15000)
+                page.wait_for_function(
+                    """(pid) => {
+                      const img = document.querySelector(`.post-card[data-post-id='${pid}'] .author-trigger img.avatar-img`);
+                      return Boolean(img && img.complete && img.naturalWidth > 0 && (img.src || '').startsWith('blob:'));
+                    }""",
+                    arg=author_vid_post["id"],
+                    timeout=15000,
+                )
                 vid_card.locator("button.video-load-button").click()
                 vid_el = vid_card.locator("video.post-video")
                 vid_el.wait_for(state="visible", timeout=15000)
@@ -428,10 +475,48 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
 
                 # Author Profile modal + Author Filter chip while search is visible
                 r_card = page.locator(f".post-card[data-post-id='{reader_post['id']}']")
+                reader_tone = _expected_avatar_tone(ctx.sessions.get("reader").display_name)
+                check(
+                    r_card.locator(".author-trigger img.avatar-img").count() == 0,
+                    "reader post unexpectedly rendered img.avatar-img when avatarUrl is null",
+                )
+                r_av = r_card.locator(".author-trigger .avatar-initial").first.evaluate(
+                    """(el) => ({
+                      classes: Array.from(el.classList),
+                      bg: getComputedStyle(el).backgroundColor,
+                    })"""
+                )
+                check(
+                    f"avatar-tone-{reader_tone}" in r_av["classes"],
+                    f"reader post avatar missing avatar-tone-{reader_tone}: {r_av}",
+                )
+                check(
+                    r_av["bg"] not in ("", "transparent", "rgba(0, 0, 0, 0)"),
+                    f"reader post avatar background is transparent: {r_av}",
+                )
+
                 r_card.locator(".author-trigger").click()
                 page.wait_for_selector("#author-dialog[open]", timeout=10000)
                 page.wait_for_selector("#author-dialog-filter:not([hidden])", timeout=10000)
                 check("Reader" in page.inner_text("#author-dialog-title"), "author dialog missing displayName")
+                check(
+                    page.locator("#author-dialog-avatar img.avatar-img").count() == 0,
+                    "reader author dialog unexpectedly rendered img.avatar-img",
+                )
+                dlg_av = page.locator("#author-dialog-avatar .avatar-initial").first.evaluate(
+                    """(el) => ({
+                      classes: Array.from(el.classList),
+                      bg: getComputedStyle(el).backgroundColor,
+                    })"""
+                )
+                check(
+                    f"avatar-tone-{reader_tone}" in dlg_av["classes"],
+                    f"reader author dialog missing avatar-tone-{reader_tone}: {dlg_av}",
+                )
+                check(
+                    dlg_av["bg"] not in ("", "transparent", "rgba(0, 0, 0, 0)"),
+                    f"reader author dialog avatar background is transparent: {dlg_av}",
+                )
                 ctx.capture_screenshot(page, "social-author-profile-search.png", full_page=False)
 
                 page.click("#author-dialog-filter")
@@ -450,6 +535,19 @@ def _t4_s1b_m2_web_features(ctx: SuiteContext) -> None:
                 page.click("#author-filter-clear")
                 page.wait_for_selector(f".post-card[data-post-id='{author_vid_post['id']}']", timeout=15000)
                 r_card.wait_for(state="visible", timeout=15000)
+
+                # Verify author's uploaded blob avatar also loads inside #author-dialog
+                vid_card.locator(".author-trigger").click()
+                page.wait_for_selector("#author-dialog[open]", timeout=10000)
+                page.wait_for_function(
+                    """() => {
+                      const img = document.querySelector('#author-dialog-avatar img.avatar-img');
+                      return Boolean(img && img.complete && img.naturalWidth > 0 && (img.src || '').startsWith('blob:'));
+                    }""",
+                    timeout=15000,
+                )
+                page.click("#author-dialog-close")
+                page.wait_for_function("() => !document.getElementById('author-dialog').open", timeout=10000)
 
                 # Report with optional #report-details (maxlength 500)
                 r_card.locator('[data-action="report"]').click()
@@ -863,15 +961,61 @@ def _t4_s6_android_api_independence(ctx: SuiteContext) -> None:
 def _t4_s7_android_emulator_ui(ctx: SuiteContext) -> None:
     if not ctx.android_enabled:
         raise BlockedCapability("Optional --android flag not enabled; skipping emulator UI journey")
-    apk = REPO_ROOT / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
-    if not apk.is_file():
-        raise BlockedCapability(
-            f"Android debug APK missing at {apk}. Build via: ./gradlew -PapiBaseUrl=http://10.0.2.2:<port> assembleDebug"
-        )
+    if shutil.which("adb") is None:
+        raise BlockedCapability("adb binary not found on PATH")
     proc = subprocess.run(["adb", "-s", ctx.android_serial, "get-state"], capture_output=True, text=True, timeout=10)
     if proc.returncode != 0 or proc.stdout.strip() != "device":
         raise BlockedCapability(f"ADB device {ctx.android_serial} unavailable: {proc.stderr.strip()}")
-    ctx.require_milestone("M4", ctx.caps.m4_android_apk, "M4 Android feed parity build not landed yet")
+    ctx.require_milestone("M4", ctx.caps.m4_android_apk, "M4 Android feed parity sources/APK not present")
+
+    runner_script = REPO_ROOT / "tools" / "e2e" / "device" / "social_emulator_e2e.py"
+    if not runner_script.is_file():
+        raise E2EFailure(f"Android emulator E2E runner not found: {runner_script}")
+
+    if ctx.screenshots_dir:
+        screens_dir = Path(ctx.screenshots_dir) / "android"
+    else:
+        screens_dir = Path.home() / ".gemini" / "antigravity" / "scratch" / "teamwork_tmp" / f"android_screens_{ctx.nonce}"
+    screens_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        str(runner_script),
+        "--serial",
+        ctx.android_serial,
+        "--screenshots-dir",
+        str(screens_dir),
+    ]
+    explicit_apk = ctx.android_apk
+    default_apk = REPO_ROOT / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+    if explicit_apk:
+        cmd.extend(["--apk", str(explicit_apk), "--no-build-apk"])
+    elif default_apk.is_file():
+        cmd.extend(["--apk", str(default_apk), "--no-build-apk"])
+    if ctx.android_package:
+        cmd.extend(["--package", ctx.android_package])
+
+    run_proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    if run_proc.returncode != 0:
+        detail = (run_proc.stderr or run_proc.stdout or "").strip()[-1000:]
+        raise E2EFailure(f"social_emulator_e2e.py exited {run_proc.returncode}: {detail}")
+
+    stdout_text = (run_proc.stdout or "").strip()
+    try:
+        report = json.loads(stdout_text)
+    except ValueError:
+        brace_idx = stdout_text.find("{")
+        if brace_idx == -1:
+            raise E2EFailure(f"social_emulator_e2e.py returned non-JSON stdout: {stdout_text[-500:]!r}")
+        try:
+            report = json.loads(stdout_text[brace_idx:])
+        except ValueError as err:
+            raise E2EFailure(f"social_emulator_e2e.py returned invalid JSON: {err}") from err
+
+    check(
+        isinstance(report, dict) and report.get("status") == "PASS" and report.get("crash_count") == 0,
+        f"social_emulator_e2e.py failed contract: {report!r}",
+    )
 
 
 def get_tier4_checks() -> List[CheckCase]:

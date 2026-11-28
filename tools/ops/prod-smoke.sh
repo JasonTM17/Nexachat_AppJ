@@ -29,11 +29,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BASE_URL=""
+SITE_URL=""
 DO_WRITE=false
 WAIT_SECONDS=120
 HTTP_TIMEOUT=20
 REQUIRE_HSTS=false
 SELF_TEST=false
+SOCIAL_WEB_ENABLED=""
+POST_ID=""
 
 # The site's deletion form (site/delete-account.js:209,253) calls exactly these
 # two routes cross-origin from the public site.
@@ -59,8 +62,11 @@ Usage: bash tools/ops/prod-smoke.sh [options] <base-url>
        bash tools/ops/prod-smoke.sh --self-test
 
 Options:
+  --site-url URL    also verify public site /, /social/, /admin/, /join/,
+                    and /.well-known/assetlinks.json
   --write           register disposable accounts, upload/fetch an avatar,
-                    delete them, and verify the cleanup
+                    verify ice-config/Range 206/feed round-trip, delete them,
+                    and verify the cleanup
   --wait SECONDS    health wake-up timeout (default 120)
   --timeout SECONDS per-request timeout (default 20)
   --require-hsts    fail when an https base URL sends no HSTS header
@@ -94,6 +100,11 @@ die() {
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --site-url)
+            [ "$#" -ge 2 ] || die "--site-url requires a value"
+            SITE_URL="$2"
+            shift
+            ;;
         --write)
             DO_WRITE=true
             ;;
@@ -155,6 +166,14 @@ case "$BASE_URL" in
 esac
 if ! [[ "$BASE_URL" =~ ^https?://[^/?#]+$ ]]; then
     die "base URL must be an http(s) origin without a path, query or fragment"
+fi
+if [ -n "$SITE_URL" ]; then
+    case "$SITE_URL" in
+        */) SITE_URL="${SITE_URL%/}" ;;
+    esac
+    if ! [[ "$SITE_URL" =~ ^https?://[^/?#]+$ ]]; then
+        die "--site-url must be an http(s) origin without a path, query or fragment"
+    fi
 fi
 [[ "$WAIT_SECONDS" =~ ^[0-9]+$ ]] || die "--wait must be a non-negative integer"
 [[ "$HTTP_TIMEOUT" =~ ^[0-9]+$ ]] || die "--timeout must be a non-negative integer"
@@ -453,6 +472,161 @@ check_websocket_handshake() {
     log_pass "WebSocket: /ws upgraded to STOMP (101, Sec-WebSocket-Accept present)"
 }
 
+check_social_config() {
+    local cc parsed
+    http GET "$BASE_URL/api/social/v1/config"
+    if ! expect_status "social config" 200; then
+        return
+    fi
+    cc="$(header_value "$HDR" "Cache-Control")"
+    if ! printf '%s' "$cc" | tr '[:upper:]' '[:lower:]' | grep -q 'no-store'; then
+        log_fail "social config: Cache-Control '${cc:-missing}' missing no-store"
+        return
+    fi
+    parsed="$("$PYTHON_BIN" - "$BODY" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        d = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(1)
+
+if not isinstance(d, dict):
+    sys.exit(1)
+if not isinstance(d.get("webEnabled"), bool):
+    sys.exit(1)
+if not isinstance(d.get("videoUploadsEnabled"), bool):
+    sys.exit(1)
+if "announcement" not in d:
+    sys.exit(1)
+ann = d["announcement"]
+if ann is not None:
+    if not isinstance(ann, dict):
+        sys.exit(1)
+    for k in ("titleVi", "bodyVi", "titleEn", "bodyEn"):
+        if k in ann and not isinstance(ann[k], str):
+            sys.exit(1)
+print("true" if d["webEnabled"] else "false")
+PY
+    )" || {
+        log_fail "social config: invalid JSON schema ($(body_snippet))"
+        return
+    }
+    SOCIAL_WEB_ENABLED="$parsed"
+    log_pass "social config: 200 no-store (webEnabled=$SOCIAL_WEB_ENABLED)"
+}
+
+check_calls_ice_config_unauth() {
+    local code
+    http GET "$BASE_URL/api/v1/calls/ice-config"
+    if ! expect_status "unauthenticated GET /api/v1/calls/ice-config" 401; then
+        return
+    fi
+    code="$(json_get "$BODY" error.code)"
+    case "$code" in
+        UNAUTHORIZED|TOKEN_INVALID|TOKEN_EXPIRED)
+            log_pass "unauthenticated GET /api/v1/calls/ice-config: 401 $code"
+            ;;
+        *)
+            log_fail "unauthenticated GET /api/v1/calls/ice-config: 401 without documented error code (got '${code:-none}')"
+            ;;
+    esac
+}
+
+check_site_endpoints() {
+    local csp loc cc ctype
+    local expected_fp="E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF"
+
+    http GET "$SITE_URL/"
+    if expect_status "site /" 200; then
+        csp="$(header_value "$HDR" "Content-Security-Policy")"
+        if [ -z "$csp" ]; then
+            log_fail "site /: missing Content-Security-Policy header"
+        elif ! grep -q 'NexaChat' "$BODY"; then
+            log_fail "site /: body missing NexaChat marker"
+        else
+            log_pass "site /: 200 with CSP"
+        fi
+    fi
+
+    http GET "$SITE_URL/social/"
+    if expect_status "site /social/" 200; then
+        csp="$(header_value "$HDR" "Content-Security-Policy")"
+        if ! printf '%s' "$csp" | grep -q "connect-src 'self'" \
+            || ! printf '%s' "$csp" | grep -q "img-src 'self' blob:" \
+            || ! printf '%s' "$csp" | grep -q "media-src blob:"; then
+            log_fail "site /social/: CSP missing strict connect-src/img-src/media-src directives (got '${csp:-missing}')"
+        elif ! grep -qE 'social-app\.js|NexaChat Social' "$BODY"; then
+            log_fail "site /social/: body missing social-app.js / NexaChat Social marker"
+        else
+            log_pass "site /social/: 200 with strict CSP"
+        fi
+    fi
+
+    http GET "$SITE_URL/admin/"
+    if expect_status "site /admin/" 200; then
+        loc="$(header_value "$HDR" "Location")"
+        if [ -n "$loc" ]; then
+            log_fail "site /admin/: unexpected Location header '$loc'"
+        elif grep -qiE 'vercel\.com/sso|Authentication Required|_vercel_sso_nonce' "$BODY"; then
+            log_fail "site /admin/: Vercel SSO protection detected"
+        elif ! grep -qE 'NexaChat Admin|/admin/assets/' "$BODY"; then
+            log_fail "site /admin/: body missing NexaChat Admin or /admin/assets/ marker"
+        else
+            log_pass "site /admin/: 200 without SSO redirect"
+        fi
+    fi
+
+    http GET "$SITE_URL/join/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef0123456789_"
+    if expect_status "site /join/<token>" 200; then
+        cc="$(header_value "$HDR" "Cache-Control")"
+        if ! printf '%s' "$cc" | tr '[:upper:]' '[:lower:]' | grep -q 'no-store'; then
+            log_fail "site /join/<token>: Cache-Control '${cc:-missing}' missing no-store"
+        elif ! grep -q 'invite-valid' "$BODY" || ! grep -q 'join.js' "$BODY"; then
+            log_fail "site /join/<token>: body missing invite-valid or join.js"
+        else
+            log_pass "site /join/<token>: 200 no-store"
+        fi
+    fi
+
+    http GET "$SITE_URL/.well-known/assetlinks.json"
+    if expect_status "site /.well-known/assetlinks.json" 200; then
+        ctype="$(header_value "$HDR" "Content-Type")"
+        if ! printf '%s' "$ctype" | tr '[:upper:]' '[:lower:]' | grep -q 'application/json'; then
+            log_fail "site /.well-known/assetlinks.json: Content-Type '${ctype:-missing}' not application/json"
+        elif ! "$PYTHON_BIN" - "$BODY" "$expected_fp" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        d = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(1)
+
+want_fp = sys.argv[2]
+if not isinstance(d, list) or len(d) < 1 or not isinstance(d[0], dict):
+    sys.exit(1)
+rel = d[0].get("relation") or []
+target = d[0].get("target") or {}
+fps = target.get("sha256_cert_fingerprints") or []
+if "delegate_permission/common.handle_all_urls" not in rel:
+    sys.exit(1)
+if target.get("package_name") != "com.nexachat":
+    sys.exit(1)
+if not fps or fps[0] != want_fp:
+    sys.exit(1)
+PY
+        then
+            log_fail "site /.well-known/assetlinks.json: invalid package_name or release SHA-256 fingerprint"
+        else
+            log_pass "site /.well-known/assetlinks.json: 200 valid com.nexachat release fingerprint"
+        fi
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # --write flow
 # ---------------------------------------------------------------------------
@@ -589,6 +763,101 @@ fetch_avatar() {
     log_pass "write: avatar fetched back byte-for-byte as image/png"
 }
 
+check_calls_ice_config_auth() {
+    local who="$1"
+    http GET "$BASE_URL/api/v1/calls/ice-config" -H "Authorization: Bearer ${ACC_TOKEN[$who]}"
+    expect_status "write: calls ice-config" 200 || return 1
+    if ! "$PYTHON_BIN" - "$BODY" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        d = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(1)
+
+if not isinstance(d, dict):
+    sys.exit(1)
+if not isinstance(d.get("iceServers"), list):
+    sys.exit(1)
+ttl = d.get("ttlSeconds")
+if not isinstance(ttl, int) or ttl <= 0:
+    sys.exit(1)
+PY
+    then
+        log_fail "write: calls ice-config invalid JSON schema ($(body_snippet))"
+        return 1
+    fi
+    log_pass "write: authenticated GET /api/v1/calls/ice-config returned 200"
+}
+
+fetch_avatar_range() {
+    local who="$1"
+    local url accept_ranges content_range
+    url="$(avatar_full_url)"
+    if [ -z "$url" ]; then
+        log_fail "write: avatarUrl is not a usable URL for Range check: '$AVATAR_URL'"
+        return 1
+    fi
+    http GET "$url" -H "Authorization: Bearer ${ACC_TOKEN[$who]}" -H "Range: bytes=0-15"
+    expect_status "write: avatar Range 206" 206 || return 1
+    accept_ranges="$(header_value "$HDR" "Accept-Ranges")"
+    content_range="$(header_value "$HDR" "Content-Range")"
+    if ! printf '%s' "$accept_ranges" | tr '[:upper:]' '[:lower:]' | grep -q 'bytes'; then
+        log_fail "write: avatar Range 206 missing Accept-Ranges: bytes (got '${accept_ranges:-missing}')"
+        return 1
+    fi
+    case "$content_range" in
+        "bytes 0-15/"*) ;;
+        *)
+            log_fail "write: avatar Range 206 Content-Range '${content_range:-missing}' does not start with 'bytes 0-15/'"
+            return 1
+            ;;
+    esac
+    if ! "$PYTHON_BIN" - "$AVATAR_FILE" "$BODY" <<'PY'
+import sys
+
+with open(sys.argv[1], "rb") as f1, open(sys.argv[2], "rb") as f2:
+    want = f1.read(16)
+    got = f2.read()
+sys.exit(0 if got == want and len(got) == 16 else 1)
+PY
+    then
+        log_fail "write: avatar Range bytes=0-15 payload mismatch"
+        return 1
+    fi
+    log_pass "write: avatar Range bytes=0-15 returned 206 matching uploaded bytes"
+}
+
+check_feed_roundtrip_write() {
+    local who="$1"
+    local cid
+    cid="$("$PYTHON_BIN" -c 'import uuid; print(uuid.uuid4())')"
+    printf '{"clientPostId":"%s","body":"prod-smoke ephemeral"}' "$cid" > "$WORK_DIR/feed-post.json"
+    http POST "$BASE_URL/api/v1/feed/posts" \
+        -H "Authorization: Bearer ${ACC_TOKEN[$who]}" \
+        -H "Content-Type: application/json" \
+        --data-binary "@$(curl_path "$WORK_DIR/feed-post.json")"
+    expect_status "write: feed post create" 201 || return 1
+    POST_ID="$(json_get "$BODY" id)"
+    if [ -z "$POST_ID" ]; then
+        log_fail "write: feed post create 201 without id"
+        return 1
+    fi
+    if [ "$SOCIAL_WEB_ENABLED" = "true" ]; then
+        http GET "$BASE_URL/api/social/v1/posts?limit=1" -H "Authorization: Bearer ${ACC_TOKEN[$who]}"
+        expect_status "write: social feed read" 200 || return 1
+    else
+        http GET "$BASE_URL/api/v1/feed/posts?limit=1" -H "Authorization: Bearer ${ACC_TOKEN[$who]}"
+        expect_status "write: feed read" 200 || return 1
+    fi
+    http DELETE "$BASE_URL/api/v1/feed/posts/$POST_ID" -H "Authorization: Bearer ${ACC_TOKEN[$who]}"
+    expect_status "write: feed post delete" 204 || return 1
+    POST_ID=""
+    log_pass "write: ephemeral feed post create/read/delete verified (201/200/204)"
+}
+
 delete_account() {
     local who="$1"
     printf '{"password":"%s"}' "${ACC_PASS[$who]}" > "$WORK_DIR/delete.json"
@@ -670,6 +939,11 @@ check_avatar_removed() {
 }
 
 cleanup_write_accounts() {
+    if [ -n "$POST_ID" ] && [ -n "${ACC_TOKEN[subject]}" ]; then
+        http DELETE "$BASE_URL/api/v1/feed/posts/$POST_ID" \
+            -H "Authorization: Bearer ${ACC_TOKEN[subject]}" >/dev/null 2>&1 || true
+        POST_ID=""
+    fi
     local who
     for who in subject observer; do
         if [ "${ACC_DELETED[$who]}" = true ]; then
@@ -715,6 +989,18 @@ run_write_flow() {
         return 1
     fi
     if ! fetch_avatar subject; then
+        cleanup_write_accounts
+        return 1
+    fi
+    if ! check_calls_ice_config_auth subject; then
+        cleanup_write_accounts
+        return 1
+    fi
+    if ! fetch_avatar_range subject; then
+        cleanup_write_accounts
+        return 1
+    fi
+    if ! check_feed_roundtrip_write subject; then
         cleanup_write_accounts
         return 1
     fi
@@ -764,6 +1050,12 @@ check_cors
 check_unauthenticated_rejection
 check_otp_request
 check_websocket_handshake
+check_social_config
+check_calls_ice_config_unauth
+
+if [ -n "$SITE_URL" ]; then
+    check_site_endpoints
+fi
 
 if [ "$DO_WRITE" = true ]; then
     run_write_flow || true
