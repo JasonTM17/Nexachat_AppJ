@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createSocialClient, SocialSessionError } from '../../site/social/social-client.js';
+import { createSocialClient, SocialApiError, SocialSessionError } from '../../site/social/social-client.js';
 import { canonicalImageRequestPath, canonicalVideoRequestPath, imageUuid, isMediaId, safeAvatarFilePath } from '../../site/social/social-media.js';
 
 function jsonResponse(status, payload) {
@@ -425,4 +425,78 @@ test('safeAvatarFilePath and requestFile allow only safe relative /api/v1/files/
   assert.equal(calls[1].url, '/api/v1/files/avatars/test.png');
   assert.equal(calls[1].init.headers.Authorization, 'Bearer access-1');
   await assert.rejects(() => client.requestFile('/api/v1/users/me'), TypeError);
+});
+
+test('parseResponse with asBlob: true parses non-2xx JSON error bodies into SocialApiError.payload', async () => {
+  const client = await signedInClient(async (url) => {
+    if (url === '/api/social/v1/session/login') {
+      return jsonResponse(200, authPayload('access-1', 'refresh-1'));
+    }
+    if (url === '/api/social/v1/videos/66666666-6666-6666-6666-666666666666') {
+      return jsonResponse(403, { error: { code: 'SOCIAL_FEATURE_DISABLED', message: 'disabled' } });
+    }
+    if (url === '/api/v1/files/avatars/missing.png') {
+      return jsonResponse(404, { error: { code: 'FILE_NOT_FOUND' } });
+    }
+    throw new Error(`unexpected URL ${url}`);
+  });
+
+  await assert.rejects(
+    () => client.request('/videos/66666666-6666-6666-6666-666666666666', { asBlob: true }),
+    (err) => {
+      assert.equal(err instanceof SocialApiError, true);
+      assert.equal(err.status, 403);
+      assert.equal(err.payload instanceof Blob, false);
+      assert.equal(err.payload?.error?.code, 'SOCIAL_FEATURE_DISABLED');
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    () => client.requestFile('/api/v1/files/avatars/missing.png'),
+    (err) => {
+      assert.equal(err instanceof SocialApiError, true);
+      assert.equal(err.status, 404);
+      assert.equal(err.payload instanceof Blob, false);
+      assert.equal(err.payload?.error?.code, 'FILE_NOT_FOUND');
+      return true;
+    },
+  );
+});
+
+test('requestFile replays once after a 401 refresh and throws SocialSessionError if replay also returns 401', async () => {
+  let fileAttempts = 0;
+  let refreshCount = 0;
+  const client = await signedInClient(async (url, init) => {
+    if (url === '/api/social/v1/session/login') {
+      return jsonResponse(200, authPayload('access-1', 'refresh-1'));
+    }
+    if (url === '/api/social/v1/session/refresh') {
+      refreshCount += 1;
+      return jsonResponse(200, authPayload(`access-${refreshCount + 1}`, `refresh-${refreshCount + 1}`));
+    }
+    if (url === '/api/v1/files/avatars/replayed.png') {
+      fileAttempts += 1;
+      if (fileAttempts === 1) {
+        return jsonResponse(401, { error: { code: 'UNAUTHORIZED' } });
+      }
+      assert.equal(init.headers.Authorization, 'Bearer access-2');
+      return new Response(new Blob(['png'], { type: 'image/png' }), { status: 200 });
+    }
+    if (url === '/api/v1/files/avatars/still-unauthorized.png') {
+      return jsonResponse(401, { error: { code: 'UNAUTHORIZED' } });
+    }
+    throw new Error(`unexpected URL ${url}`);
+  });
+
+  const blob = await client.requestFile('/api/v1/files/avatars/replayed.png');
+  assert.equal(blob.type, 'image/png');
+  assert.equal(fileAttempts, 2);
+  assert.equal(refreshCount, 1);
+
+  await assert.rejects(
+    () => client.requestFile('/api/v1/files/avatars/still-unauthorized.png'),
+    SocialSessionError,
+  );
+  assert.equal(refreshCount, 2);
 });

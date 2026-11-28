@@ -232,4 +232,39 @@ describe('api', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await assertion;
   });
+
+  it('times out a hung /auth/refresh request and clears refreshing so a later call can retry', async () => {
+    vi.useFakeTimers();
+    tokenStore.set('old', 'good-refresh');
+    let refreshAttempts = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/auth/refresh')) {
+        refreshAttempts += 1;
+        if (refreshAttempts === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('Aborted', 'AbortError')),
+            );
+          });
+        }
+        return Promise.resolve(jsonResponse(200, { accessToken: 'new-acc', refreshToken: 'new-ref' }));
+      }
+      if (refreshAttempts < 2) {
+        return Promise.resolve(jsonResponse(401, { error: { code: 'TOKEN_EXPIRED' } }));
+      }
+      return Promise.resolve(jsonResponse(200, { me: true }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = api('/api/v1/admin/me');
+    const firstAssertion = expect(first).rejects.toBeInstanceOf(ApiException);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await firstAssertion;
+    expect(refreshAttempts).toBe(1);
+
+    tokenStore.set('old-2', 'good-refresh-2');
+    const second = await api('/api/v1/admin/me');
+    expect(second).toEqual({ me: true });
+    expect(refreshAttempts).toBe(2);
+  });
 });

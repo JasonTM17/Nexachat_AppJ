@@ -84,6 +84,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     tokenStore.clear();
+    sessionStorage.removeItem('admin.idempotencyKey');
     setMe(null);
   }, []);
 

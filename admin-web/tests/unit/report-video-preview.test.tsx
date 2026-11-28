@@ -217,4 +217,17 @@ describe('ReportVideoPreview', () => {
       expect(createObjectURLMock).not.toHaveBeenCalled();
     });
   });
+
+  it('accepts video/mp4 MIME with codec parameters and restores focus to Load button on Close video', async () => {
+    const user = userEvent.setup();
+    apiMock.mockResolvedValueOnce(new Blob(['mp4'], { type: 'video/mp4; codecs="avc1.42E01E"' }));
+    renderPreview('r1');
+
+    await user.click(screen.getByRole('button', { name: 'Load reported video' }));
+    const video = await screen.findByLabelText('Reported video');
+    expect(video).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close video' }));
+    expect(screen.getByRole('button', { name: 'Load reported video' })).toHaveFocus();
+  });
 });

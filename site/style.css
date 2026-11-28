@@ -5,41 +5,43 @@
   --logo-ink: #f6dff0;
   --logo-plate: #733f68;
   --logo-on-brand: #fffcff;
-  --bg-color: #0f172a;
-  --card-bg: #1e293b;
-  --text-main: #f8fafc;
-  --text-muted: #cbd5e1;
-  --primary: #dda7cc;
+  --bg-color: #151316;
+  --card-bg: #1d1b1e;
+  --text-main: #e8e0e5;
+  --text-muted: #d2c2cb;
+  --primary: #f4b2e2;
   --primary-hover: #f0c9e3;
   --btn-bg: #733f68;
-  --btn-bg-hover: #5e3154;
-  --secondary-bg: #334155;
-  --secondary-hover: #475569;
-  --border-color: #334155;
-  --input-border: #94a3b8;
-  --error: #fca5a5;
-  --focus-ring: #dda7cc;
-  --radius: 12px;
+  --btn-bg-hover: #592850;
+  --secondary-bg: #2c292d;
+  --secondary-hover: #383337;
+  --border-color: #4f434b;
+  --input-border: #9b8d95;
+  --error: #ffb4ab;
+  --danger: #ba1a1a;
+  --danger-hover: #93000a;
+  --focus-ring: #f4b2e2;
+  --radius: 16px;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     --logo-mark: #733f68;
     --logo-ink: #35142f;
-    --bg-color: #f8fafc;
+    --bg-color: #fff7fc;
     --card-bg: #ffffff;
-    --text-main: #0f172a;
-    --text-muted: #475569;
+    --text-main: #1d1b1e;
+    --text-muted: #4f434b;
     --primary: #733f68;
-    --primary-hover: #562c4d;
+    --primary-hover: #592850;
     --btn-bg: #733f68;
-    --btn-bg-hover: #5e3154;
-    --secondary-bg: #e2e8f0;
-    --secondary-hover: #cbd5e1;
-    --border-color: #e2e8f0;
-    --input-border: #64748b;
-    --error: #b91c1c;
-    --focus-ring: #562c4d;
+    --btn-bg-hover: #592850;
+    --secondary-bg: #ede6eb;
+    --secondary-hover: #e8e0e5;
+    --border-color: #d2c2cb;
+    --input-border: #81737b;
+    --error: #ba1a1a;
+    --focus-ring: #592850;
   }
 }
 
@@ -62,7 +64,7 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--bg-color);
   color: var(--text-main);
   line-height: 1.5;
@@ -86,21 +88,33 @@ body {
   background: var(--card-bg);
   color: var(--text-main);
   border: 2px solid var(--focus-ring);
-  border-radius: 8px;
+  border-radius: 999px;
   font-weight: 600;
   text-decoration: none;
   transform: translateY(-200%);
   transition: transform 0.15s ease;
 }
 
+.skip-link:hover {
+  color: var(--text-main);
+}
+
 .skip-link:focus-visible {
   transform: translateY(0);
 }
 
+:where(a) {
+  color: var(--primary);
+}
+
+:where(a:hover) {
+  color: var(--primary-hover);
+}
+
 /* Branded focus ring baseline for links that have no page-specific rule
-   (e.g. install hints and the join fallback). More specific focus rules in
-   this sheet override it where they apply. */
-a:focus-visible {
+   (e.g. install hints and the join fallback). Zero-specificity :where()
+   keeps pill controls (.btn, .skip-link, .home-lang) at border-radius: 999px. */
+:where(a:focus-visible) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 4px;
@@ -129,7 +143,7 @@ a:focus-visible {
   border-radius: var(--radius);
   padding: 2rem 1.5rem;
   text-align: center;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px -1px rgba(42, 16, 36, 0.14), 0 2px 4px -2px rgba(42, 16, 36, 0.1);
 }
 
 .card--prose {
@@ -249,6 +263,16 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
   text-align: center;
 }
 
+.install-hint a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.install-hint a:hover {
+  color: var(--primary-hover);
+}
+
 .install-hint code {
   font-family: var(--font-mono);
   font-size: 0.85em;
@@ -266,7 +290,7 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
   text-decoration: none;
   font-weight: 600;
   font-size: 1rem;
-  border-radius: 8px;
+  border-radius: 999px;
   transition: background-color 0.2s ease;
   border: 2px solid transparent;
   cursor: pointer;
@@ -278,6 +302,7 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
 
 .btn:hover {
   background-color: var(--btn-bg-hover);
+  color: var(--logo-on-brand);
 }
 
 /* Instant tactile press; gated so reduced-motion users see no offset. */
@@ -299,6 +324,7 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
 
 .btn-secondary:hover {
   background-color: var(--secondary-hover);
+  color: var(--text-main);
 }
 
 .site-footer {
@@ -391,7 +417,7 @@ body:has(#lang-en :target) .page-actions a[lang='en'] {
   padding: 0.625rem 0.875rem;
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow-x: auto;
 }
 
@@ -403,13 +429,17 @@ body:has(#lang-en :target) .page-actions a[lang='en'] {
   white-space: pre;
 }
 
-.prose a {
+.prose a:not(.btn) {
   color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.prose a:focus-visible {
+.prose a:not(.btn):hover {
+  color: var(--primary-hover);
+}
+
+.prose a:not(.btn):focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -497,7 +527,7 @@ body:has(#lang-en :target) .page-actions a[lang='en'] {
   color: var(--text-main);
   background-color: var(--bg-color);
   border: 1px solid var(--input-border);
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .form-input:focus-visible {
@@ -542,11 +572,13 @@ body:has(#lang-en :target) .page-actions a[lang='en'] {
 }
 
 .btn-danger {
-  background-color: #b91c1c;
+  background-color: var(--danger);
+  color: var(--logo-on-brand);
 }
 
 .btn-danger:hover {
-  background-color: #991b1b;
+  background-color: var(--danger-hover);
+  color: var(--logo-on-brand);
 }
 
 .btn:disabled,
@@ -616,6 +648,10 @@ body.home {
   font-weight: 700;
   letter-spacing: -0.01em;
   text-decoration: none;
+}
+
+.home-brand:hover {
+  color: var(--logo-ink);
 }
 
 .home-brand .brand-mark {
@@ -793,7 +829,7 @@ body:has(#lang-en :target) #lang-vi {
   border-radius: 2rem;
   box-shadow:
     0 1.5rem 3rem -1rem rgba(115, 63, 104, 0.45),
-    0 0.375rem 1rem -0.375rem rgba(15, 23, 42, 0.4);
+    0 0.375rem 1rem -0.375rem rgba(42, 16, 36, 0.4);
 }
 
 .phone img {
@@ -905,7 +941,7 @@ body:has(#lang-en :target) #lang-vi {
 
   .feature-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 0.75rem 1.5rem -0.75rem rgba(15, 23, 42, 0.35);
+    box-shadow: 0 0.75rem 1.5rem -0.75rem rgba(42, 16, 36, 0.35);
   }
 }
 
@@ -1007,6 +1043,7 @@ body:has(#lang-en :target) #lang-vi {
 
 .btn-light:hover {
   background-color: #eedbea;
+  color: var(--btn-bg);
 }
 
 /* The light-scheme focus ring is near-invisible against the fixed mauve CTA

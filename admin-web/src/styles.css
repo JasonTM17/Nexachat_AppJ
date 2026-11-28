@@ -138,6 +138,7 @@ button, input, select, textarea {
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar .brand {
@@ -863,6 +864,7 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   background: var(--surface-2);
 }
 .social-live h3 { margin: 0 0 6px; font-size: 13px; }
+.social-live p { overflow-wrap: anywhere; }
 .social-live .btn { margin-top: 12px; }
 
 .social-draft-grid {
@@ -1057,6 +1059,9 @@ a.kpi-link:hover { border-color: var(--plum-300); }
     position: static;
     box-shadow: none;
     background: transparent;
+  }
+  .responsive-cards td.col-actions:empty {
+    display: none;
   }
   .responsive-cards td.truncate {
     max-width: none;

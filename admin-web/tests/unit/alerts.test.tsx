@@ -345,10 +345,7 @@ describe('AlertsPage', () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    // NOTE: the revealed messages are never displayed — confirm() calls
-    // openDetail(), which runs setRevealed(null) in the same commit as
-    // setRevealed(res.messages). Asserting 'Revealed context' here would be a
-    // false positive; flagged as a UI bug for follow-up.
+    expect(await within(drawer).findByText('full unredacted body')).toBeInTheDocument();
   });
 
   it('adds a note from the drawer', async () => {
@@ -584,5 +581,59 @@ describe('AlertsPage', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('clears unsent noteText when switching alerts and applies maxLength=1000', async () => {
+    const user = userEvent.setup();
+    const alertA = alert({ id: 'a1', snippet: 'first alert' });
+    const alertB = alert({ id: 'a2', snippet: 'second alert' });
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alertA, alertB]));
+      if (path === '/api/v1/admin/alerts/a1') return Promise.resolve(detail(alertA));
+      if (path === '/api/v1/admin/alerts/a2') return Promise.resolve(detail(alertB));
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+
+    await user.click(await screen.findByText('first alert'));
+    let drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
+    const noteBox = within(drawer).getByLabelText('Add a note');
+    expect(noteBox).toHaveAttribute('maxLength', '1000');
+    await user.type(noteBox, 'unsent note for a1');
+    expect(noteBox).toHaveValue('unsent note for a1');
+
+    await user.click(within(drawer).getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByText('second alert'));
+    drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
+    expect(within(drawer).getByLabelText('Add a note')).toHaveValue('');
+  });
+
+  it('does not reopen the drawer if closed while assignMe is in flight', async () => {
+    const user = userEvent.setup();
+    let resolveAssign!: () => void;
+    apiMock.mockImplementation((path: string, opts?: { method?: string }) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alert()]));
+      if (path === '/api/v1/admin/alerts/a1' && opts?.method === 'PATCH') {
+        return new Promise<void>((res) => { resolveAssign = res; });
+      }
+      if (path === '/api/v1/admin/alerts/a1') return Promise.resolve(detail());
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+
+    await user.click(await screen.findByText('send me your password'));
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
+    await user.click(within(drawer).getByRole('button', { name: 'Assign to me' }));
+
+    await user.click(within(drawer).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await act(async () => {
+      resolveAssign();
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

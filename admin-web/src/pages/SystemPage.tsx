@@ -190,16 +190,20 @@ export default function SystemPage() {
   const [error, setError] = useState<unknown>(null);
   // Consecutive poll failures drive the retry cadence (BACKOFF_MS).
   const failuresRef = useRef(0);
+  const seqRef = useRef(0);
 
   const load = useCallback(() => {
+    const seq = ++seqRef.current;
     setFailed(false);
     return api<SystemHealth>('/api/v1/admin/system/health')
       .then((h) => {
+        if (seq !== seqRef.current) return;
         failuresRef.current = 0;
         setHealth(h);
         setError(null);
       })
       .catch((err) => {
+        if (seq !== seqRef.current) return;
         failuresRef.current += 1;
         setError(err);
         setFailed(true);
@@ -233,6 +237,7 @@ export default function SystemPage() {
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       cancelled = true;
+      seqRef.current += 1;
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };

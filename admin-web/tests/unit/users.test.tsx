@@ -328,4 +328,28 @@ describe('UsersPage', () => {
     await userEvt.keyboard('[Space]');
     expect(await screen.findByRole('dialog', { name: 'Mai' })).toBeInTheDocument();
   });
+
+  it('renders deleted user status chip as low tone and omits mutation buttons in the drawer', async () => {
+    const userEvt = userEvent.setup();
+    const deletedUser = user({
+      id: 'u-del',
+      displayName: 'Deleted User',
+      deletedAt: '2026-11-12T00:00:00Z',
+    });
+    stubRoutes({
+      list: page([deletedUser]),
+      userDetail: detail(deletedUser),
+    });
+    renderPage();
+
+    await userEvt.click(await screen.findByText('Deleted User'));
+    const drawer = await screen.findByRole('dialog', { name: 'Deleted User' });
+    const deletedChip = within(drawer).getByText('Deleted');
+    expect(deletedChip).toHaveClass('chip low');
+    expect(deletedChip).not.toHaveClass('success');
+    expect(within(drawer).queryByRole('button', { name: 'Suspend' })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Revoke sessions' })).toBeNull();
+    expect(within(drawer).queryByLabelText('Change role')).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Warn user' })).toBeNull();
+  });
 });

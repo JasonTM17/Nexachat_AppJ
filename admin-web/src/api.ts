@@ -116,6 +116,8 @@ async function tryRefresh(): Promise<boolean> {
   // letting the server treat the retried refresh as a new attempt.
   const idempotencyKey = idempotencyKeyFor(refresh);
   refreshing ??= (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
         method: 'POST',
@@ -124,6 +126,7 @@ async function tryRefresh(): Promise<boolean> {
           'Idempotency-Key': idempotencyKey,
         },
         body: JSON.stringify({ refreshToken: refresh }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         expireSession();
@@ -138,6 +141,7 @@ async function tryRefresh(): Promise<boolean> {
       expireSession();
       return false;
     } finally {
+      clearTimeout(timer);
       refreshing = null;
     }
   })();

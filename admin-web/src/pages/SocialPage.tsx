@@ -16,12 +16,6 @@ const TITLE_MAX = 100;
 const BODY_MAX = 500;
 const EMPTY_DRAFT: SocialAnnouncement = { titleVi: '', bodyVi: '', titleEn: '', bodyEn: '' };
 
-function sameDraft(left: SocialAnnouncement | null, right: SocialAnnouncement | null): boolean {
-  if (left === null || right === null) return left === right;
-  return left.titleVi === right.titleVi && left.bodyVi === right.bodyVi
-    && left.titleEn === right.titleEn && left.bodyEn === right.bodyEn;
-}
-
 type PendingAction =
   | { kind: 'flags'; webEnabled: boolean; videoUploadsEnabled: boolean }
   | { kind: 'publish' }
@@ -90,10 +84,13 @@ export default function SocialPage() {
         if (current.webEnabled === before.webEnabled) setWebEnabled(next.webEnabled);
         if (current.videoEnabled === before.videoUploadsEnabled) setVideoEnabled(next.videoUploadsEnabled);
         const baseDraft = before.draft ?? EMPTY_DRAFT;
-        if (sameDraft(current.draftForm, baseDraft)) {
-          const draft = next.draft ?? EMPTY_DRAFT;
-          setDraftForm({ titleVi: draft.titleVi, bodyVi: draft.bodyVi, titleEn: draft.titleEn, bodyEn: draft.bodyEn });
-        }
+        const nextDraft = next.draft ?? EMPTY_DRAFT;
+        setDraftForm((latest) => ({
+          titleVi: latest.titleVi === baseDraft.titleVi ? nextDraft.titleVi : latest.titleVi,
+          bodyVi: latest.bodyVi === baseDraft.bodyVi ? nextDraft.bodyVi : latest.bodyVi,
+          titleEn: latest.titleEn === baseDraft.titleEn ? nextDraft.titleEn : latest.titleEn,
+          bodyEn: latest.bodyEn === baseDraft.bodyEn ? nextDraft.bodyEn : latest.bodyEn,
+        }));
       })
       .catch(() => setFailed(true));
   }, [adopt]);
@@ -137,10 +134,19 @@ export default function SocialPage() {
     if (!state) return;
     setDraftBusy(true);
     setActionError(null);
+    const sentDraft = { ...draftForm };
     try {
-      adopt(await api<SocialAdminState>('/api/v1/admin/social/settings/announcement/draft', {
+      const next = await api<SocialAdminState>('/api/v1/admin/social/settings/announcement/draft', {
         method: 'PUT',
-        body: { expectedRevision: state.revision, ...draftForm },
+        body: { expectedRevision: state.revision, ...sentDraft },
+      });
+      setState(next);
+      const nextDraft = next.draft ?? EMPTY_DRAFT;
+      setDraftForm((latest) => ({
+        titleVi: latest.titleVi === sentDraft.titleVi ? nextDraft.titleVi : latest.titleVi,
+        bodyVi: latest.bodyVi === sentDraft.bodyVi ? nextDraft.bodyVi : latest.bodyVi,
+        titleEn: latest.titleEn === sentDraft.titleEn ? nextDraft.titleEn : latest.titleEn,
+        bodyEn: latest.bodyEn === sentDraft.bodyEn ? nextDraft.bodyEn : latest.bodyEn,
       }));
       setConflict(false);
       toast.show(t('social.cms.draftSaved'));
@@ -161,7 +167,7 @@ export default function SocialPage() {
         await saveFlags(pending.webEnabled, pending.videoUploadsEnabled);
         return;
       }
-      updateSettings(await api<SocialAdminState>(
+      setState(await api<SocialAdminState>(
         `/api/v1/admin/social/settings/announcement/${pending.kind}`,
         { method: 'POST', body },
       ));
@@ -189,10 +195,12 @@ export default function SocialPage() {
   if (!state) return <Loading />;
 
   const flagsDirty = webEnabled !== state.webEnabled || videoEnabled !== state.videoUploadsEnabled;
-  const draftValid = draftForm.titleVi.trim() && draftForm.bodyVi.trim()
+  const draftValid = Boolean(
+    draftForm.titleVi.trim() && draftForm.bodyVi.trim()
     && draftForm.titleEn.trim() && draftForm.bodyEn.trim()
     && draftForm.titleVi.trim().length <= TITLE_MAX && draftForm.titleEn.trim().length <= TITLE_MAX
-    && draftForm.bodyVi.trim().length <= BODY_MAX && draftForm.bodyEn.trim().length <= BODY_MAX;
+    && draftForm.bodyVi.trim().length <= BODY_MAX && draftForm.bodyEn.trim().length <= BODY_MAX,
+  );
   const previewTitle = previewLang === 'vi' ? draftForm.titleVi : draftForm.titleEn;
   const previewBody = previewLang === 'vi' ? draftForm.bodyVi : draftForm.bodyEn;
 
@@ -285,7 +293,7 @@ export default function SocialPage() {
                   <legend>{suffix === 'Vi' ? 'Tiếng Việt' : 'English'}</legend>
                   <label className="field">
                     <span>
-                      {t('social.cms.fieldTitle')} — {titleValue.length}/{TITLE_MAX}
+                      {t('social.cms.fieldTitle')} — {titleValue.trim().length}/{TITLE_MAX}
                     </span>
                     <input
                       className="input"
@@ -293,7 +301,7 @@ export default function SocialPage() {
                       value={titleValue}
                       aria-invalid={titleTooLong || undefined}
                       aria-describedby={titleTooLong ? titleErrorId : undefined}
-                      onChange={(e) => setDraftForm({ ...draftForm, [`title${suffix}`]: e.target.value })}
+                      onChange={(e) => setDraftForm((prev) => ({ ...prev, [`title${suffix}`]: e.target.value }))}
                     />
                     {titleTooLong && (
                       <span id={titleErrorId} className="form-error">
@@ -303,7 +311,7 @@ export default function SocialPage() {
                   </label>
                   <label className="field">
                     <span>
-                      {t('social.cms.fieldBody')} — {bodyValue.length}/{BODY_MAX}
+                      {t('social.cms.fieldBody')} — {bodyValue.trim().length}/{BODY_MAX}
                     </span>
                     <textarea
                       className="input"
@@ -312,7 +320,7 @@ export default function SocialPage() {
                       value={bodyValue}
                       aria-invalid={bodyTooLong || undefined}
                       aria-describedby={bodyTooLong ? bodyErrorId : undefined}
-                      onChange={(e) => setDraftForm({ ...draftForm, [`body${suffix}`]: e.target.value })}
+                      onChange={(e) => setDraftForm((prev) => ({ ...prev, [`body${suffix}`]: e.target.value }))}
                     />
                     {bodyTooLong && (
                       <span id={bodyErrorId} className="form-error">

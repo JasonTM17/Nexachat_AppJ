@@ -59,4 +59,11 @@ describe('i18n', () => {
   it('keeps the en and vi key sets identical', () => {
     expect(Object.keys(STRINGS.vi).sort()).toEqual(Object.keys(STRINGS.en).sort());
   });
+
+  it('falls back to en when localStorage contains an invalid admin.lang value', () => {
+    localStorage.setItem('admin.lang', 'fr');
+    const { result } = renderHook(() => useI18n(), { wrapper });
+    expect(result.current.lang).toBe('en');
+    expect(result.current.t('nav.users')).toBe('Users');
+  });
 });

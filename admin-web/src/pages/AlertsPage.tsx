@@ -94,6 +94,7 @@ export default function AlertsPage() {
   const formatError = useApiErrorMessage();
   const toast = useToast();
   const hasData = useRef(false);
+  const openIdRef = useRef<string | null>(null);
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -151,6 +152,8 @@ export default function AlertsPage() {
   // a banner above the (possibly scrolled-away) table would read as a dead
   // click. `latestDetail` drops responses for anything but the newest click.
   const openDetail = (id: string) => {
+    openIdRef.current = id;
+    if (detail?.alert.id !== id) setNoteText('');
     setRevealed(null);
     setActionError(null);
     setDetailFailed(null);
@@ -218,34 +221,40 @@ export default function AlertsPage() {
 
   const assignMe = () => {
     if (!detail || !me || assignBusy) return;
+    const id = detail.alert.id;
     setAssignBusy(true);
     setActionError(null);
-    api(`/api/v1/admin/alerts/${detail.alert.id}`, {
+    api(`/api/v1/admin/alerts/${id}`, {
       method: 'PATCH',
       body: { assigneeId: me.userId },
     })
       .then(() => {
         toast.show(t('alerts.success.action'));
-        openDetail(detail.alert.id);
+        if (openIdRef.current === id) openDetail(id);
       })
-      .catch((err) => setActionError(err))
+      .catch((err) => {
+        if (openIdRef.current === id) setActionError(err);
+      })
       .finally(() => setAssignBusy(false));
   };
 
   const addNote = () => {
     if (!detail || !noteText.trim() || noteBusy) return;
+    const id = detail.alert.id;
     setNoteBusy(true);
     setActionError(null);
-    api(`/api/v1/admin/alerts/${detail.alert.id}/notes`, {
+    api(`/api/v1/admin/alerts/${id}/notes`, {
       method: 'POST',
       body: { body: noteText.trim() },
     })
       .then(() => {
         setNoteText('');
         toast.show(t('alerts.success.note'));
-        openDetail(detail.alert.id);
+        if (openIdRef.current === id) openDetail(id);
       })
-      .catch((err) => setActionError(err))
+      .catch((err) => {
+        if (openIdRef.current === id) setActionError(err);
+      })
       .finally(() => setNoteBusy(false));
   };
 
@@ -460,9 +469,11 @@ export default function AlertsPage() {
             // Cancel any in-flight detail fetch so a late response cannot
             // reopen the drawer the user just dismissed; the row's busy and
             // error markers belong to the dismissed view too.
+            openIdRef.current = null;
             latestDetail.cancel();
             setDetailBusy(null);
             setDetailFailed(null);
+            setNoteText('');
             setDetail(null);
           }}
         >
@@ -582,6 +593,7 @@ export default function AlertsPage() {
               <textarea
                 className="textarea"
                 rows={2}
+                maxLength={1000}
                 placeholder={t('alerts.note.placeholder')}
                 aria-label={t('alerts.note.placeholder')}
                 value={noteText}

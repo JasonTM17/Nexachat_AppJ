@@ -65,6 +65,7 @@ const TEXT = {
     posting: 'Đang đăng…',
     postFailed: 'Không đăng được bài. Thử lại khi bạn sẵn sàng.',
     postEmpty: 'Viết nội dung trước khi đăng.',
+    postTooLong: 'Bài viết không được vượt quá 1000 ký tự.',
     disclosure: 'Bài viết hiển thị với mọi tài khoản NexaChat và không được mã hóa.',
     feedTitle: 'Bảng tin',
     refresh: 'Làm mới',
@@ -91,6 +92,7 @@ const TEXT = {
     commenting: 'Đang gửi…',
     commentFailed: 'Không gửi được bình luận.',
     commentValidation: 'Viết bình luận trước khi gửi.',
+    commentTooLong: 'Bình luận không được vượt quá 500 ký tự.',
     react: 'Thả tim',
     removeReact: 'Bỏ tim',
     addReaction: 'Chọn cảm xúc',
@@ -193,6 +195,7 @@ const TEXT = {
     posting: 'Posting…',
     postFailed: 'Could not create the post. Try again when ready.',
     postEmpty: 'Write something before posting.',
+    postTooLong: 'Post cannot exceed 1000 characters.',
     disclosure: 'Posts are visible to NexaChat accounts and are not encrypted.',
     feedTitle: 'Feed',
     refresh: 'Refresh',
@@ -219,6 +222,7 @@ const TEXT = {
     commenting: 'Sending…',
     commentFailed: 'Could not send the comment.',
     commentValidation: 'Write a comment before sending.',
+    commentTooLong: 'Comment cannot exceed 500 characters.',
     react: 'Add heart',
     removeReact: 'Remove heart',
     addReaction: 'Add reaction',
@@ -345,6 +349,10 @@ function applySurfaceState() {
   // boot window never flashes a misleading empty notice.
   els.unavailablePanel.hidden = enabled || surfaceState === 'loading';
   if (!enabled) {
+    if (surfaceState === 'disabled') {
+      editingPosts.clear();
+      editingComments.clear();
+    }
     setStatus(els.unavailableBody, surfaceState === 'disabled' ? 'socialDisabled'
       : surfaceState === 'unavailable' ? 'configUnavailable' : '');
     els.signedOut.hidden = true;
@@ -518,7 +526,8 @@ function setLanguage(next) {
     if (lang === 'en') {
       env.history.replaceState(null, '', '#lang-en');
     } else {
-      env.history.replaceState(null, '', env.window.location.pathname);
+      const search = (env.window && env.window.location && env.window.location.search) || '';
+      env.history.replaceState(null, '', `${env.window.location.pathname}${search}`);
     }
   }
   applyLanguage();
@@ -569,6 +578,33 @@ export function avatarPaletteIndex(name) {
   return (hash & 0x7fffffff) % 8;
 }
 
+function syncAvatarNode(trigger, author, sizeClass = '') {
+  if (!trigger) {
+    return;
+  }
+  const existing = trigger.querySelector('.avatar-initial');
+  const nextUrl = safeAvatarFilePath(author && author.avatarUrl) || '';
+  const nextName = displayName(author);
+  if (existing && (existing.dataset.avatarUrl || '') === nextUrl && (existing.dataset.avatarName || '') === nextName) {
+    if (!nextUrl || existing.querySelector('img.avatar-img')) {
+      return;
+    }
+    const cached = avatarCache.get(nextUrl);
+    if (cached && cached.promise && !cached.objectUrl) {
+      return;
+    }
+    void loadAvatarIntoNode(nextUrl, existing);
+    return;
+  }
+  const replacement = createAvatarNode(author, sizeClass);
+  if (existing && existing.parentElement) {
+    existing.parentElement.insertBefore(replacement, existing);
+    existing.remove();
+  } else {
+    trigger.insertBefore(replacement, trigger.firstElementChild);
+  }
+}
+
 function createAvatarNode(userOrAuthor, sizeClass = '') {
   const name = displayName(userOrAuthor);
   const tone = avatarPaletteIndex(name);
@@ -587,17 +623,16 @@ async function loadAvatarIntoNode(filePath, container) {
   if (!client || typeof client.requestFile !== 'function') {
     return;
   }
-  let entry = avatarCache.get(filePath);
+  const entry = avatarCache.get(filePath);
   try {
     let objectUrl = entry && entry.objectUrl;
+    let awaited = false;
     if (!objectUrl) {
-      if (entry && entry.failed) {
-        return;
-      }
+      awaited = true;
       if (entry && entry.promise) {
         objectUrl = await entry.promise;
       } else {
-        const nextEntry = { promise: null, objectUrl: null, failed: false };
+        const nextEntry = { promise: null, objectUrl: null };
         nextEntry.promise = client.requestFile(filePath)
           .then((blob) => {
             if (!blob || !ALLOWED_IMAGE_MIME_TYPES.has(blob.type)) {
@@ -610,19 +645,24 @@ async function loadAvatarIntoNode(filePath, container) {
             return nextEntry.objectUrl;
           })
           .catch((error) => {
-            nextEntry.failed = true;
+            if (avatarCache.get(filePath) === nextEntry) {
+              avatarCache.delete(filePath);
+            }
             throw error;
           });
         avatarCache.set(filePath, nextEntry);
         objectUrl = await nextEntry.promise;
       }
     }
-    if (epoch !== uiEpoch || !container.isConnected || container.dataset.avatarUrl !== filePath || !objectUrl) {
+    if (epoch !== uiEpoch || (awaited && !container.isConnected) || container.dataset.avatarUrl !== filePath || !objectUrl) {
       return;
     }
     const existingImg = container.querySelector('img.avatar-img');
-    if (existingImg && existingImg.src === objectUrl) {
-      return;
+    if (existingImg) {
+      if (existingImg.src === objectUrl) {
+        return;
+      }
+      existingImg.remove();
     }
     const img = el('img', 'avatar-img');
     img.src = objectUrl;
@@ -631,7 +671,10 @@ async function loadAvatarIntoNode(filePath, container) {
       img.remove();
     });
     container.append(img);
-  } catch {
+  } catch (error) {
+    if (error instanceof SocialSessionError && epoch === uiEpoch) {
+      expireSession();
+    }
     // Keep initials fallback silently on missing/unproxied/failed avatars.
   }
 }
@@ -668,15 +711,49 @@ function pruneMedia() {
       videoCache.delete(id);
     }
   }
+  const wantedAvatars = new Set();
+  const accountAvatar = safeAvatarFilePath(account && account.avatarUrl);
+  if (accountAvatar) {
+    wantedAvatars.add(accountAvatar);
+  }
+  for (const post of posts) {
+    const pAvatar = safeAvatarFilePath(post.author && post.author.avatarUrl);
+    if (pAvatar) {
+      wantedAvatars.add(pAvatar);
+    }
+    const cState = commentsState.get(post.id);
+    if (cState && Array.isArray(cState.items)) {
+      for (const comment of cState.items) {
+        const cAvatar = safeAvatarFilePath(comment.author && comment.author.avatarUrl);
+        if (cAvatar) {
+          wantedAvatars.add(cAvatar);
+        }
+      }
+    }
+  }
+  const dialogAvatar = safeAvatarFilePath(authorDialogProfile && authorDialogProfile.avatarUrl);
+  if (dialogAvatar) {
+    wantedAvatars.add(dialogAvatar);
+  }
+  for (const [path, entry] of avatarCache) {
+    if (!wantedAvatars.has(path)) {
+      if (entry.objectUrl) {
+        env.URL.revokeObjectURL(entry.objectUrl);
+      }
+      avatarCache.delete(path);
+    }
+  }
 }
 
 async function loadImage(post, container) {
   const epoch = uiEpoch;
   const id = imageUuid(post.image && post.image.url);
   if (!id) {
+    container.dataset.imageError = '1';
     container.textContent = t('imageUnavailable');
     return;
   }
+  container.dataset.imageError = '';
   const cached = imageCache.get(id);
   try {
     let objectUrl = cached && cached.objectUrl;
@@ -710,6 +787,7 @@ async function loadImage(post, container) {
     if (!posts.some((item) => item.id === post.id) || imageCache.get(id)?.objectUrl !== objectUrl || !container.isConnected) {
       return;
     }
+    container.dataset.imageError = '';
     container.textContent = '';
     const image = el('img', 'post-image');
     image.src = objectUrl;
@@ -730,6 +808,7 @@ async function loadImage(post, container) {
       return;
     }
     if (epoch === uiEpoch && container.isConnected) {
+      container.dataset.imageError = '1';
       container.textContent = t('imageUnavailable');
     }
   }
@@ -737,6 +816,7 @@ async function loadImage(post, container) {
 
 function renderVideoArea(post, container) {
   container.replaceChildren();
+  container.dataset.videoLoading = '';
   const id = videoUuid(post.video && post.video.url);
   const cached = id ? videoCache.get(id) : null;
   if (cached && cached.objectUrl) {
@@ -750,6 +830,7 @@ function renderVideoArea(post, container) {
 }
 
 function appendVideoElement(container, objectUrl, post) {
+  container.dataset.videoLoading = '';
   const video = env.document.createElement('video');
   video.className = 'post-video';
   video.controls = true;
@@ -762,9 +843,22 @@ function appendVideoElement(container, objectUrl, post) {
       return;
     }
     showVideoFailure(container, post, () => {
-      if (container.isConnected) {
-        appendVideoElement(container, objectUrl, post);
+      if (!container.isConnected) {
+        return;
       }
+      const card = container.closest('.post-card');
+      const curPost = (card && card._post) || post;
+      const vidId = videoUuid(curPost.video && curPost.video.url);
+      if (vidId) {
+        const cached = videoCache.get(vidId);
+        if (cached) {
+          if (cached.objectUrl) {
+            env.URL.revokeObjectURL(cached.objectUrl);
+          }
+          videoCache.delete(vidId);
+        }
+      }
+      void loadVideo(curPost, container);
     }, true);
   });
   container.replaceChildren(video);
@@ -772,8 +866,11 @@ function appendVideoElement(container, objectUrl, post) {
 
 function showVideoFailure(container, post, retry, playbackFailed) {
   const hadFocus = container.contains(env.document.activeElement);
+  container.dataset.videoLoading = '';
   container.replaceChildren();
-  const message = el('p', 'video-error', playbackFailed ? t('videoPlaybackFailed') : t('videoUnavailable'));
+  const errorKey = playbackFailed ? 'videoPlaybackFailed' : 'videoUnavailable';
+  const message = el('p', 'video-error', t(errorKey));
+  message.dataset.videoErrorKey = errorKey;
   const retryButton = actionButton(t('retryVideo'), 'video-retry-button');
   retryButton.type = 'button';
   retryButton.addEventListener('click', () => retry());
@@ -787,9 +884,10 @@ async function loadVideo(post, container) {
   const epoch = uiEpoch;
   const id = videoUuid(post.video && post.video.url);
   if (!id) {
-    container.textContent = t('videoUnavailable');
+    showVideoFailure(container, post, () => void loadVideo(post, container), false);
     return;
   }
+  container.dataset.videoLoading = '1';
   container.textContent = t('videoLoading');
   const cached = videoCache.get(id);
   try {
@@ -938,19 +1036,37 @@ function expireSession() {
   setStatus(els.loginStatus, 'sessionExpired');
 }
 
-function handleError(error, fallbackKey, statusElement) {
+async function handleError(error, fallbackKey, statusElement, options = {}) {
   if (error instanceof SocialSessionError) {
     expireSession();
     return;
   }
   if (error instanceof SocialApiError && error.payload && error.payload.error
       && error.payload.error.code === 'SOCIAL_FEATURE_DISABLED') {
+    if (options.videoRelated) {
+      const epoch = uiEpoch;
+      await bootstrapConfig();
+      if (epoch !== uiEpoch) {
+        return;
+      }
+      if (surfaceState === 'enabled') {
+        if (featureConfig && !featureConfig.videoUploadsEnabled) {
+          if (typeof options.onVideoDisabled === 'function') {
+            options.onVideoDisabled();
+          }
+          setStatus(statusElement, 'mediaVideoDisabled');
+          return;
+        }
+        setStatus(statusElement, fallbackKey);
+      }
+      return;
+    }
     featureConfig = null;
     surfaceState = 'disabled';
     applySurfaceState();
     applyLanguage();
-    // This error may also mean uploads alone are off. Re-read the current flags
-    // and supersede any read started before the request was refused.
+    // Re-read the current flags and supersede any config read started before
+    // the request was refused so an older enabled response cannot reopen UI.
     void bootstrapConfig();
     return;
   }
@@ -1011,6 +1127,10 @@ async function loadFeed(reset) {
   const epoch = uiEpoch;
   const seq = ++feedRequestSeq;
   feedLoading = true;
+  if (reset) {
+    nextCursor = null;
+    els.loadMoreButton.hidden = true;
+  }
   els.refreshButton.disabled = true;
   els.loadMoreButton.disabled = true;
   setStatus(els.feedStatus, 'loading', true);
@@ -1028,7 +1148,7 @@ async function loadFeed(reset) {
     setStatus(els.feedStatus, posts.length ? '' : emptyFeedStatusKey(), !posts.length);
   } catch (error) {
     if (epoch === uiEpoch && seq === feedRequestSeq) {
-      handleError(error, 'feedError', els.feedStatus);
+      await handleError(error, 'feedError', els.feedStatus);
     }
   } finally {
     if (epoch === uiEpoch && seq === feedRequestSeq) {
@@ -1138,7 +1258,9 @@ function createPostCard(post) {
 
 function syncPostCard(article, post) {
   article._post = post;
-  // 1. Header metadata (author name & edited badge)
+  // 1. Header metadata (avatar, author name & edited badge)
+  const triggerEl = article.querySelector('.post-header .author-trigger');
+  syncAvatarNode(triggerEl, post.author);
   const nameEl = article.querySelector('.post-header .author-name');
   if (nameEl) {
     nameEl.textContent = displayName(post.author);
@@ -1166,20 +1288,26 @@ function syncPostCard(article, post) {
       editForm = createInlineEditForm({
         initialValue: editState.draft,
         maxLength: 1000,
+        ariaLabel: t('composerLabel'),
         busy: editState.saving,
         errorKey: editState.error,
         onInput: (val) => {
           editState.draft = val;
         },
         onCancel: () => {
-          editingPosts.delete(post.id);
-          syncPostCard(article, post);
+          const curPost = article._post || post;
+          editingPosts.delete(curPost.id);
+          syncPostCard(article, curPost);
+          const editBtn = article.querySelector('[data-action="edit"]');
+          if (editBtn) {
+            editBtn.focus();
+          }
         },
-        onSave: () => void savePostEdit(post, article),
+        onSave: () => void savePostEdit(article._post || post, article),
       });
       bodyWrap.replaceChildren(editForm);
     } else {
-      syncInlineEditForm(editForm, editState, 1000);
+      syncInlineEditForm(editForm, editState, 1000, t('composerLabel'));
     }
   } else if (post.body) {
     let bodyP = bodyWrap.querySelector('.post-body');
@@ -1201,12 +1329,23 @@ function syncPostCard(article, post) {
     imageWrap.hidden = false;
     if (imageWrap.dataset.mediaUrl !== nextImgUrl) {
       imageWrap.dataset.mediaUrl = nextImgUrl;
+      imageWrap.dataset.imageError = '';
       imageWrap.textContent = t('loading');
       void loadImage(post, imageWrap);
+    } else {
+      const imgEl = imageWrap.querySelector('img.post-image');
+      if (imgEl) {
+        imgEl.alt = t('imageAlt');
+      } else if (imageWrap.dataset.imageError === '1') {
+        imageWrap.textContent = t('imageUnavailable');
+      } else if (imageWrap.textContent) {
+        imageWrap.textContent = t('loading');
+      }
     }
   } else {
     imageWrap.hidden = true;
     imageWrap.dataset.mediaUrl = '';
+    imageWrap.dataset.imageError = '';
     imageWrap.replaceChildren();
   }
 
@@ -1218,10 +1357,30 @@ function syncPostCard(article, post) {
     if (videoWrap.dataset.mediaUrl !== nextVidUrl) {
       videoWrap.dataset.mediaUrl = nextVidUrl;
       renderVideoArea(post, videoWrap);
+    } else {
+      const loadBtn = videoWrap.querySelector('.video-load-button');
+      if (loadBtn) {
+        loadBtn.textContent = t('loadVideo');
+      }
+      const errMsg = videoWrap.querySelector('.video-error');
+      if (errMsg && errMsg.dataset.videoErrorKey) {
+        errMsg.textContent = t(errMsg.dataset.videoErrorKey);
+      }
+      const retryBtn = videoWrap.querySelector('.video-retry-button');
+      if (retryBtn) {
+        retryBtn.textContent = t('retryVideo');
+      }
+      const videoEl = videoWrap.querySelector('video.post-video');
+      if (videoEl) {
+        videoEl.setAttribute('aria-label', t('videoAlt'));
+      } else if (videoWrap.dataset.videoLoading === '1') {
+        videoWrap.textContent = t('videoLoading');
+      }
     }
   } else {
     videoWrap.hidden = true;
     videoWrap.dataset.mediaUrl = '';
+    videoWrap.dataset.videoLoading = '';
     videoWrap.replaceChildren();
   }
 
@@ -1389,8 +1548,15 @@ function syncReactionPickerTray(tray, article, post) {
       btn.type = 'button';
       btn.dataset.emoji = emoji;
       btn.addEventListener('click', () => {
-        openReactionPickers.delete(article._post.id);
-        void toggleReaction(article._post, emoji, btn);
+        const curPost = article._post || post;
+        openReactionPickers.delete(curPost.id);
+        tray.hidden = true;
+        const pickerBtn = article.querySelector('[data-action="reaction-picker"]');
+        if (pickerBtn) {
+          pickerBtn.setAttribute('aria-expanded', 'false');
+          pickerBtn.classList.remove('active');
+        }
+        void toggleReaction(curPost, emoji, btn);
       });
       tray.append(btn);
     }
@@ -1405,13 +1571,16 @@ function syncReactionPickerTray(tray, article, post) {
   }
 }
 
-function createInlineEditForm({ initialValue, maxLength, busy, errorKey, onInput, onCancel, onSave }) {
+function createInlineEditForm({ initialValue, maxLength, ariaLabel, busy, errorKey, onInput, onCancel, onSave }) {
   const form = el('div', 'inline-edit-form');
   const textarea = el('textarea', 'text-input inline-edit-input');
   textarea.maxLength = maxLength;
   textarea.rows = 3;
   textarea.value = initialValue;
   textarea.disabled = busy;
+  if (ariaLabel) {
+    textarea.setAttribute('aria-label', ariaLabel);
+  }
   const counter = el('span', 'muted post-counter', `${initialValue.length}/${maxLength}`);
   textarea.addEventListener('input', () => {
     counter.textContent = `${textarea.value.length}/${maxLength}`;
@@ -1441,7 +1610,7 @@ function createInlineEditForm({ initialValue, maxLength, busy, errorKey, onInput
   return form;
 }
 
-function syncInlineEditForm(form, editState, maxLength) {
+function syncInlineEditForm(form, editState, maxLength, ariaLabel) {
   const textarea = form.querySelector('textarea');
   const counter = form.querySelector('.post-counter');
   const status = form.querySelector('.status-message');
@@ -1449,6 +1618,12 @@ function syncInlineEditForm(form, editState, maxLength) {
   const saveBtn = form.querySelector('[data-edit-action="save"]');
   if (textarea) {
     textarea.disabled = editState.saving;
+    if (ariaLabel) {
+      textarea.setAttribute('aria-label', ariaLabel);
+    }
+    if (textarea.value !== editState.draft && env.document.activeElement !== textarea) {
+      textarea.value = editState.draft;
+    }
   }
   if (counter && textarea) {
     counter.textContent = `${textarea.value.length}/${maxLength}`;
@@ -1481,6 +1656,15 @@ async function savePostEdit(post, article) {
     }
     return;
   }
+  if (nextBody.length > 1000) {
+    editState.error = 'postTooLong';
+    syncPostCard(article, post);
+    const ta = article.querySelector('.post-body-wrap textarea');
+    if (ta) {
+      ta.focus();
+    }
+    return;
+  }
   const epoch = uiEpoch;
   editState.saving = true;
   editState.error = '';
@@ -1493,9 +1677,14 @@ async function savePostEdit(post, article) {
     if (epoch !== uiEpoch || !account) {
       return;
     }
-    Object.assign(post, updated);
-    editingPosts.delete(post.id);
-    syncPostCard(article, post);
+    const targetPost = posts.find((item) => item.id === post.id) || post;
+    Object.assign(targetPost, updated);
+    editingPosts.delete(targetPost.id);
+    syncPostCard(article, targetPost);
+    const editBtn = article.querySelector('[data-action="edit"]');
+    if (editBtn) {
+      editBtn.focus();
+    }
   } catch (error) {
     if (epoch !== uiEpoch) {
       return;
@@ -1506,7 +1695,7 @@ async function savePostEdit(post, article) {
       return;
     }
     if (error instanceof SocialApiError && error.payload?.error?.code === 'SOCIAL_FEATURE_DISABLED') {
-      handleError(error, 'editFailed', els.feedStatus);
+      void handleError(error, 'editFailed', els.feedStatus);
       return;
     }
     editState.error = 'editFailed';
@@ -1865,6 +2054,8 @@ function syncCommentCard(card, post, comment) {
   card._post = post;
   card._comment = comment;
 
+  const triggerEl = card.querySelector('.author-trigger');
+  syncAvatarNode(triggerEl, comment.author, 'avatar-sm');
   const nameEl = card.querySelector('.author-name');
   if (nameEl) {
     nameEl.textContent = displayName(comment.author);
@@ -1891,20 +2082,27 @@ function syncCommentCard(card, post, comment) {
       editForm = createInlineEditForm({
         initialValue: editState.draft,
         maxLength: 500,
+        ariaLabel: t('commentLabel'),
         busy: editState.saving,
         errorKey: editState.error,
         onInput: (val) => {
           editState.draft = val;
         },
         onCancel: () => {
-          editingComments.delete(comment.id);
-          syncCommentCard(card, card._post, card._comment);
+          const curPost = card._post || post;
+          const curComment = card._comment || comment;
+          editingComments.delete(curComment.id);
+          syncCommentCard(card, curPost, curComment);
+          const editBtn = card.querySelector('[data-action="edit-comment"]');
+          if (editBtn) {
+            editBtn.focus();
+          }
         },
-        onSave: () => void saveCommentEdit(card._post, card._comment, card),
+        onSave: () => void saveCommentEdit(card._post || post, card._comment || comment, card),
       });
       bodyWrap.replaceChildren(editForm);
     } else {
-      syncInlineEditForm(editForm, editState, 500);
+      syncInlineEditForm(editForm, editState, 500, t('commentLabel'));
     }
   } else {
     let p = bodyWrap.querySelector('.comment-body');
@@ -1970,6 +2168,15 @@ async function saveCommentEdit(post, comment, card) {
     }
     return;
   }
+  if (nextBody.length > 500) {
+    editState.error = 'commentTooLong';
+    syncCommentCard(card, post, comment);
+    const ta = card.querySelector('.comment-body-wrap textarea');
+    if (ta) {
+      ta.focus();
+    }
+    return;
+  }
   const epoch = uiEpoch;
   editState.saving = true;
   editState.error = '';
@@ -1985,6 +2192,10 @@ async function saveCommentEdit(post, comment, card) {
     Object.assign(comment, updated);
     editingComments.delete(comment.id);
     syncCommentCard(card, post, comment);
+    const editBtn = card.querySelector('[data-action="edit-comment"]');
+    if (editBtn) {
+      editBtn.focus();
+    }
   } catch (error) {
     if (epoch !== uiEpoch) {
       return;
@@ -1995,7 +2206,7 @@ async function saveCommentEdit(post, comment, card) {
       return;
     }
     if (error instanceof SocialApiError && error.payload?.error?.code === 'SOCIAL_FEATURE_DISABLED') {
-      handleError(error, 'editFailed', els.feedStatus);
+      void handleError(error, 'editFailed', els.feedStatus);
       return;
     }
     editState.error = 'editFailed';
@@ -2008,6 +2219,11 @@ async function submitComment(post, input, button) {
   const body = input.value.trim();
   if (!body) {
     setStatus(els.feedStatus, 'commentValidation');
+    input.focus();
+    return;
+  }
+  if (body.length > 500) {
+    setStatus(els.feedStatus, 'commentTooLong');
     input.focus();
     return;
   }
@@ -2118,7 +2334,7 @@ function restoreReportFocus() {
 
 function closeReport() {
   reportTarget = null;
-  if (els.reportDialog && els.reportDialog.open) {
+  if (els.reportDialog && (els.reportDialog.open || els.reportDialog.hasAttribute('open'))) {
     if (typeof els.reportDialog.close === 'function') {
       els.reportDialog.close();
     } else {
@@ -2220,7 +2436,7 @@ async function openAuthorProfile(authorId, fallbackName, triggerEl) {
 function closeAuthorDialog() {
   authorDialogSeq += 1;
   authorDialogProfile = null;
-  if (els.authorDialog && els.authorDialog.open) {
+  if (els.authorDialog && (els.authorDialog.open || els.authorDialog.hasAttribute('open'))) {
     if (typeof els.authorDialog.close === 'function') {
       els.authorDialog.close();
     } else {
@@ -2233,7 +2449,7 @@ function closeAuthorDialog() {
   authorDialogReturnFocus = null;
 }
 
-function applyAuthorFilter(profile) {
+async function applyAuthorFilter(profile) {
   if (!profile || !profile.userId) {
     return;
   }
@@ -2243,7 +2459,14 @@ function applyAuthorFilter(profile) {
   };
   renderAuthorFilterChip();
   closeAuthorDialog();
-  void loadFeed(true);
+  await loadFeed(true);
+  if (account && (!env.document.activeElement || !env.document.activeElement.isConnected)) {
+    if (els.authorFilterClear && els.authorFilterChip && !els.authorFilterChip.hidden) {
+      els.authorFilterClear.focus();
+    } else if (els.feedSearchInput) {
+      els.feedSearchInput.focus();
+    }
+  }
 }
 
 function formatBytes(size) {
@@ -2352,6 +2575,11 @@ async function submitPost() {
     els.postBody.focus();
     return;
   }
+  if (body.length > 1000) {
+    setStatus(els.composerStatus, 'postTooLong');
+    els.postBody.focus();
+    return;
+  }
   if (fileIsVideo && !body) {
     setStatus(els.composerStatus, 'videoNeedsCaption');
     els.postBody.focus();
@@ -2422,7 +2650,14 @@ async function submitPost() {
     reconcileFeed();
   } catch (error) {
     if (epoch === uiEpoch) {
-      handleError(error, phase === 'upload' ? 'uploadFailed' : 'postFailed', els.composerStatus);
+      const videoRelated = fileIsVideo || Boolean(pendingUpload && pendingUpload.video);
+      await handleError(error, phase === 'upload' ? 'uploadFailed' : 'postFailed', els.composerStatus, {
+        videoRelated,
+        onVideoDisabled: () => {
+          clearMediaSelection();
+          postDraft = { id: env.crypto.randomUUID(), submittedBody: null, file: null };
+        },
+      });
     }
   } finally {
     if (epoch === uiEpoch) {
@@ -2453,7 +2688,7 @@ async function signIn(event) {
   } catch (error) {
     if (error instanceof SocialApiError && error.payload && error.payload.error
         && error.payload.error.code === 'SOCIAL_FEATURE_DISABLED') {
-      handleError(error, 'signinFailed', els.loginStatus);
+      await handleError(error, 'signinFailed', els.loginStatus);
       return;
     }
     if (!account) {
@@ -2695,18 +2930,32 @@ export function initSocialApp(overrides = {}) {
     reportTarget = null;
     restoreReportFocus();
   });
+  els.reportDialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && typeof els.reportDialog.showModal !== 'function') {
+      event.preventDefault();
+      closeReport();
+    }
+  });
   if (els.authorDialog) {
     els.authorDialogClose.addEventListener('click', closeAuthorDialog);
-    els.authorDialogFilter.addEventListener('click', () => applyAuthorFilter(authorDialogProfile));
+    els.authorDialogFilter.addEventListener('click', () => void applyAuthorFilter(authorDialogProfile));
     els.authorDialog.addEventListener('cancel', () => {
+      authorDialogSeq += 1;
       authorDialogProfile = null;
     });
     els.authorDialog.addEventListener('close', () => {
+      authorDialogSeq += 1;
       authorDialogProfile = null;
       if (authorDialogReturnFocus && authorDialogReturnFocus.isConnected) {
         authorDialogReturnFocus.focus();
       }
       authorDialogReturnFocus = null;
+    });
+    els.authorDialog.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && typeof els.authorDialog.showModal !== 'function') {
+        event.preventDefault();
+        closeAuthorDialog();
+      }
     });
   }
 

@@ -379,60 +379,62 @@ export default function UsersPage() {
               {formatError(actionError)}
             </div>
           )}
-          <div className="action-row">
-            {!selected.user.suspendedAt ? (
-              <button
-                className="btn danger sm"
-                onClick={() => setAction({ kind: 'suspend' })}
-              >
-                {t('users.action.suspend')}
-              </button>
-            ) : (
-              <button
-                className="btn primary sm"
-                onClick={() => setAction({ kind: 'unsuspend' })}
-              >
-                {t('users.action.unsuspend')}
-              </button>
-            )}
-            <button
-              className="btn ghost sm"
-              onClick={() => setAction({ kind: 'revoke' })}
-            >
-              {t('users.action.revoke')}
-            </button>
-            {isAdmin && (
-              <>
-                <select
-                  className="select"
-                  style={{ width: 'auto' }}
-                  aria-label={t('users.action.role')}
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) setAction({ kind: 'role', role: e.target.value });
-                    e.target.value = '';
-                  }}
+          {!selected.user.deletedAt && (
+            <div className="action-row">
+              {!selected.user.suspendedAt ? (
+                <button
+                  className="btn danger sm"
+                  onClick={() => setAction({ kind: 'suspend' })}
                 >
-                  <option value="">{t('users.action.role')}</option>
-                  {['USER', 'MODERATOR', 'ADMIN']
-                    .filter((r) => r !== selected.user.role)
-                    .map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                </select>
-              </>
-            )}
-            <button
-              className="btn ghost sm"
-              onClick={() => setAction({ kind: 'warn' })}
-            >
-              {t('users.action.warn')}
-            </button>
-          </div>
+                  {t('users.action.suspend')}
+                </button>
+              ) : (
+                <button
+                  className="btn primary sm"
+                  onClick={() => setAction({ kind: 'unsuspend' })}
+                >
+                  {t('users.action.unsuspend')}
+                </button>
+              )}
+              <button
+                className="btn ghost sm"
+                onClick={() => setAction({ kind: 'revoke' })}
+              >
+                {t('users.action.revoke')}
+              </button>
+              {isAdmin && (
+                <>
+                  <select
+                    className="select"
+                    style={{ width: 'auto' }}
+                    aria-label={t('users.action.role')}
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) setAction({ kind: 'role', role: e.target.value });
+                      e.target.value = '';
+                    }}
+                  >
+                    <option value="">{t('users.action.role')}</option>
+                    {['USER', 'MODERATOR', 'ADMIN']
+                      .filter((r) => r !== selected.user.role)
+                      .map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                  </select>
+                </>
+              )}
+              <button
+                className="btn ghost sm"
+                onClick={() => setAction({ kind: 'warn' })}
+              >
+                {t('users.action.warn')}
+              </button>
+            </div>
+          )}
           <section>
             <h3>{t('users.col.status')}</h3>
             <div>
-              <Chip tone={selected.user.suspendedAt ? 'high' : 'success'}>
+              <Chip tone={selected.user.suspendedAt ? 'high' : selected.user.deletedAt ? 'low' : 'success'}>
                 {t(statusOf(selected.user))}
               </Chip>{' '}
               <Chip>{selected.user.role}</Chip>

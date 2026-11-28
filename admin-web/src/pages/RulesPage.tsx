@@ -60,7 +60,7 @@ export default function RulesPage() {
   const [testResult, setTestResult] = useState<{ matched: boolean; matches: TestHit[] } | null>(
     null,
   );
-  const [testError, setTestError] = useState(false);
+  const [testError, setTestError] = useState<unknown>(null);
   const [testBusy, setTestBusy] = useState(false);
   const latest = useLatestRequest();
   const formatError = useApiErrorMessage();
@@ -179,7 +179,7 @@ export default function RulesPage() {
     if (testBusy) return;
     setTestBusy(true);
     setTestResult(null);
-    setTestError(false);
+    setTestError(null);
     // Only the newest response may write state: a second click on Run must not
     // be overwritten by a slower earlier result.
     latest(api<{ matched: boolean; matches: TestHit[] }>('/api/v1/admin/rules/test', {
@@ -189,10 +189,10 @@ export default function RulesPage() {
         pattern: testType === 'CARD' ? undefined : testPattern,
         sampleText: testSample,
       },
-    }), (res) => {
+    }), (res, err) => {
       setTestBusy(false);
       if (res) setTestResult(res);
-      else setTestError(true);
+      else setTestError(err ?? true);
     });
   };
 
@@ -224,6 +224,7 @@ export default function RulesPage() {
               <input
                 id="rule-name"
                 className="input"
+                maxLength={200}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
@@ -274,6 +275,7 @@ export default function RulesPage() {
               <input
                 id="rule-pattern"
                 className="input mono"
+                maxLength={200}
                 value={form.pattern}
                 onChange={(e) => setForm({ ...form, pattern: e.target.value })}
               />
@@ -391,6 +393,7 @@ export default function RulesPage() {
           {testType !== 'CARD' && (
             <input
               className="input mono"
+              maxLength={200}
               placeholder={t('rules.field.pattern')}
               aria-label={t('rules.field.pattern')}
               value={testPattern}
@@ -402,6 +405,7 @@ export default function RulesPage() {
           <textarea
             className="textarea"
             rows={3}
+            maxLength={4000}
             placeholder={t('rules.test.sample')}
             aria-label={t('rules.test.sample')}
             value={testSample}
@@ -417,9 +421,9 @@ export default function RulesPage() {
         >
           {testBusy ? t('common.loading') : t('rules.test.run')}
         </button>
-        {testError && (
+        {testError != null && (
           <div className="form-error" role="alert" style={{ marginTop: 12 }}>
-            {t('common.error')}
+            {formatError(testError)}
           </div>
         )}
         {testResult && (

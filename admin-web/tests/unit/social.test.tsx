@@ -411,4 +411,179 @@ describe('SocialPage', () => {
     );
     expect(container.textContent).not.toMatch(/\b(social|common)\.[a-z]/);
   });
+
+  it('merges 409 conflict per field so untouched fields adopt server edits while edited fields stay local', async () => {
+    const user = userEvent.setup();
+    const { setState } = stubRoutes({ state: socialState({ revision: 1, draft: announcement() }) });
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Live announcement' });
+    const viGroup = screen.getByRole('group', { name: 'Tiếng Việt' });
+    const enGroup = screen.getByRole('group', { name: 'English' });
+    const viTitle = viGroup.querySelector('input') as HTMLInputElement;
+    const viBody = viGroup.querySelector('textarea') as HTMLTextAreaElement;
+    const enTitle = enGroup.querySelector('input') as HTMLInputElement;
+    const enBody = enGroup.querySelector('textarea') as HTMLTextAreaElement;
+
+    // Edit only viTitle locally; another admin concurrently updates titleEn and bodyVi.
+    await user.clear(viTitle);
+    await user.type(viTitle, 'Local VI title');
+
+    setState(
+      socialState({
+        revision: 2,
+        draft: announcement({
+          titleEn: 'Server EN title',
+          bodyVi: 'Server VI body',
+        }),
+      }),
+    );
+    apiMock.mockRejectedValueOnce(new ApiException(409, 'SOCIAL_SETTINGS_CONFLICT', 'stale'));
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Another admin saved changes first/);
+    await waitFor(() => expect(enTitle).toHaveValue('Server EN title'));
+    expect(viBody).toHaveValue('Server VI body');
+    expect(viTitle).toHaveValue('Local VI title');
+    expect(enBody).toHaveValue('Body EN');
+
+    apiMock.mockResolvedValueOnce(
+      socialState({
+        revision: 3,
+        draft: announcement({
+          titleVi: 'Local VI title',
+          bodyVi: 'Server VI body',
+          titleEn: 'Server EN title',
+          bodyEn: 'Body EN',
+        }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/social/settings/announcement/draft', {
+        method: 'PUT',
+        body: {
+          expectedRevision: 2,
+          titleVi: 'Local VI title',
+          bodyVi: 'Server VI body',
+          titleEn: 'Server EN title',
+          bodyEn: 'Body EN',
+        },
+      }),
+    );
+  });
+
+  it('merges 409 conflict per field when before.draft was null and server created a draft', async () => {
+    const user = userEvent.setup();
+    const { setState } = stubRoutes({ state: socialState({ revision: 1, draft: null }) });
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Live announcement' });
+    const viGroup = screen.getByRole('group', { name: 'Tiếng Việt' });
+    const enGroup = screen.getByRole('group', { name: 'English' });
+    const viTitle = viGroup.querySelector('input') as HTMLInputElement;
+    const viBody = viGroup.querySelector('textarea') as HTMLTextAreaElement;
+    const enTitle = enGroup.querySelector('input') as HTMLInputElement;
+    const enBody = enGroup.querySelector('textarea') as HTMLTextAreaElement;
+
+    // Fill all four so Save draft is enabled, then change only viTitle? Wait: from null,
+    // any non-empty field differs from EMPTY_DRAFT; test editing viTitle + viBody while
+    // server created enTitle + enBody (or simulate 409 via flags/publish or saveDraft).
+    // Here we fill viTitle, enTitle, viBody, enBody? Wait: if we fill all 4, all 4 differ from EMPTY_DRAFT.
+    // To have untouched fields with before.draft === null, trigger 409 from Save switches (flags) after typing only viTitle!
+    await user.type(viTitle, 'My new VI title');
+    await user.click(screen.getByRole('checkbox', { name: /Web Social feed/ }));
+    setState(
+      socialState({
+        revision: 2,
+        draft: {
+          titleVi: 'Server VI title',
+          bodyVi: 'Server VI body',
+          titleEn: 'Server EN title',
+          bodyEn: 'Server EN body',
+        },
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save switches' }));
+    apiMock.mockRejectedValueOnce(new ApiException(409, 'SOCIAL_SETTINGS_CONFLICT', 'stale'));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Another admin saved changes first/);
+    await waitFor(() => expect(viBody).toHaveValue('Server VI body'));
+    expect(enTitle).toHaveValue('Server EN title');
+    expect(enBody).toHaveValue('Server EN body');
+    expect(viTitle).toHaveValue('My new VI title');
+  });
+
+  it('preserves unsaved flag checkboxes across saveDraft, publish, and unpublish', async () => {
+    const user = userEvent.setup();
+    const draft = announcement();
+    stubRoutes({ state: socialState({ revision: 1, draft }) });
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Live announcement' });
+    const webCheckbox = screen.getByRole('checkbox', { name: /Web Social feed/ });
+    const videoCheckbox = screen.getByRole('checkbox', { name: /Video uploads/ });
+    const saveFlagsBtn = screen.getByRole('button', { name: 'Save switches' });
+
+    await user.click(webCheckbox);
+    expect(webCheckbox).toBeChecked();
+    expect(saveFlagsBtn).toBeEnabled();
+
+    const viTitle = screen.getByRole('group', { name: 'Tiếng Việt' }).querySelector('input') as HTMLInputElement;
+    await user.clear(viTitle);
+    await user.type(viTitle, 'Updated VI');
+
+    const updatedDraft = announcement({ titleVi: 'Updated VI' });
+    apiMock.mockResolvedValueOnce(
+      socialState({ revision: 2, webEnabled: false, videoUploadsEnabled: false, draft: updatedDraft }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Draft saved');
+    expect(webCheckbox).toBeChecked();
+    expect(saveFlagsBtn).toBeEnabled();
+
+    await user.click(videoCheckbox);
+    expect(videoCheckbox).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    apiMock.mockResolvedValueOnce(
+      socialState({ revision: 3, webEnabled: false, videoUploadsEnabled: false, draft: updatedDraft, published: updatedDraft }),
+    );
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByText(/Updated VI — Nội dung VI/)).toBeInTheDocument();
+    expect(webCheckbox).toBeChecked();
+    expect(videoCheckbox).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: 'Take down' }));
+    apiMock.mockResolvedValueOnce(
+      socialState({ revision: 4, webEnabled: false, videoUploadsEnabled: false, draft: updatedDraft, published: null }),
+    );
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByText('Nothing is live right now.')).toBeInTheDocument();
+    expect(webCheckbox).toBeChecked();
+    expect(videoCheckbox).toBeChecked();
+  });
+
+  it('displays trimmed character counts matching validation parity', async () => {
+    stubRoutes({ state: socialState({ draft: announcement() }) });
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Live announcement' });
+    const viGroup = screen.getByRole('group', { name: 'Tiếng Việt' });
+    const viTitle = viGroup.querySelector('input') as HTMLInputElement;
+    const viBody = viGroup.querySelector('textarea') as HTMLTextAreaElement;
+    const saveDraftBtn = screen.getByRole('button', { name: 'Save draft' });
+
+    fireEvent.change(viTitle, { target: { value: `  ${'a'.repeat(99)}  ` } });
+    expect(within(viGroup).getByText('Title — 99/100')).toBeInTheDocument();
+    expect(viTitle).not.toHaveAttribute('aria-invalid');
+    expect(saveDraftBtn).toBeEnabled();
+
+    fireEvent.change(viBody, { target: { value: `  ${'b'.repeat(501)}  ` } });
+    expect(within(viGroup).getByText('Body — 501/500')).toBeInTheDocument();
+    expect(viBody).toHaveAttribute('aria-invalid', 'true');
+    expect(within(viGroup).getByText('Exceeds the 500-character limit')).toBeInTheDocument();
+    expect(saveDraftBtn).toBeDisabled();
+  });
 });

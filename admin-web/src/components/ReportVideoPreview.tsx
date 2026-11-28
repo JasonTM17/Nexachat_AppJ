@@ -18,21 +18,40 @@ export function ReportVideoPreview({ reportId }: { reportId: string }) {
   const [failed, setFailed] = useState(false);
   const pending = useRef<AbortController | null>(null);
   const objectUrl = useRef<string | null>(null);
+  const loadBtnRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef(false);
 
   useEffect(
-    () => () => {
-      pending.current?.abort();
-      pending.current = null;
-      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-      objectUrl.current = null;
+    () => {
+      setUrl(null);
+      setLoading(false);
+      setFailed(false);
+      return () => {
+        pending.current?.abort();
+        pending.current = null;
+        if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+        objectUrl.current = null;
+      };
     },
-    [],
+    [reportId],
   );
+
+  useEffect(() => {
+    if (!url && restoreFocusRef.current) {
+      restoreFocusRef.current = false;
+      loadBtnRef.current?.focus();
+    }
+  }, [url]);
 
   function close() {
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
     objectUrl.current = null;
     setUrl(null);
+  }
+
+  function handleCloseClick() {
+    restoreFocusRef.current = true;
+    close();
   }
 
   async function load() {
@@ -52,7 +71,8 @@ export function ReportVideoPreview({ reportId }: { reportId: string }) {
       ) {
         return;
       }
-      if (blob.type !== 'video/mp4' || blob.size < 1 || blob.size > MAX_VIDEO_BYTES) {
+      const mime = blob.type.split(';')[0].trim().toLowerCase();
+      if (mime !== 'video/mp4' || blob.size < 1 || blob.size > MAX_VIDEO_BYTES) {
         setFailed(true);
         return;
       }
@@ -85,7 +105,7 @@ export function ReportVideoPreview({ reportId }: { reportId: string }) {
             setFailed(true);
           }}
         />
-        <button type="button" className="btn ghost sm" onClick={close}>
+        <button type="button" className="btn ghost sm" onClick={handleCloseClick}>
           {t('feed.video.close')}
         </button>
       </span>
@@ -95,6 +115,7 @@ export function ReportVideoPreview({ reportId }: { reportId: string }) {
   return (
     <span className="report-video">
       <button
+        ref={loadBtnRef}
         type="button"
         className="btn sm"
         disabled={loading}

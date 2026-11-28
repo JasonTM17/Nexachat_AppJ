@@ -286,6 +286,12 @@ class DomDoc {
     if (!this._listeners.has(type)) this._listeners.set(type, new Set());
     this._listeners.get(type).add(fn);
   }
+  dispatchEvent(event) {
+    const type = String(event.type);
+    for (const fn of [...(this._listeners.get(type) || [])]) {
+      fn.call(this, event);
+    }
+  }
 }
 
 function buildDocumentFromHtml(html) {
@@ -347,7 +353,7 @@ function createStorage() {
   };
 }
 
-function makeHarness({ config = { webEnabled: true, videoUploadsEnabled: true, announcement: null }, darkSystem = false, hash = '', handler } = {}) {
+function makeHarness({ config = { webEnabled: true, videoUploadsEnabled: true, announcement: null }, darkSystem = false, hash = '', search = '', handler } = {}) {
   const doc = buildDocumentFromHtml(HTML);
   const storage = createStorage();
   const requests = [];
@@ -368,14 +374,16 @@ function makeHarness({ config = { webEnabled: true, videoUploadsEnabled: true, a
   };
 
   const windowStub = {
-    location: { origin: 'https://nexachat.io.vn', pathname: '/social/', hash },
+    location: { origin: 'https://nexachat.io.vn', pathname: '/social/', hash, search },
     matchMedia: (q) => ({ matches: darkSystem && q.includes('dark') }),
     confirm: () => true,
     addEventListener: () => {},
   };
 
   const historyStub = {
+    lastUrl: null,
     replaceState: (_s, _t, nextUrl) => {
+      historyStub.lastUrl = nextUrl;
       windowStub.location.hash = nextUrl.includes('#') ? nextUrl.slice(nextUrl.indexOf('#')) : '';
     },
   };
@@ -403,7 +411,7 @@ function makeHarness({ config = { webEnabled: true, videoUploadsEnabled: true, a
     FormData: globalThis.FormData,
   });
 
-  return { doc, storage, requests, copied, revokedUrls, windowStub, ready };
+  return { doc, storage, requests, copied, revokedUrls, windowStub, historyStub, ready };
 }
 
 test('design tokens in social.css match Tonal Plum Light/Dark contract and hidden rule', () => {
@@ -755,4 +763,644 @@ test('multi-emoji picker, inline post/comment edit, author profile/filter, searc
   h.doc.getElementById('post-submit').click();
   await flush();
   assert.equal(h.doc.getElementById('media-selected').hidden, true, 'media selection clears after post succeeds');
+});
+
+async function signInHarness(h, id = 'one@example.com', pass = 'pass-one') {
+  await h.ready;
+  h.doc.getElementById('login-identifier').value = id;
+  h.doc.getElementById('login-password').value = pass;
+  h.doc.getElementById('login-form').dispatchEvent({ type: 'submit' });
+  await flush();
+}
+
+test('inline post & comment edits validate whitespace/maxLength, survive feed refresh without stale closure, localize aria-label, and restore focus', async () => {
+  const authorId = '11111111-1111-1111-1111-111111111111';
+  const postId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const commentId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  let postObj = {
+    id: postId,
+    author: { id: authorId, displayName: 'An Nguyen', avatarUrl: null },
+    body: 'Initial post',
+    image: null,
+    createdAt: '2026-11-28T10:00:00Z',
+    editedAt: null,
+    commentCount: 1,
+    reactions: [],
+    mine: true,
+  };
+  let commentObj = {
+    id: commentId,
+    postId,
+    author: { id: authorId, displayName: 'An Nguyen', avatarUrl: null },
+    body: 'Initial comment',
+    createdAt: '2026-11-28T10:01:00Z',
+    editedAt: null,
+    mine: true,
+  };
+  let failNextPatch = false;
+
+  const h = makeHarness({
+    hash: '#lang-en',
+    handler: async (url, init) => {
+      if (url === '/api/social/v1/session/login') {
+        return jsonRes(200, { user: { id: authorId, displayName: 'An Nguyen' }, accessToken: 'acc', accessTokenExpiresIn: 3600, refreshToken: 'ref' });
+      }
+      if (url.startsWith('/api/social/v1/posts?')) {
+        return jsonRes(200, { items: [{ ...postObj }], nextCursor: null });
+      }
+      if (url.startsWith(`/api/social/v1/posts/${postId}/comments`)) {
+        return jsonRes(200, { items: [{ ...commentObj }], nextCursor: null });
+      }
+      if (url === `/api/social/v1/posts/${postId}` && init.method === 'PATCH') {
+        if (failNextPatch) {
+          failNextPatch = false;
+          return jsonRes(500, { error: { code: 'INTERNAL_ERROR' } });
+        }
+        const body = JSON.parse(init.body);
+        postObj = { ...postObj, body: body.body, editedAt: '2026-11-28T10:05:00Z' };
+        return jsonRes(200, postObj);
+      }
+      if (url === `/api/social/v1/comments/${commentId}` && init.method === 'PATCH') {
+        const body = JSON.parse(init.body);
+        commentObj = { ...commentObj, body: body.body, editedAt: '2026-11-28T10:06:00Z' };
+        return jsonRes(200, commentObj);
+      }
+      return null;
+    },
+  });
+
+  await signInHarness(h);
+  const card = h.doc.getElementById(`post-${postId}`);
+
+  // Whitespace-only post edit -> editEmpty, focuses textarea, no PATCH
+  card.querySelector('[data-action="edit"]').click();
+  const ta = card.querySelector('.post-body-wrap textarea');
+  assert.equal(ta.getAttribute('aria-label'), 'Post body');
+  ta.value = '   ';
+  ta.dispatchEvent({ type: 'input' });
+  card.querySelector('.post-body-wrap [data-edit-action="save"]').click();
+  await flush();
+  assert.equal(card.querySelector('.post-body-wrap .status-message').dataset.statusKey, 'editEmpty');
+  assert.equal(h.doc.activeElement, ta);
+  assert.equal(h.requests.filter((r) => r.init.method === 'PATCH').length, 0);
+
+  // Over-limit post edit -> postTooLong, no PATCH
+  ta.value = 'x'.repeat(1001);
+  ta.dispatchEvent({ type: 'input' });
+  card.querySelector('.post-body-wrap [data-edit-action="save"]').click();
+  await flush();
+  assert.equal(card.querySelector('.post-body-wrap .status-message').dataset.statusKey, 'postTooLong');
+  assert.equal(h.requests.filter((r) => r.init.method === 'PATCH').length, 0);
+
+  // Switch language while editor is open -> aria-label updates to VI
+  h.doc.getElementById('lang-vi-button').click();
+  assert.equal(ta.getAttribute('aria-label'), 'Nội dung bài viết');
+  h.doc.getElementById('lang-en-button').click();
+
+  // Refresh feed while editing post -> newer postObj is adopted in article._post and posts[]
+  postObj = { ...postObj, body: 'Server refreshed post' };
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+
+  // Cancel restores refreshed post body (not stale initial postObj!) and focuses [data-action="edit"]
+  card.querySelector('.post-body-wrap [data-edit-action="cancel"]').click();
+  assert.equal(card.querySelector('.post-body').textContent, 'Server refreshed post');
+  assert.equal(h.doc.activeElement, card.querySelector('[data-action="edit"]'));
+
+  // Re-open, refresh again, then save -> updates refreshed post in posts[] and restores focus
+  card.querySelector('[data-action="edit"]').click();
+  const ta2 = card.querySelector('.post-body-wrap textarea');
+  postObj = { ...postObj, body: 'Refreshed before save', reactions: [{ emoji: '👍', count: 2, mine: false }] };
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+
+  // Failed PATCH shows editFailed and re-enables controls
+  failNextPatch = true;
+  ta2.value = 'Updated after refresh';
+  ta2.dispatchEvent({ type: 'input' });
+  card.querySelector('.post-body-wrap [data-edit-action="save"]').click();
+  await flush();
+  assert.equal(card.querySelector('.post-body-wrap .status-message').dataset.statusKey, 'editFailed');
+  assert.equal(ta2.disabled, false);
+
+  // Retry save succeeds -> mutates refreshed posts[] object & restores focus
+  card.querySelector('.post-body-wrap [data-edit-action="save"]').click();
+  await flush();
+  assert.equal(card.querySelector('.post-body').textContent, 'Updated after refresh');
+  assert.equal(h.doc.activeElement, card.querySelector('[data-action="edit"]'));
+
+  // Comment edit validation (whitespace + >500) + aria-label + focus restore
+  card.querySelector('[data-action="comments"]').click();
+  await flush();
+  const cCard = card.querySelector('.comment-card');
+  cCard.querySelector('[data-action="edit-comment"]').click();
+  const cTa = cCard.querySelector('.comment-body-wrap textarea');
+  assert.equal(cTa.getAttribute('aria-label'), 'Write a comment');
+  cTa.value = '   ';
+  cTa.dispatchEvent({ type: 'input' });
+  cCard.querySelector('.comment-body-wrap [data-edit-action="save"]').click();
+  await flush();
+  assert.equal(cCard.querySelector('.comment-body-wrap .status-message').dataset.statusKey, 'editEmpty');
+  cTa.value = 'y'.repeat(501);
+  cTa.dispatchEvent({ type: 'input' });
+  cCard.querySelector('.comment-body-wrap [data-edit-action="save"]').click();
+  await flush();
+  assert.equal(cCard.querySelector('.comment-body-wrap .status-message').dataset.statusKey, 'commentTooLong');
+  cCard.querySelector('.comment-body-wrap [data-edit-action="cancel"]').click();
+  assert.equal(h.doc.activeElement, cCard.querySelector('[data-action="edit-comment"]'));
+
+  // Composer & comment over-limit client validation
+  const postBodyEl = h.doc.getElementById('post-body');
+  postBodyEl.value = 'z'.repeat(1001);
+  h.doc.getElementById('post-submit').click();
+  await flush();
+  assert.equal(h.doc.getElementById('composer-status').dataset.statusKey, 'postTooLong');
+
+  const commentInput = h.doc.getElementById(`comment-input-${postId}`);
+  commentInput.value = 'c'.repeat(501);
+  cCard.closest('.comments-region').querySelector('.comment-composer .button-primary').click();
+  await flush();
+  assert.equal(h.doc.getElementById('feed-status').dataset.statusKey, 'commentTooLong');
+});
+
+test('search + authorId reset cursor, failed reset clears stale nextCursor, and comment-author filter keeps focus connected', async () => {
+  const authorA = '11111111-1111-1111-1111-111111111111';
+  const authorB = '22222222-2222-2222-2222-222222222222';
+  const postA = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const postB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  let failSearch = false;
+
+  const h = makeHarness({
+    hash: '#lang-en',
+    handler: async (url) => {
+      if (url === '/api/social/v1/session/login') {
+        return jsonRes(200, { user: { id: authorA, displayName: 'Author A' }, accessToken: 'acc', accessTokenExpiresIn: 3600, refreshToken: 'ref' });
+      }
+      if (url.startsWith('/api/social/v1/posts?')) {
+        const parsed = new URL(`https://x${url}`);
+        const q = parsed.searchParams.get('q');
+        const aid = parsed.searchParams.get('authorId');
+        if (failSearch && q === 'boom') {
+          return jsonRes(500, { error: { code: 'INTERNAL_ERROR' } });
+        }
+        if (aid === authorB) {
+          return jsonRes(200, {
+            items: [{ id: postB, author: { id: authorB, displayName: 'Author B' }, body: 'B post', image: null, createdAt: '2026-11-28T10:00:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false }],
+            nextCursor: null,
+          });
+        }
+        return jsonRes(200, {
+          items: [{ id: postA, author: { id: authorA, displayName: 'Author A' }, body: 'A post', image: null, createdAt: '2026-11-28T10:00:00Z', editedAt: null, commentCount: 1, reactions: [], mine: true }],
+          nextCursor: 'cursor-page-2',
+        });
+      }
+      if (url.startsWith(`/api/social/v1/posts/${postA}/comments`)) {
+        return jsonRes(200, {
+          items: [{ id: 'c1', postId: postA, author: { id: authorB, displayName: 'Author B' }, body: 'Comment by B', createdAt: '2026-11-28T10:01:00Z', editedAt: null, mine: false }],
+          nextCursor: null,
+        });
+      }
+      if (url === `/api/social/v1/authors/${authorB}`) {
+        return jsonRes(200, { userId: authorB, displayName: 'Author B', avatarUrl: null, postCount: 1 });
+      }
+      return null;
+    },
+  });
+
+  await signInHarness(h);
+  assert.equal(h.doc.getElementById('load-more-button').hidden, false);
+
+  // Failed reset search must clear nextCursor & hide loadMoreButton immediately
+  failSearch = true;
+  const searchInput = h.doc.getElementById('feed-search-input');
+  searchInput.value = 'boom';
+  searchInput.dispatchEvent({ type: 'keydown', key: 'Enter' });
+  await flush();
+  assert.equal(h.doc.getElementById('load-more-button').hidden, true);
+  assert.equal(h.doc.getElementById('feed-status').dataset.statusKey, 'feedError');
+
+  // Clear failSearch so combined q + authorId succeeds and removes postA
+  failSearch = false;
+  // Open comments on postA, open Author B modal from comment card, filter by Author B -> postA disappears & focus stays connected on author-filter-clear
+  const cardA = h.doc.getElementById(`post-${postA}`);
+  cardA.querySelector('[data-action="comments"]').click();
+  await flush();
+  const commentTrigger = cardA.querySelector('.comment-card .author-trigger');
+  commentTrigger.click();
+  await flush();
+  h.doc.getElementById('author-dialog-filter').click();
+  await flush();
+  assert.equal(h.doc.getElementById(`post-${postA}`), null);
+  assert.equal(h.doc.activeElement.isConnected, true);
+  assert.equal(h.doc.activeElement, h.doc.getElementById('author-filter-clear'));
+
+  // Combined q + authorId query sends both params with no stale cursor
+  const combinedCall = h.requests.find((r) => r.url.includes(`authorId=${authorB}`) && r.url.includes('q=boom') && !r.url.includes('cursor='));
+  assert.ok(combinedCall, 'expected combined authorId + q request without stale cursor');
+});
+
+test('author modal handles 404/500, 401 session expiry, and Escape cancel ignoring stale fetch resolution', async () => {
+  const authorId = '11111111-1111-1111-1111-111111111111';
+  const postId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  let authorMode = 'error500';
+  let releaseAuthor;
+  const authorGate = new Promise((resolve) => {
+    releaseAuthor = resolve;
+  });
+
+  const h = makeHarness({
+    hash: '#lang-en',
+    handler: async (url) => {
+      if (url === '/api/social/v1/session/login') {
+        return jsonRes(200, { user: { id: authorId, displayName: 'An' }, accessToken: 'acc', accessTokenExpiresIn: 3600, refreshToken: 'ref' });
+      }
+      if (url.startsWith('/api/social/v1/posts?')) {
+        return jsonRes(200, {
+          items: [{ id: postId, author: { id: authorId, displayName: 'An' }, body: 'Hi', image: null, createdAt: '2026-11-28T10:00:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false }],
+          nextCursor: null,
+        });
+      }
+      if (url === `/api/social/v1/authors/${authorId}`) {
+        if (authorMode === 'error500') return jsonRes(500, { error: { code: 'INTERNAL_ERROR' } });
+        if (authorMode === 'delayed') {
+          await authorGate;
+          return jsonRes(200, { userId: authorId, displayName: 'An', avatarUrl: null, postCount: 9 });
+        }
+        return jsonRes(401, { error: { code: 'UNAUTHORIZED' } });
+      }
+      if (url === '/api/social/v1/session/refresh') {
+        return jsonRes(401, { error: { code: 'UNAUTHORIZED' } });
+      }
+      return null;
+    },
+  });
+
+  await signInHarness(h);
+  const trigger = h.doc.getElementById(`post-${postId}`).querySelector('.author-trigger');
+
+  // 500 error shows authorProfileError and keeps filter button hidden
+  trigger.click();
+  await flush();
+  assert.equal(h.doc.getElementById('author-dialog-status').dataset.statusKey, 'authorProfileError');
+  assert.equal(h.doc.getElementById('author-dialog-filter').hidden, true);
+  h.doc.getElementById('author-dialog-close').click();
+
+  // Delayed fetch cancelled by Escape/close must not repopulate dialog
+  authorMode = 'delayed';
+  trigger.click();
+  h.doc.getElementById('author-dialog').close();
+  releaseAuthor();
+  await flush();
+  assert.equal(h.doc.getElementById('author-dialog').open, false);
+  assert.equal(h.doc.getElementById('author-dialog-filter').hidden, true);
+
+  // 401 closes dialog and expires session
+  authorMode = 'unauth';
+  trigger.click();
+  await flush();
+  assert.equal(h.doc.getElementById('author-dialog').open, false);
+  assert.equal(h.doc.getElementById('login-status').dataset.statusKey, 'sessionExpired');
+});
+
+test('avatars recover after transient failure, expire session on 401, update on refresh, and prune/revoke object URLs', async () => {
+  const authorId = '11111111-1111-1111-1111-111111111111';
+  const post1Id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const post2Id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  const imgId = '55555555-5555-5555-5555-555555555555';
+  const avatar1 = `/api/v1/files/avatars/${authorId}-v1.png`;
+  const avatar2 = `/api/v1/files/avatars/${authorId}-v2.png`;
+  let failAvatarOnce = true;
+  let feedVersion = 1;
+  let unauthAvatar = false;
+
+  const h = makeHarness({
+    hash: '#lang-en',
+    handler: async (url) => {
+      if (url === '/api/social/v1/session/login') {
+        return jsonRes(200, { user: { id: authorId, displayName: 'An', avatarUrl: null }, accessToken: 'acc', accessTokenExpiresIn: 3600, refreshToken: 'ref' });
+      }
+      if (url === '/api/social/v1/session/logout') {
+        return jsonRes(204, null);
+      }
+      if (url === '/api/social/v1/session/refresh') {
+        return jsonRes(401, { error: { code: 'UNAUTHORIZED' } });
+      }
+      if (url === avatar1) {
+        if (unauthAvatar) return jsonRes(401, { error: { code: 'UNAUTHORIZED' } });
+        if (failAvatarOnce) {
+          failAvatarOnce = false;
+          return jsonRes(500, { error: { code: 'INTERNAL_ERROR' } });
+        }
+        return new Response(new Blob(['png1'], { type: 'image/png' }), { status: 200 });
+      }
+      if (url === avatar2) {
+        return new Response(new Blob(['png2'], { type: 'image/png' }), { status: 200 });
+      }
+      if (url === `/api/social/v1/images/${imgId}`) {
+        return new Response(new Blob(['img'], { type: 'image/png' }), { status: 200 });
+      }
+      if (url.startsWith('/api/social/v1/posts?')) {
+        if (feedVersion === 1) {
+          return jsonRes(200, {
+            items: [
+              { id: post1Id, author: { id: authorId, displayName: 'An', avatarUrl: avatar1 }, body: 'P1', image: { url: `/api/social/v1/images/${imgId}` }, createdAt: '2026-11-28T10:00:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false },
+            ],
+            nextCursor: null,
+          });
+        }
+        if (feedVersion === 2) {
+          return jsonRes(200, {
+            items: [
+              { id: post1Id, author: { id: authorId, displayName: 'An', avatarUrl: avatar2 }, body: 'P1', image: null, createdAt: '2026-11-28T10:00:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false },
+              { id: post2Id, author: { id: authorId, displayName: 'An', avatarUrl: null }, body: 'P2', image: null, createdAt: '2026-11-28T10:01:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false },
+            ],
+            nextCursor: null,
+          });
+        }
+        return jsonRes(200, {
+          items: [
+            { id: post2Id, author: { id: authorId, displayName: 'An', avatarUrl: avatar1 }, body: 'P2', image: null, createdAt: '2026-11-28T10:01:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false },
+          ],
+          nextCursor: null,
+        });
+      }
+      return null;
+    },
+  });
+
+  await signInHarness(h);
+  await flush();
+  const card1 = h.doc.getElementById(`post-${post1Id}`);
+  assert.equal(card1.querySelector('.author-trigger img.avatar-img'), null, 'initial transient 500 keeps initials fallback');
+  assert.ok(card1.querySelector('.post-image-wrap img.post-image'));
+
+  // Refresh updates avatarUrl on existing post AND prunes removed image blob URL
+  feedVersion = 2;
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+  assert.ok(card1.querySelector('.author-trigger img.avatar-img'), 'updated avatarUrl loads on refresh');
+  assert.equal(h.revokedUrls.length, 1, 'pruned removed post image blob URL');
+
+  // Switch to feedVersion 3 where post1 (with avatar2) is gone and post2 uses avatar1 (recovering from earlier transient failure!)
+  feedVersion = 3;
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+  const card2 = h.doc.getElementById(`post-${post2Id}`);
+  assert.ok(card2.querySelector('.author-trigger img.avatar-img'), 'transiently failed avatar1 recovers on later render');
+  assert.equal(h.revokedUrls.length, 2, 'pruned unused avatar2 blob URL');
+
+  // Sign out revokes remaining avatar1 blob URL
+  h.doc.getElementById('logout-button').click();
+  await flush();
+  assert.equal(h.revokedUrls.length, 3, 'sign out revokes remaining blob URLs');
+
+  // 401 on avatar expires session
+  failAvatarOnce = false;
+  unauthAvatar = true;
+  await signInHarness(h);
+  assert.equal(h.doc.getElementById('login-status').dataset.statusKey, 'sessionExpired');
+});
+
+test('same-card avatar retries after 500 on Refresh, deduplicates in-flight fetches, renders cached comment avatars, and expires on 401 retry', async () => {
+  const author1Id = '11111111-1111-1111-1111-111111111111';
+  const author3Id = '33333333-3333-3333-3333-333333333333';
+  const author4Id = '44444444-4444-4444-4444-444444444444';
+  const post1Id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const post3Id = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  const post4Id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  const comment1Id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  const avatar1 = `/api/v1/files/avatars/${author1Id}-same.png`;
+  const avatar3 = `/api/v1/files/avatars/${author3Id}-delayed.png`;
+  const avatar4 = `/api/v1/files/avatars/${author4Id}-unauth.png`;
+
+  let avatar1Mode = 'error500';
+  let avatar1Fetches = 0;
+  let avatar3Fetches = 0;
+  let avatar4Mode = 'error500';
+  let feedPhase = 1;
+  let releaseAvatar3;
+  const avatar3Gate = new Promise((resolve) => {
+    releaseAvatar3 = resolve;
+  });
+
+  const h = makeHarness({
+    hash: '#lang-en',
+    handler: async (url) => {
+      if (url === '/api/social/v1/session/login') {
+        return jsonRes(200, { user: { id: author1Id, displayName: 'An', avatarUrl: null }, accessToken: 'acc', accessTokenExpiresIn: 3600, refreshToken: 'ref' });
+      }
+      if (url === '/api/social/v1/session/refresh') {
+        return jsonRes(401, { error: { code: 'UNAUTHORIZED' } });
+      }
+      if (url === avatar1) {
+        avatar1Fetches += 1;
+        if (avatar1Mode === 'error500') {
+          return jsonRes(500, { error: { code: 'INTERNAL_ERROR' } });
+        }
+        return new Response(new Blob(['png1'], { type: 'image/png' }), { status: 200 });
+      }
+      if (url === avatar3) {
+        avatar3Fetches += 1;
+        await avatar3Gate;
+        return new Response(new Blob(['png3'], { type: 'image/png' }), { status: 200 });
+      }
+      if (url === avatar4) {
+        if (avatar4Mode === 'error500') {
+          return jsonRes(500, { error: { code: 'INTERNAL_ERROR' } });
+        }
+        return jsonRes(401, { error: { code: 'UNAUTHORIZED' } });
+      }
+      if (url.startsWith(`/api/social/v1/posts/${post1Id}/comments`)) {
+        return jsonRes(200, {
+          items: [
+            { id: comment1Id, postId: post1Id, author: { id: author1Id, displayName: 'An', avatarUrl: avatar1 }, body: 'Cached avatar comment', createdAt: '2026-11-28T10:02:00Z', editedAt: null, mine: false },
+          ],
+          nextCursor: null,
+        });
+      }
+      if (url.startsWith('/api/social/v1/posts?')) {
+        const items = [
+          { id: post1Id, author: { id: author1Id, displayName: 'An', avatarUrl: avatar1 }, body: 'Same card post', image: null, createdAt: '2026-11-28T10:00:00Z', editedAt: null, commentCount: 1, reactions: [], mine: false },
+        ];
+        if (feedPhase >= 2) {
+          items.push({ id: post3Id, author: { id: author3Id, displayName: 'Chi', avatarUrl: avatar3 }, body: 'Delayed avatar post', image: null, createdAt: '2026-11-28T10:01:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false });
+        }
+        if (feedPhase >= 3) {
+          items.push({ id: post4Id, author: { id: author4Id, displayName: 'Dung', avatarUrl: avatar4 }, body: '401 retry post', image: null, createdAt: '2026-11-28T10:02:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false });
+        }
+        return jsonRes(200, { items, nextCursor: null });
+      }
+      return null;
+    },
+  });
+
+  await signInHarness(h);
+  await flush();
+  const card1 = h.doc.getElementById(`post-${post1Id}`);
+  assert.equal(avatar1Fetches, 1);
+  assert.equal(card1.querySelector('.author-trigger img.avatar-img'), null, 'initial 500 keeps initials fallback');
+
+  // Same-card Refresh retries avatar1 and attaches img.avatar-img without creating a new card
+  avatar1Mode = 'ok';
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+  assert.equal(h.doc.getElementById(`post-${post1Id}`), card1, 'refresh reuses same post card');
+  assert.equal(avatar1Fetches, 2, 'refresh retries failed avatar on same card');
+  assert.ok(card1.querySelector('.author-trigger img.avatar-img')?.src.startsWith('blob:'));
+
+  // Language toggle DOM syncs must not re-fetch already loaded avatar1
+  h.doc.getElementById('lang-vi-button').click();
+  h.doc.getElementById('lang-en-button').click();
+  await flush();
+  assert.equal(avatar1Fetches, 2);
+
+  // Expanding comments renders cached avatar1 immediately on disconnected newly built comment card
+  card1.querySelector('[data-action="comments"]').click();
+  await flush();
+  const commentImg = card1.querySelector('.comment-card .author-trigger img.avatar-img');
+  assert.ok(commentImg, 'cached avatar must render on newly created comment card');
+  assert.ok(commentImg.src.startsWith('blob:'));
+  assert.equal(avatar1Fetches, 2, 'cached comment avatar must not trigger extra fetch');
+
+  // In-flight avatar fetch is deduplicated across language toggle DOM sync
+  feedPhase = 2;
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+  assert.equal(avatar3Fetches, 1);
+  h.doc.getElementById('lang-vi-button').click();
+  h.doc.getElementById('lang-en-button').click();
+  assert.equal(avatar3Fetches, 1, 'language toggle during in-flight fetch must not issue duplicate request');
+  releaseAvatar3();
+  await flush();
+  const card3 = h.doc.getElementById(`post-${post3Id}`);
+  assert.ok(card3.querySelector('.author-trigger img.avatar-img')?.src.startsWith('blob:'));
+  assert.equal(avatar3Fetches, 1);
+
+  // 401 on avatar during Refresh retry (after initial 500) expires session
+  feedPhase = 3;
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+  assert.notEqual(h.doc.getElementById('login-status').dataset.statusKey, 'sessionExpired');
+  avatar4Mode = 'unauth';
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+  assert.equal(h.doc.getElementById('login-status').dataset.statusKey, 'sessionExpired');
+});
+
+test('videoUploadsEnabled=false on POST /videos keeps composer visible, video error Retry re-fetches, reaction tray closes immediately, and announcement stays visible when disabled', async () => {
+  const authorId = '11111111-1111-1111-1111-111111111111';
+  const postId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const videoId = '66666666-6666-6666-6666-666666666666';
+  let videoUploadsEnabled = true;
+  let webEnabled = true;
+  let videoFetches = 0;
+
+  const h = makeHarness({
+    hash: '#lang-en',
+    search: '?utm=1',
+    handler: async (url, init) => {
+      if (url === '/api/social/v1/config') {
+        return jsonRes(200, {
+          webEnabled,
+          videoUploadsEnabled,
+          announcement: {
+            titleVi: 'Thông báo VI',
+            bodyVi: 'Nội dung VI',
+            titleEn: 'Notice EN',
+            bodyEn: 'Body EN',
+          },
+        });
+      }
+      if (url === '/api/social/v1/session/login') {
+        return jsonRes(200, { user: { id: authorId, displayName: 'An' }, accessToken: 'acc', accessTokenExpiresIn: 3600, refreshToken: 'ref' });
+      }
+      if (url.startsWith('/api/social/v1/posts?')) {
+        return jsonRes(200, {
+          items: [{ id: postId, author: { id: authorId, displayName: 'An' }, body: 'Video post', image: null, video: { url: `/api/social/v1/videos/${videoId}` }, createdAt: '2026-11-28T10:00:00Z', editedAt: null, commentCount: 0, reactions: [], mine: false }],
+          nextCursor: null,
+        });
+      }
+      if (url === `/api/social/v1/videos/${videoId}`) {
+        videoFetches += 1;
+        return new Response(new Blob(['mp4'], { type: 'video/mp4' }), { status: 200 });
+      }
+      if (url === '/api/social/v1/videos' && init.method === 'POST') {
+        videoUploadsEnabled = false;
+        return jsonRes(403, { error: { code: 'SOCIAL_FEATURE_DISABLED' } });
+      }
+      if (url.startsWith(`/api/social/v1/posts/${postId}/reactions/`)) {
+        return jsonRes(200, { reactions: [{ emoji: '👍', count: 1, mine: true }] });
+      }
+      return null;
+    },
+  });
+
+  await signInHarness(h);
+
+  // Bilingual announcement banner displays EN, and switching to VI preserves query string
+  assert.equal(h.doc.getElementById('announcement-card').hidden, false);
+  assert.equal(h.doc.getElementById('announcement-title').textContent, 'Notice EN');
+  h.doc.getElementById('lang-vi-button').click();
+  assert.equal(h.historyStub.lastUrl, '/social/?utm=1');
+  assert.equal(h.doc.getElementById('announcement-title').textContent, 'Thông báo VI');
+  h.doc.getElementById('lang-en-button').click();
+
+  // Reaction picker tray hides immediately on option click before awaiting network
+  const card = h.doc.getElementById(`post-${postId}`);
+  const pickerBtn = card.querySelector('[data-action="reaction-picker"]');
+  pickerBtn.click();
+  const tray = card.querySelector('.reaction-picker-tray');
+  assert.equal(tray.hidden, false);
+  tray.querySelector('.reaction-emoji-option[data-emoji="👍"]').click();
+  assert.equal(tray.hidden, true);
+  assert.equal(pickerBtn.getAttribute('aria-expanded'), 'false');
+  await flush();
+
+  // Language toggle updates .video-load-button text
+  h.doc.getElementById('lang-vi-button').click();
+  assert.equal(card.querySelector('.video-load-button').textContent, 'Tải video');
+  h.doc.getElementById('lang-en-button').click();
+  assert.equal(card.querySelector('.video-load-button').textContent, 'Load video');
+
+  // Video playback error -> shows videoPlaybackFailed + Retry -> refresh preserves error UI -> Retry evicts cache, revokes old URL, guards double-click, and re-fetches
+  card.querySelector('.video-load-button').click();
+  await flush();
+  assert.equal(videoFetches, 1);
+  const videoEl = card.querySelector('video.post-video');
+  videoEl.dispatchEvent({ type: 'error' });
+  const errEl = card.querySelector('.video-error');
+  assert.equal(errEl.dataset.videoErrorKey, 'videoPlaybackFailed');
+  h.doc.getElementById('lang-vi-button').click();
+  assert.equal(card.querySelector('.video-error').textContent, 'Không phát được video này. Thử lại hoặc dùng MP4 H.264.');
+  h.doc.getElementById('lang-en-button').click();
+
+  h.doc.getElementById('refresh-button').click();
+  await flush();
+  assert.equal(card.querySelector('.video-error')?.dataset.videoErrorKey, 'videoPlaybackFailed');
+  assert.ok(card.querySelector('.video-retry-button'), 'refresh while video error is shown keeps Retry button');
+
+  card.querySelector('.video-retry-button').click();
+  assert.equal(card.querySelector('.video-retry-button'), null, 'Retry removes button synchronously to prevent double-click');
+  await flush();
+  assert.equal(videoFetches, 2, 'Retry must re-fetch video instead of reusing failed blob URL');
+  assert.equal(h.revokedUrls.length >= 1, true, 'Retry must revoke previous failed video blob URL');
+
+  // POST /videos returning 403 SOCIAL_FEATURE_DISABLED when webEnabled=true keeps composer visible and sets mediaVideoDisabled
+  const videoFile = new File(['mp4'], 'clip.mp4', { type: 'video/mp4' });
+  h.doc.getElementById('post-media').files = [videoFile];
+  h.doc.getElementById('post-media').dispatchEvent({ type: 'change' });
+  h.doc.getElementById('post-body').value = 'My video';
+  h.doc.getElementById('post-submit').click();
+  await flush();
+  assert.equal(h.doc.getElementById('unavailable-panel').hidden, true);
+  assert.equal(h.doc.getElementById('composer-panel').hidden, false);
+  assert.equal(h.doc.getElementById('media-selected').hidden, true);
+  assert.equal(h.doc.getElementById('composer-status').dataset.statusKey, 'mediaVideoDisabled');
+
+  // Announcement stays visible when webEnabled turns false
+  webEnabled = false;
+  h.doc.dispatchEvent({ type: 'visibilitychange' });
+  await flush();
+  assert.equal(h.doc.getElementById('unavailable-panel').hidden, false);
+  assert.equal(h.doc.getElementById('announcement-card').hidden, false);
 });

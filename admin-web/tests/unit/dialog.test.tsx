@@ -72,4 +72,22 @@ describe('ConfirmDialog focus', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
   });
+
+  it('keeps focus on the dialog and skips disabled textarea when Tab is pressed in a busy ConfirmDialog', async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <ConfirmDialog title="Suspend user" requireReason busy onConfirm={vi.fn()} onCancel={vi.fn()} />
+      </I18nProvider>,
+    );
+
+    const dialog = screen.getByRole('alertdialog', { name: 'Suspend user' });
+    const textarea = screen.getByLabelText(/Reason/);
+    expect(textarea).toBeDisabled();
+    expect(dialog).toHaveFocus();
+
+    await user.tab();
+    expect(textarea).not.toHaveFocus();
+    expect(dialog).toHaveFocus();
+  });
 });

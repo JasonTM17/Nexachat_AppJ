@@ -142,7 +142,7 @@ export function createSocialClient(fetchImpl = globalThis.fetch) {
   }
 
   async function parseResponse(response, asBlob) {
-    const payload = await readPayload(response, asBlob);
+    const payload = await readPayload(response, response.ok ? asBlob : false);
     if (!response.ok) {
       throw apiError(response, payload);
     }

@@ -306,4 +306,29 @@ describe('RulesPage', () => {
     expect(screen.queryByLabelText('Severity phish-en')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
   });
+
+  it('renders formatted API error when pattern test fails and enforces maxLength bounds', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+    await screen.findByText('phish-en');
+
+    await user.click(screen.getByRole('button', { name: 'New rule' }));
+    expect(screen.getByLabelText('Name')).toHaveAttribute('maxLength', '200');
+    const formCard = screen.getByLabelText('Name').closest('.card') as HTMLElement;
+    expect(within(formCard).getByLabelText('Pattern')).toHaveAttribute('maxLength', '200');
+
+    const card = screen.getByText('Test pattern').closest('.card') as HTMLElement;
+    const testPatternInput = within(card).getByLabelText('Pattern');
+    const sampleTextarea = within(card).getByLabelText('Sample text');
+    expect(testPatternInput).toHaveAttribute('maxLength', '200');
+    expect(sampleTextarea).toHaveAttribute('maxLength', '4000');
+
+    await user.type(testPatternInput, 'bad-regex');
+    await user.type(sampleTextarea, 'sample');
+    apiMock.mockRejectedValueOnce(new ApiException(400, 'INVALID_REGEX', 'bad regex'));
+    await user.click(within(card).getByRole('button', { name: 'Run' }));
+
+    expect(await within(card).findByRole('alert')).toHaveTextContent('INVALID_REGEX');
+  });
 });

@@ -444,4 +444,77 @@ test.describe('social settings', () => {
       bodyEn: 'Unsaved bilingual edit',
     });
   });
+
+  test('per-field 409 conflict merges concurrent server edits into untouched fields and keeps local edit', async ({
+    page,
+  }) => {
+    const mock = await mockSocialAdmin(page);
+    mock.state.draft = {
+      titleVi: 'Tiêu đề gốc',
+      bodyVi: 'Nội dung gốc',
+      titleEn: 'Original title',
+      bodyEn: 'Original body',
+    };
+    await page.goto('/social');
+
+    const vi = page.getByRole('group', { name: 'Tiếng Việt' });
+    const en = page.getByRole('group', { name: 'English' });
+    await vi.locator('input').fill('Tiêu đề tôi sửa');
+
+    // Another admin concurrently updates titleEn and bumps revision.
+    mock.state.draft = {
+      titleVi: 'Tiêu đề gốc',
+      bodyVi: 'Nội dung gốc',
+      titleEn: 'Server updated EN title',
+      bodyEn: 'Original body',
+    };
+    mock.state.revision += 1;
+
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect(page.getByText(/Another admin saved changes first/)).toBeVisible();
+    await expect(vi.locator('input')).toHaveValue('Tiêu đề tôi sửa');
+    await expect(en.locator('input')).toHaveValue('Server updated EN title');
+
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect.poll(() => mock.state.revision).toBe(3);
+    expect(mock.state.draft).toEqual({
+      titleVi: 'Tiêu đề tôi sửa',
+      bodyVi: 'Nội dung gốc',
+      titleEn: 'Server updated EN title',
+      bodyEn: 'Original body',
+    });
+  });
+
+  test('unsaved flag checkboxes survive Save draft and Publish until Save switches is confirmed', async ({
+    page,
+  }) => {
+    const mock = await mockSocialAdmin(page);
+    mock.state.draft = {
+      titleVi: 'Tiêu đề đã lưu',
+      bodyVi: 'Nội dung đã lưu',
+      titleEn: 'Saved title',
+      bodyEn: 'Saved body',
+    };
+    await page.goto('/social');
+
+    const webCheck = flagRow(page, 'Web Social feed').locator('input[type="checkbox"]');
+    await webCheck.check();
+    await expect(webCheck).toBeChecked();
+
+    const vi = page.getByRole('group', { name: 'Tiếng Việt' });
+    await vi.locator('input').fill('Tiêu đề mới');
+    await page.getByRole('button', { name: 'Save draft' }).click();
+    await expect.poll(() => mock.state.revision).toBe(2);
+    await expect(webCheck).toBeChecked();
+
+    await page.getByRole('button', { name: 'Publish' }).click();
+    await page.getByRole('alertdialog', { name: 'Publish this announcement?' }).getByRole('button', { name: 'Confirm' }).click();
+    await expect.poll(() => mock.state.revision).toBe(3);
+    await expect(webCheck).toBeChecked();
+
+    await page.getByRole('button', { name: 'Save switches' }).click();
+    await page.getByRole('alertdialog', { name: 'Apply these switches?' }).getByRole('button', { name: 'Confirm' }).click();
+    await expectFlagChip(page, 'Web Social feed', 'on');
+    expect(mock.state.webEnabled).toBe(true);
+  });
 });

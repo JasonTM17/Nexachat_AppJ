@@ -616,9 +616,10 @@ const LangContext = createContext<{
 }>({ lang: 'en', setLang: () => {}, t: (key) => key });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(
-    () => (localStorage.getItem('admin.lang') as Lang) || 'en',
-  );
+  const [lang, setLangState] = useState<Lang>(() => {
+    const stored = localStorage.getItem('admin.lang');
+    return stored === 'vi' ? 'vi' : 'en';
+  });
   // Keep <html lang> in sync so assistive tech reads the right language,
   // and keep pure formatters (fmtTime) on the same display locale.
   useEffect(() => {
@@ -635,7 +636,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       t: (key: StringKey, vars?: Record<string, string | number>) => {
         let out: string = (STRINGS[lang] as Record<string, string>)[key] ?? key;
         for (const [name, val] of Object.entries(vars ?? {})) {
-          out = out.replace(`{${name}}`, String(val));
+          out = out.replaceAll(`{${name}}`, () => String(val));
         }
         return out;
       },
