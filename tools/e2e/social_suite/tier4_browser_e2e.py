@@ -7,8 +7,10 @@ import shutil
 import subprocess
 import sys
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List
+from urllib.parse import urlsplit
 
 from .browser_driver import BrowserDriver, audit_page_design, normalize_hex_color
 from .client import (
@@ -27,6 +29,8 @@ from .fixtures import (
     load_valid_mp4_bytes,
     make_png_bytes,
 )
+
+ADMIN_SOCIAL_SETTINGS = "/api/v1/admin/social/settings"
 
 
 def _expected_avatar_tone(display_name: str) -> int:
@@ -86,6 +90,17 @@ def _admin_login(page, recorder, admin_base_url: str, identifier: str, password:
         with recorder.allow(statuses=(401, 403), url_substrings=("/api/v1/auth/login", "/api/v1/admin/me")):
             page.click('button[type="submit"]')
             page.wait_for_selector('.form-error[role="alert"]', timeout=15000)
+
+
+@contextmanager
+def _expect_admin_social_write(page, method: str, action: str, status: int = 200):
+    path = f"{ADMIN_SOCIAL_SETTINGS}/{action}"
+    with page.expect_response(
+        lambda response: response.request.method == method and urlsplit(response.url).path == path
+    ) as pending:
+        yield
+    actual = pending.value.status
+    check(actual == status, f"{method} {path} returned HTTP {actual}, expected {status}")
 
 
 # --------------------------------------------------------------------------- S1
@@ -605,8 +620,8 @@ def _t4_s2_admin_live_control_and_moderation(ctx: SuiteContext) -> None:
                 if web_cb.is_checked():
                     web_cb.uncheck()
                     page.locator("section", has=page.locator("#social-flags-title")).locator("button.btn").click()
-                    page.locator('[role="alertdialog"] button.btn.primary').click()
-                    page.wait_for_selector('.toast[role="status"]', timeout=10000)
+                    with _expect_admin_social_write(page, "PATCH", "flags"):
+                        page.locator('[role="alertdialog"] button.btn.primary').click()
 
                 # Verify /social/ fails closed while Android /api/v1/feed/posts stays 200
                 with driver.new_page(width=1440, height=900) as (soc_page, soc_rec):
@@ -619,8 +634,8 @@ def _t4_s2_admin_live_control_and_moderation(ctx: SuiteContext) -> None:
                 # Re-enable webEnabled=true
                 web_cb.check()
                 page.locator("section", has=page.locator("#social-flags-title")).locator("button.btn").click()
-                page.locator('[role="alertdialog"] button.btn.primary').click()
-                page.wait_for_selector('.toast[role="status"]', timeout=10000)
+                with _expect_admin_social_write(page, "PATCH", "flags"):
+                    page.locator('[role="alertdialog"] button.btn.primary').click()
 
                 # 4. Bilingual CMS draft -> publish -> verify on /social/ -> take down
                 vi_title = f"Admin S2 VI {ctx.nonce}"
@@ -630,11 +645,11 @@ def _t4_s2_admin_live_control_and_moderation(ctx: SuiteContext) -> None:
                 fieldsets.nth(0).locator("textarea").fill("Noi dung S2 VI")
                 fieldsets.nth(1).locator("input").fill(en_title)
                 fieldsets.nth(1).locator("textarea").fill("S2 EN body")
-                page.locator(".social-cms-actions button.btn.ghost").click()
-                page.wait_for_selector('.toast[role="status"]', timeout=10000)
+                with _expect_admin_social_write(page, "PUT", "announcement/draft"):
+                    page.locator(".social-cms-actions button.btn.ghost").click()
                 page.locator(".social-cms-actions button.btn:not(.ghost)").click()
-                page.locator('[role="alertdialog"] button.btn.primary').click()
-                page.wait_for_selector('.toast[role="status"]', timeout=10000)
+                with _expect_admin_social_write(page, "POST", "announcement/publish"):
+                    page.locator('[role="alertdialog"] button.btn.primary').click()
 
                 with driver.new_page(width=1440, height=900) as (soc_page, soc_rec):
                     soc_page.goto(f"{ctx.proxy_base_url}/social/", wait_until="networkidle")
@@ -644,23 +659,25 @@ def _t4_s2_admin_live_control_and_moderation(ctx: SuiteContext) -> None:
                     check(en_title in soc_page.inner_text("#announcement-title"), "published EN title missing on /social/")
                     soc_rec.assert_clean("S2 live announcement check")
 
-                # Take down
+                # Wait for the unpublish revision before the external admin updates it.
                 page.locator(".social-live button.btn.ghost").click()
-                page.locator('[role="alertdialog"] button.btn.danger').click()
-                page.wait_for_selector('.toast[role="status"]', timeout=10000)
+                with _expect_admin_social_write(page, "POST", "announcement/unpublish"):
+                    page.locator('[role="alertdialog"] button.btn.danger').click()
 
                 # 5. 409 OCC conflict handling on /admin/social
                 cur_rev = ctx.get_admin_settings()
-                ctx.spring.patch(
-                    "/api/v1/admin/social/settings/flags",
+                concurrent_write = ctx.spring.patch(
+                    f"{ADMIN_SOCIAL_SETTINGS}/flags",
                     token=ctx.token("admin"),
                     body={"expectedRevision": cur_rev["revision"], "webEnabled": True, "videoUploadsEnabled": False},
                 )
-                with rec.allow(statuses=(409,), url_substrings=("/api/v1/admin/social/settings/",)):
+                expect_status(concurrent_write, 200, "External admin advanced Social settings")
+                with rec.allow(statuses=(409,), url_substrings=(f"{ADMIN_SOCIAL_SETTINGS}/flags",)):
                     page.locator("label.check-row input[type='checkbox']").nth(1).uncheck()
                     page.locator("section", has=page.locator("#social-flags-title")).locator("button.btn").click()
-                    page.locator('[role="alertdialog"] button.btn.primary').click()
-                    page.wait_for_selector('[role="alert"]', timeout=10000)
+                    with _expect_admin_social_write(page, "PATCH", "flags", status=409):
+                        page.locator('[role="alertdialog"] button.btn.primary').click()
+                    page.wait_for_selector('.social-banner.is-warn[role="alert"]', timeout=10000)
 
                 # 6. /admin/feed moderation queue: expand details, video preview, hide, unhide, resolve
                 page.click('aside.sidebar nav a[href="/admin/feed"]')
@@ -729,14 +746,16 @@ def _t4_s2b_m3_moderator_gate_and_draft_conflict(ctx: SuiteContext) -> None:
             fieldsets.nth(1).locator("input").fill(f"Unsaved EN {ctx.nonce}")
             fieldsets.nth(1).locator("textarea").fill("Unsaved body EN")
             cur_rev = ctx.get_admin_settings()
-            ctx.spring.patch(
-                "/api/v1/admin/social/settings/flags",
+            concurrent_write = ctx.spring.patch(
+                f"{ADMIN_SOCIAL_SETTINGS}/flags",
                 token=ctx.token("admin"),
                 body={"expectedRevision": cur_rev["revision"], "webEnabled": True, "videoUploadsEnabled": True},
             )
-            with rec.allow(statuses=(409,), url_substrings=("/api/v1/admin/social/settings/",)):
-                page.locator(".social-cms-actions button.btn.ghost").click()
-                page.wait_for_selector('[role="alert"]', timeout=10000)
+            expect_status(concurrent_write, 200, "External admin advanced Social settings")
+            with rec.allow(statuses=(409,), url_substrings=(f"{ADMIN_SOCIAL_SETTINGS}/announcement/draft",)):
+                with _expect_admin_social_write(page, "PUT", "announcement/draft", status=409):
+                    page.locator(".social-cms-actions button.btn.ghost").click()
+                page.wait_for_selector('.social-banner.is-warn[role="alert"]', timeout=10000)
             check(fieldsets.nth(0).locator("input").input_value() == unsaved_vi, "M3 saveDraft 409 wiped unsaved draft input")
             rec.assert_clean("S2b M3 saveDraft 409 preservation")
 
