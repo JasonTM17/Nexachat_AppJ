@@ -26,6 +26,8 @@ prefixes:
 | `/api/social/v1/posts/{postId}/reactions/{emoji}` | `/api/v1/feed/posts/{postId}/reactions/{emoji}` | PUT/DELETE idempotent reaction |
 | `/api/social/v1/images` | `/api/v1/feed/images` | authenticated multipart upload |
 | `/api/social/v1/images/{imageId}` | `/api/v1/feed/images/{imageId}` | authorized image bytes |
+| `/api/social/v1/videos` | `/api/v1/feed/videos` | authenticated multipart upload |
+| `/api/social/v1/videos/{videoId}` | `/api/v1/feed/videos/{videoId}` | authorized video bytes |
 
 The response contract is intentionally unchanged. In particular, a post's
 legacy `image.url` value remains `/api/v1/feed/images/{imageId}` even when the
@@ -46,7 +48,7 @@ these are proxy mappings, not extra Spring controller prefixes:
 
 The proxy deliberately does **not** expose a catch-all
 `/api/social/v1/:path*` rewrite. It is limited to those auth/report routes and
-the posts, comments and images subtrees. Browser requests use
+the posts, comments, images and videos subtrees. Browser requests use
 `credentials: 'omit'`, `cache: 'no-store'`, `redirect: 'error'`, relative
 same-origin URLs, and an explicit bearer only on authenticated calls. The
 proxy adds `Cache-Control: private, no-store` plus CDN no-store headers to
@@ -174,9 +176,15 @@ creating another report.
 
 ### Images
 
-The backend accepts JPEG, PNG and WebP feed images. Browser v1 does not expose
-a new upload control; upload remains deferred/optional. Posts that reference
-previously uploaded images are rendered by an authorized blob request:
+The backend accepts JPEG, PNG and WebP feed images, one attachment per post.
+
+```sh
+curl -X POST https://nexachat.io.vn/api/social/v1/images \
+  -H "Authorization: Bearer <access-token>" \
+  -F "file=@photo.jpg;type=image/jpeg"
+```
+
+Posts that reference uploaded images are rendered by an authorized blob request:
 
 ```sh
 curl https://nexachat.io.vn/api/social/v1/images/<image-id> \
@@ -187,6 +195,66 @@ The browser validates the image path shape before fetching, accepts only the
 backend-supported image MIME types, creates a local object URL, and revokes it
 when the post or feed is cleared. It does not reuse author avatars as image
 sources and does not fetch third-party or storage-key URLs.
+
+### Videos
+
+One video per post, in the same storage slot and visibility/retention model as
+images. Uploads are capped at 4 MiB (well below the storage ceiling) and the
+server validates the actual bytes structurally: the ISO-BMFF box tree must
+contain a complete `moov` box with at least one video track
+(`MagicBytes.hasMp4VideoTrack`). This is structural identification, not a
+codec scan — an audio-only MP4 or a bare `ftyp` brand is rejected, but a
+passing file is not guaranteed to use H.264/AAC or to play on every device.
+There is no transcoding, thumbnailing, or adaptive bitrate in this slice. The
+client filename and declared MIME are never trusted. The 4 MiB cap is a byte
+cap, not a duration limit — clip length depends on the encoding. Timed
+subtitle/text tracks are not supported: the structural check only requires a
+video track and the player renders no captions track. Image and video uploads
+share the same admission, per-minute/per-day and unbound quotas, so selecting
+another type is never a bypass.
+
+```sh
+curl -X POST https://nexachat.io.vn/api/social/v1/videos \
+  -H "Authorization: Bearer <access-token>" \
+  -F "file=@clip.mp4;type=video/mp4"
+
+curl -X POST https://nexachat.io.vn/api/social/v1/posts \
+  -H "Authorization: Bearer <access-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"body":"a caption","videoId":"<uuid>","clientPostId":"<uuid>"}'
+
+curl https://nexachat.io.vn/api/social/v1/videos/<video-id> \
+  -H "Authorization: Bearer <access-token>"
+```
+
+A video post **requires a non-blank caption** and cannot also carry an image,
+so older Android builds without video support still show useful text (they see
+the caption; the legacy `image` field stays `null` and the video appears only
+in the additive `video` field, which is omitted on non-video posts).
+`GET /videos/{id}` serves the bytes only under the same feed visibility rule
+as images, always as `video/mp4` with `Cache-Control: no-store` + private,
+`nosniff` and an exact Content-Length. The image and video routes are mutually
+exclusive: an image id on the video route (and vice versa) is a 404. Reads of
+the raw storage key through `/api/v1/files/**` stay behind the same feed
+guard.
+
+The browser composer accepts JPEG/PNG/WebP/MP4 up to 4 MiB (the image cap is a
+conservative client cap; the server image contract is unchanged). Upload and
+publication are separate honest phases ('Uploading…', then 'Posting…') with no
+fake progress. A confirmed upload is reused when publishing fails and the user
+retries, so bytes are not re-uploaded; an ambiguous upload failure may be
+retried and the unbound duplicate is swept by retention. Feed rendering never
+auto-downloads video bytes: the video is fetched as an authenticated blob only
+after the reader clicks 'Load video', is validated as `video/mp4`, and plays
+in a controls-enabled, playsInline, non-autoplaying `<video>` whose object URL
+is revoked on sign-out, refresh, or post removal. Native Android posting and
+playback are not part of this slice; older builds see the caption only.
+
+Before opening video to production, the rollout still needs staff video
+playback for report triage (the admin queue can already hide any post),
+exact-SHA CI, the deployment/proxy smoke above, device validation, and capacity
+observation. Larger future uploads belong behind resumable private ingest with
+isolated validation/transcoding workers, never on chat request threads.
 
 ## Compatibility and rollout
 

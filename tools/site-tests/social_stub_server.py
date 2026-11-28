@@ -14,10 +14,20 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[2] / "site"
 SOCIAL_CSP = (
     "default-src 'none'; style-src 'self'; script-src 'self'; "
-    "connect-src 'self'; img-src 'self' blob:; base-uri 'none'; "
+    "connect-src 'self'; img-src 'self' blob:; media-src blob:; base-uri 'none'; "
     "form-action 'none'; frame-ancestors 'none'"
 )
 IMAGE_ID = "55555555-5555-5555-5555-555555555555"
+VIDEO_ID = "66666666-6666-6666-6666-666666666666"
+BAD_VIDEO_ID = "77777777-7777-7777-7777-777777777777"
+# Bytes with a valid-looking MP4 brand but no playable media: browsers fire a
+# decode error on them, which exercises the player failure path.
+BAD_VIDEO_BYTES = bytes([0, 0, 0, 24]) + b"ftypisom" + bytes([0, 0, 2, 0]) + b"isomiso2" + bytes(64)
+VIDEO_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "server" / "src" / "test" / "resources" / "fixtures" / "feed_video_h264_64x48.mp4"
+)
+VIDEO_BYTES = VIDEO_FIXTURE.read_bytes() if VIDEO_FIXTURE.exists() else b""
 IMAGE_TRIGGER = "[image-fixture]"
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -69,6 +79,7 @@ def post_json(post, viewer_id):
         "author": post["author"],
         "body": post["body"],
         "image": post.get("image"),
+        **({"video": post["video"]} if post.get("video") else {}),
         "createdAt": post["createdAt"],
         "commentCount": sum(
             1 for row in comments if row["postId"] == post["id"] and not row.get("deleted")
@@ -143,6 +154,45 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if (self.headers.get("Content-Type") or "").startswith("multipart/form-data"):
+            user = self.actor()
+            if not user:
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length)
+            if path == "/api/social/v1/videos":
+                # Test-only sentinel: a 2xx upload response without any media
+                # id, proving the client refuses to degrade into a text post.
+                if b"missing-media-id.mp4" in body:
+                    self.send_json(201, {
+                        "url": "/api/social/v1/videos/" + VIDEO_ID,
+                        "mimeType": "video/mp4",
+                    })
+                    return
+                if b"decode-fail.mp4" in body:
+                    self.send_json(201, {
+                        "videoId": BAD_VIDEO_ID,
+                        "url": "/api/social/v1/videos/" + BAD_VIDEO_ID,
+                        "mimeType": "video/mp4",
+                    })
+                    return
+                self.send_json(201, {
+                    "videoId": VIDEO_ID,
+                    "url": "/api/social/v1/videos/" + VIDEO_ID,
+                    "mimeType": "video/mp4",
+                })
+                return
+            if path == "/api/social/v1/images":
+                self.send_json(201, {
+                    "imageId": IMAGE_ID,
+                    "url": "/api/v1/feed/images/" + IMAGE_ID,
+                    "width": 1,
+                    "height": 1,
+                    "mimeType": "image/png",
+                })
+                return
+            self.send_json(404, {"error": {"code": "NOT_FOUND"}})
+            return
         data = self.json_body()
         if path == "/api/social/v1/session/login":
             user = USERS.get(data.get("identifier", ""))
@@ -188,18 +238,25 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(200, post_json(found, user["id"]))
                 return
             image = None
-            if IMAGE_TRIGGER in (data.get("body") or ""):
+            if IMAGE_TRIGGER in (data.get("body") or "") or data.get("imageId"):
                 image = {
                     "url": "/api/v1/feed/images/" + IMAGE_ID,
                     "width": 1,
                     "height": 1,
                     "mimeType": "image/png",
                 }
+            video = None
+            if data.get("videoId"):
+                video = {
+                    "url": "/api/social/v1/videos/" + data["videoId"],
+                    "mimeType": "video/mp4",
+                }
             post = {
                 "id": str(uuid.uuid4()),
                 "author": public_user(user),
                 "body": (data.get("body") or "").strip(),
                 "image": image,
+                "video": video,
                 "clientPostId": data.get("clientPostId"),
                 "createdAt": now(),
             }
@@ -259,6 +316,20 @@ class Handler(SimpleHTTPRequestHandler):
                 200,
                 {"items": [post_json(post, user["id"]) for post in visible[:20]], "nextCursor": None},
             )
+            return
+        if path == "/api/social/v1/videos/" + BAD_VIDEO_ID:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(BAD_VIDEO_BYTES)))
+            self.end_headers()
+            self.wfile.write(BAD_VIDEO_BYTES)
+            return
+        if path == "/api/social/v1/videos/" + VIDEO_ID:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(VIDEO_BYTES)))
+            self.end_headers()
+            self.wfile.write(VIDEO_BYTES)
             return
         if path == "/api/social/v1/images/" + IMAGE_ID:
             self.send_response(200)

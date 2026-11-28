@@ -571,6 +571,7 @@ def test_vercel_headers(vercel_data):
         "script-src 'self'",
         "connect-src 'self'",
         "img-src 'self' blob:",
+        "media-src blob:",
         "base-uri 'none'",
         "form-action 'none'",
         "frame-ancestors 'none'",
@@ -592,6 +593,8 @@ def test_vercel_headers(vercel_data):
         ("/api/social/v1/comments/:path*", "https://api.nexachat.io.vn/api/social/v1/comments/:path*"),
         ("/api/social/v1/images", "https://api.nexachat.io.vn/api/social/v1/images"),
         ("/api/social/v1/images/:path*", "https://api.nexachat.io.vn/api/social/v1/images/:path*"),
+        ("/api/social/v1/videos", "https://api.nexachat.io.vn/api/social/v1/videos"),
+        ("/api/social/v1/videos/:path*", "https://api.nexachat.io.vn/api/social/v1/videos/:path*"),
     }
     missing_rewrites = sorted(expected_social_rewrites - rewrite_pairs)
     if missing_rewrites:
@@ -599,7 +602,7 @@ def test_vercel_headers(vercel_data):
     elif any(r.get("source") == "/api/social/v1/:path*" for r in rewrites):
         failures.append("Social proxy must not expose arbitrary /api/social/v1/:path* backend paths")
     else:
-        log_pass("Social API proxy is restricted to auth, reports, posts, comments and images")
+        log_pass("Social API proxy is restricted to auth, reports, posts, comments, images and videos")
     if ("/social", "/social/index.html") in rewrite_pairs and ("/social/", "/social/index.html") in rewrite_pairs:
         log_pass("/social and /social/ are backed by social/index.html")
     else:

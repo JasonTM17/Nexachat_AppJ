@@ -8,6 +8,7 @@ import com.nexachat.feed.dto.CommentResponse;
 import com.nexachat.feed.dto.CreateCommentRequest;
 import com.nexachat.feed.dto.CreatePostRequest;
 import com.nexachat.feed.dto.FeedImageResponse;
+import com.nexachat.feed.dto.FeedVideoResponse;
 import com.nexachat.feed.dto.PostPageResponse;
 import com.nexachat.feed.dto.PostResponse;
 import com.nexachat.feed.dto.ReactionListResponse;
@@ -152,6 +153,27 @@ public class FeedController {
                 .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePrivate())
+                .contentLength(content.content().sizeBytes())
+                .body(new InputStreamResource(content.content().content()));
+    }
+
+    @PostMapping("/videos")
+    public ResponseEntity<FeedVideoResponse> uploadVideo(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(imageService.uploadVideo(requireUserId(principal), file));
+    }
+
+    @GetMapping("/videos/{videoId}")
+    public ResponseEntity<Resource> video(@AuthenticationPrincipal JwtPrincipal principal,
+                                          @PathVariable UUID videoId) {
+        FeedImageService.ImageContent content =
+                imageService.openVideo(requireUserId(principal), videoId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(content.image().mimeType()))
+                .header("X-Content-Type-Options", "nosniff")
+                .cacheControl(CacheControl.noStore().cachePrivate())
                 .contentLength(content.content().sizeBytes())
                 .body(new InputStreamResource(content.content().content()));
     }

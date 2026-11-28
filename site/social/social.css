@@ -223,6 +223,13 @@ h3 { margin: 0; font-size: 16px; }
 .post-body { margin: 12px 0; white-space: pre-wrap; }
 .post-image-wrap { margin: 12px 0; overflow: hidden; border-radius: var(--card-radius); background: var(--tonal); }
 .post-image { display: block; width: 100%; max-height: 520px; object-fit: contain; }
+.post-video-wrap { margin: 12px 0; }
+.post-video { display: block; width: 100%; max-height: 520px; border-radius: var(--card-radius); background: var(--tonal); }
+.video-load-button { width: 100%; min-height: 96px; justify-content: center; border: 1px dashed var(--hairline); border-radius: var(--card-radius); background: var(--tonal); }
+.media-input { padding: 10px 12px; }
+.media-help { margin: 4px 0 0; font-size: 0.85rem; }
+.media-selected { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; padding: 8px 12px; border-radius: var(--input-radius); background: var(--tonal); }
+.media-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
 .post-actions, .comment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .post-actions { border-top: 1px solid var(--hairline); padding-top: 10px; }
 .action-pill {

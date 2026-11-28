@@ -1,5 +1,5 @@
 import { createSocialClient, SocialSessionError } from './social-client.js';
-import { ALLOWED_IMAGE_MIME_TYPES, canonicalImageRequestPath, imageUuid } from './social-media.js';
+import { ALLOWED_IMAGE_MIME_TYPES, ALLOWED_VIDEO_MIME_TYPES, canonicalImageRequestPath, canonicalVideoRequestPath, imageUuid, isMediaId, videoUuid } from './social-media.js';
 
 const HEART = '❤️';
 
@@ -28,6 +28,20 @@ const TEXT = {
     signoutUnconfirmed: 'Đã đăng xuất cục bộ, nhưng máy chủ chưa xác nhận thu hồi phiên.',
     composerTitle: 'Bài viết mới',
     composerLabel: 'Nội dung bài viết',
+    mediaLabel: 'Ảnh hoặc video',
+    mediaHelp: 'JPEG, PNG, WebP hoặc MP4 tối đa 4 MiB. Ảnh có thể đăng một mình; video cần kèm nội dung chú thích.',
+    mediaRemove: 'Gỡ tệp',
+    mediaTypeError: 'Chỉ nhận ảnh JPEG, PNG, WebP hoặc video MP4.',
+    mediaSizeError: 'Tệp phải nhỏ hơn hoặc bằng 4 MiB.',
+    videoNeedsCaption: 'Video cần kèm nội dung chú thích trước khi đăng.',
+    uploading: 'Đang tải lên…',
+    uploadFailed: 'Không tải được tệp lên. Thử lại khi bạn sẵn sàng.',
+    loadVideo: 'Tải video',
+    videoLoading: 'Đang tải video…',
+    videoUnavailable: 'Không tải được video.',
+    videoPlaybackFailed: 'Không phát được video này. Thử lại hoặc dùng MP4 H.264.',
+    retryVideo: 'Thử lại',
+    videoAlt: 'Video của bài viết',
     postButton: 'Đăng bài',
     posting: 'Đang đăng…',
     postFailed: 'Không đăng được bài. Thử lại khi bạn sẵn sàng.',
@@ -105,6 +119,20 @@ const TEXT = {
     signoutUnconfirmed: 'Signed out locally, but the server did not confirm session revocation.',
     composerTitle: 'New post',
     composerLabel: 'Post body',
+    mediaLabel: 'Photo or video',
+    mediaHelp: 'JPEG, PNG, WebP, or MP4 up to 4 MiB. A photo can be posted alone; a video needs a caption.',
+    mediaRemove: 'Remove file',
+    mediaTypeError: 'Only JPEG, PNG, WebP images or MP4 videos are accepted.',
+    mediaSizeError: 'The file must be at most 4 MiB.',
+    videoNeedsCaption: 'A video needs a caption before posting.',
+    uploading: 'Uploading…',
+    uploadFailed: 'Could not upload the file. Try again when ready.',
+    loadVideo: 'Load video',
+    videoLoading: 'Loading video…',
+    videoUnavailable: 'Could not load the video.',
+    videoPlaybackFailed: 'This video could not play. Try again or use an H.264 MP4.',
+    retryVideo: 'Retry',
+    videoAlt: 'Post video',
     postButton: 'Post',
     posting: 'Posting…',
     postFailed: 'Could not create the post. Try again when ready.',
@@ -179,6 +207,10 @@ const els = {
   sessionUser: $('session-user'),
   logoutButton: $('logout-button'),
   postBody: $('post-body'),
+  postMedia: $('post-media'),
+  mediaSelected: $('media-selected'),
+  mediaName: $('media-name'),
+  mediaRemove: $('media-remove'),
   postCounter: $('post-counter'),
   postSubmit: $('post-submit'),
   composerStatus: $('composer-status'),
@@ -204,10 +236,13 @@ let feedLoading = false;
 let commentsState = new Map();
 let commentDrafts = new Map();
 let imageCache = new Map();
+let videoCache = new Map();
+let selectedFile = null;
+let pendingUpload = null;
 let reportTarget = null;
 let reportReturnFocus = null;
 let uiEpoch = 0;
-let postDraft = { id: crypto.randomUUID(), submittedBody: null };
+let postDraft = { id: crypto.randomUUID(), submittedBody: null, file: null };
 
 function t(key, values = {}) {
   let value = (TEXT[lang] && TEXT[lang][key]) || TEXT.vi[key] || key;
@@ -292,22 +327,34 @@ function avatar(name) {
 }
 
 function clearMedia() {
-  for (const entry of imageCache.values()) {
-    if (entry.objectUrl) {
-      URL.revokeObjectURL(entry.objectUrl);
+  for (const cache of [imageCache, videoCache]) {
+    for (const entry of cache.values()) {
+      if (entry.objectUrl) {
+        URL.revokeObjectURL(entry.objectUrl);
+      }
     }
   }
   imageCache = new Map();
+  videoCache = new Map();
 }
 
 function pruneMedia() {
-  const wanted = new Set(posts.map((post) => imageUuid(post.image && post.image.url)).filter(Boolean));
+  const wantedImages = new Set(posts.map((post) => imageUuid(post.image && post.image.url)).filter(Boolean));
   for (const [id, entry] of imageCache) {
-    if (!wanted.has(id)) {
+    if (!wantedImages.has(id)) {
       if (entry.objectUrl) {
         URL.revokeObjectURL(entry.objectUrl);
       }
       imageCache.delete(id);
+    }
+  }
+  const wantedVideos = new Set(posts.map((post) => videoUuid(post.video && post.video.url)).filter(Boolean));
+  for (const [id, entry] of videoCache) {
+    if (!wantedVideos.has(id)) {
+      if (entry.objectUrl) {
+        URL.revokeObjectURL(entry.objectUrl);
+      }
+      videoCache.delete(id);
     }
   }
 }
@@ -377,6 +424,118 @@ async function loadImage(post, container) {
   }
 }
 
+function renderVideoArea(post, container) {
+  container.replaceChildren();
+  const id = videoUuid(post.video && post.video.url);
+  const cached = id ? videoCache.get(id) : null;
+  if (cached && cached.objectUrl) {
+    appendVideoElement(container, cached.objectUrl, post);
+    return;
+  }
+  const loadButton = actionButton(t('loadVideo'), 'video-load-button');
+  loadButton.type = 'button';
+  loadButton.addEventListener('click', () => void loadVideo(post, container));
+  container.append(loadButton);
+}
+
+function appendVideoElement(container, objectUrl, post) {
+  const video = document.createElement('video');
+  video.className = 'post-video';
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.src = objectUrl;
+  video.setAttribute('aria-label', t('videoAlt'));
+  // A decode failure is not a fetch failure: the bytes are cached, so retrying
+  // only re-attaches the same object URL — it never refetches on its own.
+  video.addEventListener('error', () => {
+    if (!container.isConnected || video.src !== objectUrl) {
+      return;
+    }
+    showVideoFailure(container, post, () => {
+      if (container.isConnected) {
+        appendVideoElement(container, objectUrl, post);
+      }
+    }, true);
+  });
+  container.replaceChildren(video);
+}
+
+function showVideoFailure(container, post, retry, playbackFailed) {
+  const hadFocus = container.contains(document.activeElement);
+  container.replaceChildren();
+  const message = el('p', 'video-error', playbackFailed ? t('videoPlaybackFailed') : t('videoUnavailable'));
+  const retryButton = actionButton(t('retryVideo'), 'video-retry-button');
+  retryButton.type = 'button';
+  retryButton.addEventListener('click', () => retry());
+  container.append(message, retryButton);
+  if (hadFocus) {
+    retryButton.focus();
+  }
+}
+
+async function loadVideo(post, container) {
+  const epoch = uiEpoch;
+  const id = videoUuid(post.video && post.video.url);
+  if (!id) {
+    container.textContent = t('videoUnavailable');
+    return;
+  }
+  container.textContent = t('videoLoading');
+  const cached = videoCache.get(id);
+  try {
+    let objectUrl = cached && cached.objectUrl;
+    if (!objectUrl) {
+      const promise = cached && cached.promise;
+      if (promise) {
+        objectUrl = await promise;
+      } else {
+        const entry = { promise: null, objectUrl: null };
+        entry.promise = client.request(canonicalVideoRequestPath(post.video.url), { asBlob: true })
+          .then((blob) => {
+            if (!ALLOWED_VIDEO_MIME_TYPES.has(blob.type)) {
+              throw new Error('unsupported video type');
+            }
+            if (videoCache.get(id) !== entry) {
+              throw new Error('stale video request');
+            }
+            entry.objectUrl = URL.createObjectURL(blob);
+            return entry.objectUrl;
+          })
+          .catch((error) => {
+            if (videoCache.get(id) === entry) {
+              videoCache.delete(id);
+            }
+            throw error;
+          });
+        videoCache.set(id, entry);
+        objectUrl = await entry.promise;
+      }
+    }
+    if (!posts.some((item) => item.id === post.id) || videoCache.get(id)?.objectUrl !== objectUrl || !container.isConnected) {
+      return;
+    }
+    const hadFocus = container.contains(document.activeElement);
+    appendVideoElement(container, objectUrl, post);
+    if (hadFocus) {
+      const video = container.querySelector('video');
+      if (video) {
+        video.focus();
+      }
+    }
+  } catch (error) {
+    if (error instanceof SocialSessionError) {
+      if (epoch === uiEpoch) {
+        expireSession();
+      }
+      return;
+    }
+    if (epoch === uiEpoch && container.isConnected) {
+      showVideoFailure(container, post, () => void loadVideo(post, container), false);
+    }
+  }
+}
+
 function setSignedIn(user) {
   uiEpoch += 1;
   account = user;
@@ -400,8 +559,9 @@ function clearSocialState() {
   feedLoading = false;
   commentsState = new Map();
   commentDrafts = new Map();
-  postDraft = { id: crypto.randomUUID(), submittedBody: null };
+  postDraft = { id: crypto.randomUUID(), submittedBody: null, file: null };
   clearMedia();
+  clearMediaSelection();
   els.feedList.replaceChildren();
   els.signedOut.hidden = false;
   els.session.hidden = true;
@@ -410,6 +570,8 @@ function clearSocialState() {
   els.loadMoreButton.hidden = true;
   els.postBody.value = '';
   els.postBody.disabled = false;
+  els.postMedia.disabled = false;
+  els.mediaRemove.disabled = false;
   els.postSubmit.disabled = false;
   els.postSubmit.textContent = t('postButton');
   els.refreshButton.disabled = false;
@@ -518,6 +680,11 @@ function renderPost(post) {
     const imageWrap = el('div', 'post-image-wrap', t('loading'));
     article.append(imageWrap);
     void loadImage(post, imageWrap);
+  }
+  if (post.video && post.video.url) {
+    const videoWrap = el('div', 'post-video-wrap');
+    article.append(videoWrap);
+    renderVideoArea(post, videoWrap);
   }
 
   const actions = el('div', 'post-actions');
@@ -890,44 +1057,131 @@ async function submitReport() {
   }
 }
 
+const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
+const ACCEPTED_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'video/mp4']);
+
+function updateMediaSelection() {
+  const file = els.postMedia.files && els.postMedia.files[0] ? els.postMedia.files[0] : null;
+  selectedFile = null;
+  pendingUpload = null;
+  els.mediaSelected.hidden = true;
+  els.mediaName.textContent = '';
+  if (!file) {
+    return;
+  }
+  if (!ACCEPTED_MEDIA_TYPES.has(file.type)) {
+    els.postMedia.value = '';
+    setStatus(els.composerStatus, 'mediaTypeError');
+    return;
+  }
+  if (file.size > MAX_MEDIA_BYTES) {
+    els.postMedia.value = '';
+    setStatus(els.composerStatus, 'mediaSizeError');
+    return;
+  }
+  selectedFile = file;
+  els.mediaName.textContent = file.name || file.type;
+  els.mediaSelected.hidden = false;
+  setStatus(els.composerStatus, '');
+}
+
+function clearMediaSelection() {
+  selectedFile = null;
+  pendingUpload = null;
+  els.postMedia.value = '';
+  els.mediaSelected.hidden = true;
+  els.mediaName.textContent = '';
+}
+
 async function submitPost() {
   const body = els.postBody.value.trim();
-  if (!body) {
+  const file = selectedFile;
+  const fileIsVideo = Boolean(file && file.type === 'video/mp4');
+  if (!body && !file) {
     setStatus(els.composerStatus, 'postEmpty');
     els.postBody.focus();
     return;
   }
-  if (postDraft.submittedBody !== null && postDraft.submittedBody !== body) {
-    postDraft = { id: crypto.randomUUID(), submittedBody: null };
+  if (fileIsVideo && !body) {
+    setStatus(els.composerStatus, 'videoNeedsCaption');
+    els.postBody.focus();
+    return;
+  }
+  // The post key survives an uncertain retry of the same caption and file;
+  // it rotates as soon as either one actually changes.
+  if (postDraft.submittedBody !== null && (postDraft.submittedBody !== body || postDraft.file !== file)) {
+    postDraft = { id: crypto.randomUUID(), submittedBody: null, file: null };
   }
   postDraft.submittedBody = body;
+  postDraft.file = file;
   const epoch = uiEpoch;
+  let phase = 'upload';
   els.postSubmit.disabled = true;
   els.postBody.disabled = true;
+  els.postMedia.disabled = true;
+  els.mediaRemove.disabled = true;
   els.postSubmit.textContent = t('posting');
-  setStatus(els.composerStatus, '');
   try {
+    let asset = null;
+    if (file) {
+      if (!(pendingUpload && pendingUpload.file === file && pendingUpload.assetId)) {
+        setStatus(els.composerStatus, 'uploading', true);
+        const form = new FormData();
+        form.append('file', file, file.name || (fileIsVideo ? 'video.mp4' : 'image'));
+        const uploaded = await client.request(fileIsVideo ? '/videos' : '/images', {
+          method: 'POST',
+          body: form,
+        });
+        if (epoch !== uiEpoch || !account) {
+          return;
+        }
+        // A 2xx without a usable media id is an upload failure: publishing a
+        // text-only post here would silently drop the selected media.
+        const assetId = uploaded && uploaded[fileIsVideo ? 'videoId' : 'imageId'];
+        if (!isMediaId(assetId)) {
+          throw new Error('Upload response did not contain a media ID');
+        }
+        // The upload is confirmed: a later publish retry reuses this asset
+        // instead of uploading the same bytes again.
+        pendingUpload = { file, video: fileIsVideo, assetId };
+      }
+      asset = pendingUpload;
+    }
+    phase = 'post';
+    setStatus(els.composerStatus, 'posting', true);
+    const payload = { body: body || null, clientPostId: postDraft.id };
+    if (asset && asset.assetId) {
+      if (asset.video) {
+        payload.videoId = asset.assetId;
+      } else {
+        payload.imageId = asset.assetId;
+      }
+    }
     const post = await client.request('/posts', {
       method: 'POST',
-      body: { body, clientPostId: postDraft.id },
+      body: payload,
     });
     if (epoch !== uiEpoch || !account) {
       return;
     }
     posts = [post].concat(posts.filter((item) => item.id !== post.id));
-    postDraft = { id: crypto.randomUUID(), submittedBody: null };
+    postDraft = { id: crypto.randomUUID(), submittedBody: null, file: null };
     els.postBody.value = '';
+    clearMediaSelection();
     updatePostCounter();
+    setStatus(els.composerStatus, '');
     setStatus(els.feedStatus, '');
     renderFeed();
   } catch (error) {
     if (epoch === uiEpoch) {
-      handleError(error, 'postFailed', els.composerStatus);
+      handleError(error, phase === 'upload' ? 'uploadFailed' : 'postFailed', els.composerStatus);
     }
   } finally {
     if (epoch === uiEpoch) {
       els.postSubmit.disabled = false;
       els.postBody.disabled = false;
+      els.postMedia.disabled = false;
+      els.mediaRemove.disabled = false;
       els.postSubmit.textContent = t('postButton');
     }
   }
@@ -984,6 +1238,11 @@ window.addEventListener('hashchange', () => {
 els.loginForm.addEventListener('submit', (event) => void signIn(event));
 els.logoutButton.addEventListener('click', () => void signOut());
 els.postBody.addEventListener('input', updatePostCounter);
+els.postMedia.addEventListener('change', updateMediaSelection);
+els.mediaRemove.addEventListener('click', () => {
+  clearMediaSelection();
+  setStatus(els.composerStatus, '');
+});
 els.postSubmit.addEventListener('click', () => void submitPost());
 els.refreshButton.addEventListener('click', () => void loadFeed(true));
 els.loadMoreButton.addEventListener('click', () => void loadFeed(false));
