@@ -1,12 +1,18 @@
 package com.nexachat.feed;
 
+import com.nexachat.attachment.ByteRanges;
+import com.nexachat.attachment.SizedInputStreamResource;
+import com.nexachat.common.MultipartRequests;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.feed.dto.AuthorProfileResponse;
 import com.nexachat.feed.dto.CommentPageResponse;
 import com.nexachat.feed.dto.CommentResponse;
 import com.nexachat.feed.dto.CreateCommentRequest;
 import com.nexachat.feed.dto.CreatePostRequest;
+import com.nexachat.feed.dto.EditCommentRequest;
+import com.nexachat.feed.dto.EditPostRequest;
 import com.nexachat.feed.dto.FeedImageResponse;
 import com.nexachat.feed.dto.FeedVideoResponse;
 import com.nexachat.feed.dto.PostPageResponse;
@@ -24,16 +30,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -71,8 +80,16 @@ public class FeedController {
     @GetMapping("/posts")
     public PostPageResponse list(@AuthenticationPrincipal JwtPrincipal principal,
                                  @RequestParam(name = "limit", required = false) Integer limit,
-                                 @RequestParam(name = "cursor", required = false) String cursor) {
-        return feedService.list(requireUserId(principal), limit, cursor);
+                                 @RequestParam(name = "cursor", required = false) String cursor,
+                                 @RequestParam(name = "authorId", required = false) UUID authorId,
+                                 @RequestParam(name = "q", required = false) String q) {
+        return feedService.list(requireUserId(principal), limit, cursor, authorId, q);
+    }
+
+    @GetMapping("/authors/{authorId}")
+    public AuthorProfileResponse authorProfile(@AuthenticationPrincipal JwtPrincipal principal,
+                                               @PathVariable UUID authorId) {
+        return feedService.getAuthorProfile(requireUserId(principal), authorId);
     }
 
     @PostMapping("/posts")
@@ -91,6 +108,13 @@ public class FeedController {
     public PostResponse get(@AuthenticationPrincipal JwtPrincipal principal,
                             @PathVariable UUID postId) {
         return feedService.get(requireUserId(principal), postId);
+    }
+
+    @PatchMapping("/posts/{postId}")
+    public PostResponse editPost(@AuthenticationPrincipal JwtPrincipal principal,
+                                 @PathVariable UUID postId,
+                                 @Valid @RequestBody EditPostRequest request) {
+        return feedService.editPost(requireUserId(principal), postId, request);
     }
 
     @DeleteMapping("/posts/{postId}")
@@ -134,6 +158,13 @@ public class FeedController {
                 .body(result.comment());
     }
 
+    @PatchMapping("/comments/{commentId}")
+    public CommentResponse editComment(@AuthenticationPrincipal JwtPrincipal principal,
+                                       @PathVariable UUID commentId,
+                                       @Valid @RequestBody EditCommentRequest request) {
+        return feedService.editComment(requireUserId(principal), commentId, request);
+    }
+
     @DeleteMapping("/comments/{commentId}")
     public ResponseEntity<Void> deleteComment(@AuthenticationPrincipal JwtPrincipal principal,
                                               @PathVariable UUID commentId) {
@@ -144,11 +175,12 @@ public class FeedController {
     @PostMapping("/images")
     public ResponseEntity<FeedImageResponse> uploadImage(
             @AuthenticationPrincipal JwtPrincipal principal,
-            @RequestParam("file") MultipartFile file,
+            @RequestParam("file") List<MultipartFile> files,
             @RequestParam(name = "width", required = false) Integer width,
             @RequestParam(name = "height", required = false) Integer height) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(imageService.upload(requireUserId(principal), file, width, height));
+                .body(imageService.upload(requireUserId(principal),
+                        MultipartRequests.requireSingleFile(files), width, height));
     }
 
     @GetMapping("/images/{imageId}")
@@ -167,23 +199,41 @@ public class FeedController {
     @PostMapping("/videos")
     public ResponseEntity<FeedVideoResponse> uploadVideo(
             @AuthenticationPrincipal JwtPrincipal principal,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") List<MultipartFile> files) {
         requireVideoUploadsEnabled();
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(imageService.uploadVideo(requireUserId(principal), file));
+                .body(imageService.uploadVideo(requireUserId(principal),
+                        MultipartRequests.requireSingleFile(files)));
     }
 
     @GetMapping("/videos/{videoId}")
-    public ResponseEntity<Resource> video(@AuthenticationPrincipal JwtPrincipal principal,
-                                          @PathVariable UUID videoId) {
-        FeedImageService.ImageContent content =
-                imageService.openVideo(requireUserId(principal), videoId);
+    public ResponseEntity<Resource> video(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID videoId,
+            @RequestHeader(name = HttpHeaders.RANGE, required = false) String rangeHeader) {
+        UUID viewerId = requireUserId(principal);
+        if (rangeHeader != null && !rangeHeader.isBlank()) {
+            FeedImageService.VideoRangeContent slice =
+                    imageService.openVideoRange(viewerId, videoId, rangeHeader);
+            return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                    .contentType(MediaType.parseMediaType(slice.image().mimeType()))
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header(HttpHeaders.ACCEPT_RANGES, ByteRanges.BYTES_UNIT)
+                    .header(HttpHeaders.CONTENT_RANGE,
+                            "bytes " + slice.start() + "-" + slice.end() + "/" + slice.totalSize())
+                    .cacheControl(CacheControl.noStore().cachePrivate())
+                    .contentLength(slice.count())
+                    .body(new SizedInputStreamResource(slice.content().content(), slice.count()));
+        }
+        FeedImageService.ImageContent content = imageService.openVideo(viewerId, videoId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(content.image().mimeType()))
                 .header("X-Content-Type-Options", "nosniff")
+                .header(HttpHeaders.ACCEPT_RANGES, ByteRanges.BYTES_UNIT)
                 .cacheControl(CacheControl.noStore().cachePrivate())
                 .contentLength(content.content().sizeBytes())
-                .body(new InputStreamResource(content.content().content()));
+                .body(new SizedInputStreamResource(
+                        content.content().content(), content.content().sizeBytes()));
     }
 
     /**

@@ -1771,24 +1771,28 @@ keyset-paginate newest first.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /api/v1/feed/posts` | Bearer | `?limit=` `?cursor=` | `200` `PostPageResponse` `{items, nextCursor}` | `UNAUTHORIZED` 401 · `VALIDATION_FAILED` 400 (bad cursor) |
-| `POST /api/v1/feed/posts` | Bearer | `{body?, imageId?, videoId?, clientPostId}` — `clientPostId` required; `body` required unless `imageId` is set (≤1000 chars); a `videoId` post requires a non-blank caption and cannot also carry `imageId` | `201` `PostResponse` created; `200` `PostResponse` on a `clientPostId` replay (returns the stored row) | `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (3/min, 30/day) |
+| `GET /api/v1/feed/posts` | Bearer | `?limit=` `?cursor=` `?authorId=` `?q=` (trimmed, ≤100 chars) | `200` `PostPageResponse` `{items, nextCursor}` | `UNAUTHORIZED` 401 · `VALIDATION_FAILED` 400 (bad cursor or `q` >100 chars) |
+| `POST /api/v1/feed/posts` | Bearer | `{body?, imageId?, videoId?, clientPostId}` — `clientPostId` required; `body` required unless `imageId` is set (≤1000 chars); a `videoId` post requires a non-blank caption and cannot also carry `imageId` | `201` `PostResponse` created; `200` `PostResponse` on a `clientPostId` replay (returns the stored row) | `VALIDATION_FAILED` 400 · `POST_NOT_FOUND` 404 (replayed deleted/hidden post) · `RATE_LIMITED` 429 (3/min, 30/day) |
 | `GET /api/v1/feed/posts/{postId}` | Bearer | — | `200` `PostResponse` | `POST_NOT_FOUND` 404 |
+| `PATCH /api/v1/feed/posts/{postId}` | Bearer author | `{body}` — non-blank, ≤1000 chars | `200` `PostResponse` (with `editedAt`) | `POST_NOT_FOUND` 404 · `FORBIDDEN` 403 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (30/min shared edit bucket) |
 | `DELETE /api/v1/feed/posts/{postId}` | Bearer author | — | `204` empty | `POST_NOT_FOUND` 404 · `FORBIDDEN` 403 |
+| `GET /api/v1/feed/authors/{authorId}` | Bearer | — | `200` `AuthorProfileResponse` `{userId, displayName, avatarUrl, postCount}` | `USER_NOT_FOUND` 404 (missing, deleted, or blocked in either direction) |
 | `PUT /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `200` `ReactionListResponse` (post's reaction aggregate; idempotent re-add) | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 (over 8 distinct emojis per user per post) · `RATE_LIMITED` 429 (60/min) |
 | `DELETE /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `200` `ReactionListResponse` | `POST_NOT_FOUND` 404 |
 | `GET /api/v1/feed/posts/{postId}/comments` | Bearer | `?limit=` `?cursor=` | `200` `CommentPageResponse` `{items, nextCursor}` | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 |
-| `POST /api/v1/feed/posts/{postId}/comments` | Bearer | `{body, clientCommentId}` — both required; `body` ≤500 chars | `201` `CommentResponse` created; `200` `CommentResponse` on a `clientCommentId` replay | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (10/min, 200/day) |
+| `POST /api/v1/feed/posts/{postId}/comments` | Bearer | `{body, clientCommentId}` — both required; `body` ≤500 chars | `201` `CommentResponse` created; `200` `CommentResponse` on a `clientCommentId` replay | `POST_NOT_FOUND` 404 · `COMMENT_NOT_FOUND` 404 (replayed deleted/hidden/cross-post comment) · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (10/min, 200/day) |
+| `PATCH /api/v1/feed/comments/{commentId}` | Bearer author | `{body}` — non-blank, ≤500 chars | `200` `CommentResponse` (with `editedAt`) | `COMMENT_NOT_FOUND` 404 (including hidden/deleted/blocked parent post) · `FORBIDDEN` 403 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (30/min shared edit bucket) |
 | `DELETE /api/v1/feed/comments/{commentId}` | Bearer author | — | `204` empty | `COMMENT_NOT_FOUND` 404 · `FORBIDDEN` 403 |
-| `POST /api/v1/feed/images` | Bearer | `multipart/form-data` `file`, `width?`, `height?` | `201` `FeedImageResponse` `{imageId, url, width, height, mimeType}` | `VALIDATION_FAILED` 400 (negative or >16384 dimensions) · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 (10/min, 100/day, ≤20 unbound) |
-| `GET /api/v1/feed/images/{imageId}` | Bearer | — | `200` image bytes | `FILE_NOT_FOUND` 404 |
-| `POST /api/v1/feed/videos` | Bearer | `multipart/form-data` `file` | `201` `FeedVideoResponse` `{videoId, url, mimeType}` | `VALIDATION_FAILED` 400 · `MIME_NOT_ALLOWED` 415 (box tree proves no MP4 video track) · `FILE_TOO_LARGE` 413 (over 4 MiB) · `RATE_LIMITED` 429 (shared with image uploads) |
-| `GET /api/v1/feed/videos/{videoId}` | Bearer | — | `200` `video/mp4` bytes, `no-store` private | `FILE_NOT_FOUND` 404 |
+| `POST /api/v1/feed/images` | Bearer | `multipart/form-data` single `file` part, `width?`, `height?` | `201` `FeedImageResponse` `{imageId, url, width, height, mimeType}` | `VALIDATION_FAILED` 400 (missing/duplicate `file` part, negative or >16384 dimensions) · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 (10/min, 100/day, ≤20 unbound) |
+| `GET /api/v1/feed/images/{imageId}` | Bearer | — | `200` image bytes (bound assets denied if post hidden/deleted) | `FILE_NOT_FOUND` 404 |
+| `POST /api/v1/feed/videos` | Bearer | `multipart/form-data` single `file` part | `201` `FeedVideoResponse` `{videoId, url, mimeType}` | `VALIDATION_FAILED` 400 (missing/duplicate `file` part) · `MIME_NOT_ALLOWED` 415 (box tree proves no MP4 video track) · `FILE_TOO_LARGE` 413 (over 4 MiB) · `RATE_LIMITED` 429 (shared with image uploads) |
+| `GET /api/v1/feed/videos/{videoId}` | Bearer | optional `Range: bytes=…` | `200` `video/mp4` bytes (`Accept-Ranges: bytes`, `no-store` private) or `206` Partial Content with `Content-Range` | `FILE_NOT_FOUND` 404 (bound assets denied if post hidden/deleted) · `RANGE_NOT_SATISFIABLE` 416 |
 
-`PostResponse` = `{id, author:{id, displayName, avatarUrl}, body, image:{url, width, height, mimeType}?, video:{url, mimeType}?, createdAt, commentCount, reactions:[{emoji, count, mine}], mine}` —
-`body` is null on an image-only post, `image` null on a text-only or video one; the additive `video` field is present only on video posts (omitted otherwise).
+`PostResponse` = `{id, author:{id, displayName, avatarUrl}, body, image:{url, width, height, mimeType}?, video:{url, mimeType}?, createdAt, editedAt, commentCount, reactions:[{emoji, count, mine}], mine}` —
+`body` is null on an image-only post, `image` null on a text-only or video one, `editedAt` null until edited; the additive `video` field is present only on video posts (omitted otherwise).
 `commentCount` counts the post's visible comments (not deleted, not hidden);
-staff hide/unhide moves it. `CommentResponse` = `{id, postId, author:{id, displayName, avatarUrl}, body, createdAt, mine}`.
+staff hide/unhide moves it. `CommentResponse` = `{id, postId, author:{id, displayName, avatarUrl}, body, createdAt, editedAt, mine}`.
+`AuthorProfileResponse` = `{userId, displayName, avatarUrl, postCount}` where `postCount` counts the author's live (non-deleted, non-hidden) posts.
 Hidden and soft-deleted rows are excluded from every list/read predicate;
 `POST_NOT_FOUND`/`COMMENT_NOT_FOUND` is returned for them. Upload-first images
 bind to a post via `imageId` (one image per post); unbound images are purged
@@ -1827,16 +1831,19 @@ moderation (including the audited report-video preview) is unaffected.
 | `GET /api/social/v1/posts` | Bearer | `200` `PostPageResponse` | as `/api/v1/feed/posts` |
 | `POST /api/social/v1/posts` | Bearer | `201`/`200` `PostResponse` | as `/api/v1/feed/posts` |
 | `GET /api/social/v1/posts/{postId}` | Bearer | `200` `PostResponse` | as `/api/v1/feed/posts/{postId}` |
+| `PATCH /api/social/v1/posts/{postId}` | Bearer author | `200` `PostResponse` | as `/api/v1/feed/posts/{postId}` |
 | `DELETE /api/social/v1/posts/{postId}` | Bearer author | `204` empty | as `/api/v1/feed/posts/{postId}` |
+| `GET /api/social/v1/authors/{authorId}` | Bearer | `200` `AuthorProfileResponse` | as `/api/v1/feed/authors/{authorId}` |
 | `PUT /api/social/v1/posts/{postId}/reactions/{emoji}` | Bearer | `200` `ReactionListResponse` | as `/api/v1/feed` reactions |
 | `DELETE /api/social/v1/posts/{postId}/reactions/{emoji}` | Bearer | `200` `ReactionListResponse` | as `/api/v1/feed` reactions |
 | `GET /api/social/v1/posts/{postId}/comments` | Bearer | `200` `CommentPageResponse` | as `/api/v1/feed` comments |
 | `POST /api/social/v1/posts/{postId}/comments` | Bearer | `201`/`200` `CommentResponse` | as `/api/v1/feed` comments |
+| `PATCH /api/social/v1/comments/{commentId}` | Bearer author | `200` `CommentResponse` | as `/api/v1/feed/comments/{commentId}` |
 | `DELETE /api/social/v1/comments/{commentId}` | Bearer author | `204` empty | as `/api/v1/feed/comments/{commentId}` |
 | `POST /api/social/v1/images` | Bearer | `201` `FeedImageResponse` | as `/api/v1/feed/images` |
 | `GET /api/social/v1/images/{imageId}` | Bearer | `200` image bytes | as `/api/v1/feed/images/{imageId}` |
 | `POST /api/social/v1/videos` | Bearer | `201` `FeedVideoResponse` | as `/api/v1/feed/videos` |
-| `GET /api/social/v1/videos/{videoId}` | Bearer | `200` `video/mp4` bytes | as `/api/v1/feed/videos/{videoId}` |
+| `GET /api/social/v1/videos/{videoId}` | Bearer | `200`/`206` `video/mp4` bytes | as `/api/v1/feed/videos/{videoId}` |
 
 
 ## Admin feed moderation — `/api/v1/admin/feed`

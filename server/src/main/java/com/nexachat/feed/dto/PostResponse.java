@@ -18,6 +18,7 @@ public record PostResponse(
         String body,
         ImageResponse image,
         Instant createdAt,
+        Instant editedAt,
         int commentCount,
         List<ReactionSummary> reactions,
         boolean mine,

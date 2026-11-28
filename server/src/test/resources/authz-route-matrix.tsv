@@ -207,3 +207,9 @@ PATCH	/api/v1/admin/social/settings/flags	ADMIN_STAFF	admin_staff	rest-205
 PUT	/api/v1/admin/social/settings/announcement/draft	ADMIN_STAFF	admin_staff	rest-206
 POST	/api/v1/admin/social/settings/announcement/publish	ADMIN_STAFF	admin_staff	rest-207
 POST	/api/v1/admin/social/settings/announcement/unpublish	ADMIN_STAFF	admin_staff	rest-208
+PATCH	/api/v1/feed/posts/{postId}	AUTHENTICATED	authenticated_public_feed	rest-209
+PATCH	/api/v1/feed/comments/{commentId}	AUTHENTICATED	authenticated_public_feed	rest-210
+GET	/api/v1/feed/authors/{authorId}	AUTHENTICATED	authenticated_public_feed	rest-211
+PATCH	/api/social/v1/posts/{postId}	AUTHENTICATED	authenticated_public_feed	rest-212
+PATCH	/api/social/v1/comments/{commentId}	AUTHENTICATED	authenticated_public_feed	rest-213
+GET	/api/social/v1/authors/{authorId}	AUTHENTICATED	authenticated_public_feed	rest-214

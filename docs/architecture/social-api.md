@@ -19,15 +19,16 @@ prefixes:
 
 | Canonical social path | Legacy feed path | Notes |
 | --- | --- | --- |
-| `/api/social/v1/posts` | `/api/v1/feed/posts` | GET newest-first keyset page; POST create |
-| `/api/social/v1/posts/{postId}` | `/api/v1/feed/posts/{postId}` | GET visible post; author DELETE |
+| `/api/social/v1/posts` | `/api/v1/feed/posts` | GET newest-first keyset page (`?limit=&cursor=&authorId=&q=`); POST create |
+| `/api/social/v1/posts/{postId}` | `/api/v1/feed/posts/{postId}` | GET visible post; author PATCH edit; author DELETE |
+| `/api/social/v1/authors/{authorId}` | `/api/v1/feed/authors/{authorId}` | GET block-aware author profile (`userId, displayName, avatarUrl, postCount`) |
 | `/api/social/v1/posts/{postId}/comments` | `/api/v1/feed/posts/{postId}/comments` | GET oldest-first page; POST create |
-| `/api/social/v1/comments/{commentId}` | `/api/v1/feed/comments/{commentId}` | author DELETE |
+| `/api/social/v1/comments/{commentId}` | `/api/v1/feed/comments/{commentId}` | author PATCH edit; author DELETE |
 | `/api/social/v1/posts/{postId}/reactions/{emoji}` | `/api/v1/feed/posts/{postId}/reactions/{emoji}` | PUT/DELETE idempotent reaction |
-| `/api/social/v1/images` | `/api/v1/feed/images` | authenticated multipart upload |
+| `/api/social/v1/images` | `/api/v1/feed/images` | authenticated single-part multipart upload |
 | `/api/social/v1/images/{imageId}` | `/api/v1/feed/images/{imageId}` | authorized image bytes |
-| `/api/social/v1/videos` | `/api/v1/feed/videos` | authenticated multipart upload |
-| `/api/social/v1/videos/{videoId}` | `/api/v1/feed/videos/{videoId}` | authorized video bytes |
+| `/api/social/v1/videos` | `/api/v1/feed/videos` | authenticated single-part multipart upload |
+| `/api/social/v1/videos/{videoId}` | `/api/v1/feed/videos/{videoId}` | authorized video bytes (`Accept-Ranges: bytes`, HTTP `Range` 206/416) |
 
 The response contract is intentionally unchanged. In particular, a post's
 legacy `image.url` value remains `/api/v1/feed/images/{imageId}` even when the
@@ -161,25 +162,41 @@ revocation was not confirmed.
 ### Posts
 
 ```sh
-curl 'https://nexachat.io.vn/api/social/v1/posts?limit=20&cursor=<opaque-cursor>' \
+curl 'https://nexachat.io.vn/api/social/v1/posts?limit=20&cursor=<opaque-cursor>&authorId=<uuid>&q=hello' \
   -H "Authorization: Bearer <access-token>"
 ```
 
 Returns `{ "items": [PostResponse], "nextCursor": string|null }`, newest first.
-`nextCursor` is opaque and must be URL-encoded by clients.
+`nextCursor` is opaque and must be URL-encoded by clients. `authorId` filters to
+a single author's live posts (returning an empty page if the author is missing,
+deleted, or blocked); `q` (trimmed, up to 100 chars) filters `body`
+case- and accent-insensitively. Each `PostResponse` includes `editedAt`
+(`Instant | null`).
 
 ```sh
 curl -X POST https://nexachat.io.vn/api/social/v1/posts \
   -H "Authorization: Bearer <access-token>" \
   -H 'Content-Type: application/json' \
   -d '{"body":"hello","clientPostId":"<uuid>"}'
+
+curl -X PATCH https://nexachat.io.vn/api/social/v1/posts/<post-id> \
+  -H "Authorization: Bearer <access-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"body":"updated hello"}'
+
+curl https://nexachat.io.vn/api/social/v1/authors/<author-id> \
+  -H "Authorization: Bearer <access-token>"
 ```
 
 `clientPostId` is the durable create key. The first successful create returns
-`201`; replaying the same key returns `200` with the same stored row. The
-browser generates one UUID per post draft and keeps it when the user retries an
+`201`; replaying the same key returns `200` with the same stored row (or `404`
+without consuming quota if that row was deleted or hidden). The browser
+generates one UUID per post draft and keeps it when the user retries an
 identical draft after an uncertain network failure; it does not auto-retry
-server errors.
+server errors. `PATCH /posts/{postId}` updates the author's own visible post
+body (non-blank, ≤1000 chars) and stamps `editedAt`. `GET /authors/{authorId}`
+returns `{ userId, displayName, avatarUrl, postCount }` or `404 USER_NOT_FOUND`
+when missing, deleted, or blocked in either direction.
 
 ### Comments
 
@@ -191,11 +208,18 @@ curl -X POST https://nexachat.io.vn/api/social/v1/posts/<post-id>/comments \
   -H "Authorization: Bearer <access-token>" \
   -H 'Content-Type: application/json' \
   -d '{"body":"first","clientCommentId":"<uuid>"}'
+
+curl -X PATCH https://nexachat.io.vn/api/social/v1/comments/<comment-id> \
+  -H "Authorization: Bearer <access-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"body":"edited comment"}'
 ```
 
-Comment bodies are limited to 500 characters. `clientCommentId` has the same
-durable replay semantics as `clientPostId`; the browser keeps a separate stable
-UUID per comment draft.
+Comment bodies are limited to 500 characters and `CommentResponse` includes
+`editedAt` (`Instant | null`). `clientCommentId` has the same durable replay
+semantics as `clientPostId`; the browser keeps a separate stable UUID per
+comment draft. `PATCH /comments/{commentId}` updates the author's own visible
+comment when both the comment and its parent post are visible to the caller.
 
 ### Reactions and deletes
 
@@ -287,7 +311,11 @@ the caption; the legacy `image` field stays `null` and the video appears only
 in the additive `video` field, which is omitted on non-video posts).
 `GET /videos/{id}` serves the bytes only under the same feed visibility rule
 as images, always as `video/mp4` with `Cache-Control: no-store` + private,
-`nosniff` and an exact Content-Length. The image and video routes are mutually
+`nosniff`, `Accept-Ranges: bytes`, and an exact Content-Length (supporting
+`Range: bytes=…` `206 Partial Content` and `416 Range Not Satisfiable`).
+Unbound uploads remain readable only by their owner; once bound to a post,
+both images and videos follow the post's visibility (hidden or soft-deleted
+posts deny even the owner). The image and video routes are mutually
 exclusive: an image id on the video route (and vice versa) is a 404. Reads of
 the raw storage key through `/api/v1/files/**` stay behind the same feed
 guard.

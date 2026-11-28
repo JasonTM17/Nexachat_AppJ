@@ -1,5 +1,6 @@
 package com.nexachat.feed;
 
+import com.nexachat.attachment.ByteRanges;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.attachment.StorageTransactionCleanup;
 import com.nexachat.attachment.UploadAdmission;
@@ -96,6 +97,20 @@ public class FeedImageService {
     /** A stored asset plus an open stream over its bytes; the caller closes it. */
     public record ImageContent(FeedStore.ImageRow image, StorageService.StreamHandle content)
             implements AutoCloseable {
+
+        @Override
+        public void close() throws IOException {
+            content.close();
+        }
+    }
+
+    /** A stored video slice plus its exact byte range; the caller closes it. */
+    public record VideoRangeContent(FeedStore.ImageRow image,
+                                    StorageService.StreamHandle content,
+                                    long start,
+                                    long end,
+                                    long count,
+                                    long totalSize) implements AutoCloseable {
 
         @Override
         public void close() throws IOException {
@@ -233,14 +248,38 @@ public class FeedImageService {
         return openAsset(viewerId, videoId, true);
     }
 
-    private ImageContent openAsset(UUID viewerId, UUID imageId, boolean video) {
-        FeedStore.ImageRow image = store.findImage(imageId)
+    /**
+     * Opens a single byte range of one video for the caller under the same
+     * visibility rule as {@link #openVideo}.
+     *
+     * @throws ApiException {@code FILE_NOT_FOUND} when missing/unreadable, or
+     *                      {@code RANGE_NOT_SATISFIABLE} when the header is
+     *                      malformed or unsatisfiable
+     */
+    @Transactional(readOnly = true)
+    public VideoRangeContent openVideoRange(UUID viewerId, UUID videoId, String rangeHeader) {
+        FeedStore.ImageRow image = requireReadableAsset(viewerId, videoId, true);
+        long size = image.sizeBytes();
+        ByteRanges.ByteRange range = ByteRanges.parse(rangeHeader, size);
+        long count = range.count();
+        StorageService.StreamHandle handle =
+                storageService.openRange(image.storageKey(), range.start(), count);
+        return new VideoRangeContent(image, handle, range.start(), range.end(), count, size);
+    }
+
+    private FeedStore.ImageRow requireReadableAsset(UUID viewerId, UUID imageId, boolean video) {
+        return store.findImage(imageId)
                 .filter(row -> video
                         ? VIDEO_MIME.equals(row.mimeType())
                         : ALLOWED_MIME_TYPES.contains(row.mimeType()))
-                .filter(row -> row.ownerId().equals(viewerId)
-                        || store.isImageVisibleTo(imageId, viewerId))
+                .filter(row -> row.boundAt() == null
+                        ? row.ownerId().equals(viewerId)
+                        : store.isImageVisibleTo(row.id(), viewerId))
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.FILE_NOT_FOUND));
+    }
+
+    private ImageContent openAsset(UUID viewerId, UUID imageId, boolean video) {
+        FeedStore.ImageRow image = requireReadableAsset(viewerId, imageId, video);
         return new ImageContent(image, storageService.open(image.storageKey()));
     }
 

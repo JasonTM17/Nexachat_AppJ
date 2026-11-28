@@ -7,7 +7,6 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.feed.FeedImageAccess;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -71,7 +70,6 @@ import java.util.UUID;
 public class FileController {
 
     private static final String FILES_PREFIX = "/api/v1/files/";
-    private static final String BYTES_UNIT = "bytes";
     private static final int SNIFF_PREFIX_LENGTH = 64 * 1024;
     private static final int SNIFF_SUFFIX_LENGTH = 64 * 1024;
 
@@ -137,9 +135,9 @@ public class FileController {
                 .contentType(MediaType.parseMediaType(contentType))
                 .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
+                .header(HttpHeaders.ACCEPT_RANGES, ByteRanges.BYTES_UNIT)
                 .contentLength(size)
-                .body(new SniffedResource(bodyStream, size));
+                .body(new SizedInputStreamResource(bodyStream, size));
     }
 
     /**
@@ -150,31 +148,23 @@ public class FileController {
     private ResponseEntity<?> serveRange(String storageKey, String rangeHeader) {
         StorageService.PrefixRead prefix = storageService.readPrefix(storageKey, SNIFF_PREFIX_LENGTH);
         long size = prefix.sizeBytes();
-        final long[] range;
-        try {
-            range = parseRange(rangeHeader, size);
-        } catch (IllegalArgumentException ex) {
-            // Nothing beyond the bounded sniff was read, and no body handle
-            // was opened: reject through the error envelope. The advice keeps
-            // the 416 status and re-emits Content-Range: bytes */size.
-            throw new RangeNotSatisfiableException(size, "Requested range not satisfiable");
-        }
+        ByteRanges.ByteRange range = ByteRanges.parse(rangeHeader, size);
         byte[] suffix = sniffSuffix(storageKey, size, prefix.bytes());
         String contentType = contentType(prefix.bytes(), suffix);
-        long start = range[0];
-        long end = range[1];
-        long count = end - start + 1;
+        long start = range.start();
+        long end = range.end();
+        long count = range.count();
         StorageService.StreamHandle handle = storageService.openRange(storageKey, start, count);
         return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
                 .contentType(MediaType.parseMediaType(contentType))
                 .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
+                .header(HttpHeaders.ACCEPT_RANGES, ByteRanges.BYTES_UNIT)
                 .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + size)
                 .contentLength(count)
                 // The resource carries exactly the requested bytes, so the
                 // converter writes the slice without buffering the file.
-                .body(new SniffedResource(handle.content(), count));
+                .body(new SizedInputStreamResource(handle.content(), count));
     }
 
     private byte[] sniffSuffix(String storageKey, long size, byte[] prefix) {
@@ -187,77 +177,6 @@ public class FileController {
     private static String contentType(byte[] prefix, byte[] suffix) {
         String contentType = MagicBytes.sniff(prefix, suffix);
         return contentType == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType;
-    }
-
-    /**
-     * Parses a single-byte-range {@code Range} header.
-     *
-     * @param header the raw {@code Range} header value
-     * @param size   the current representation length in bytes
-     * @return {@code [start, end]} inclusive offsets
-     * @throws IllegalArgumentException when the header is malformed or the
-     *                                  requested range cannot be satisfied
-     */
-    private static long[] parseRange(String header, long size) {
-        String spec = header.trim();
-        if (!spec.regionMatches(true, 0, "bytes=", 0, "bytes=".length())) {
-            throw new IllegalArgumentException("Unsupported range unit");
-        }
-        spec = spec.substring("bytes=".length()).trim();
-        // Only the first range is honoured; RFC 9110 lets a server ignore the rest.
-        int comma = spec.indexOf(',');
-        if (comma >= 0) {
-            spec = spec.substring(0, comma).trim();
-        }
-        int dash = spec.indexOf('-');
-        if (dash < 0) {
-            throw new IllegalArgumentException("Malformed range");
-        }
-        String left = spec.substring(0, dash).trim();
-        String right = spec.substring(dash + 1).trim();
-        if (left.isEmpty() && right.isEmpty()) {
-            throw new IllegalArgumentException("Malformed range");
-        }
-        if (size <= 0) {
-            throw new IllegalArgumentException("Empty representation");
-        }
-
-        long start;
-        long end;
-        if (left.isEmpty()) {
-            // Suffix range: the last N bytes. N=0 is unsatisfiable.
-            long suffix = parseLong(right);
-            if (suffix <= 0) {
-                throw new IllegalArgumentException("Empty suffix range");
-            }
-            start = Math.max(0, size - suffix);
-            end = size - 1;
-        } else {
-            start = parseLong(left);
-            if (start < 0 || start >= size) {
-                throw new IllegalArgumentException("Range starts past the end of the representation");
-            }
-            if (right.isEmpty()) {
-                end = size - 1;
-            } else {
-                end = parseLong(right);
-                if (end < start) {
-                    throw new IllegalArgumentException("Range ends before it starts");
-                }
-                if (end >= size) {
-                    end = size - 1;
-                }
-            }
-        }
-        return new long[] {start, end};
-    }
-
-    private static long parseLong(String value) {
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException("Malformed range number", ex);
-        }
     }
 
     private static void closeQuietly(StorageService.StreamHandle handle) {
@@ -289,30 +208,5 @@ public class FileController {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
         }
         return key;
-    }
-
-    /**
-     * A stream-backed resource with a known length, so Spring's
-     * {@code ResourceHttpMessageConverter} can set {@code Content-Length}
-     * without buffering the file.
-     */
-    private static final class SniffedResource extends InputStreamResource {
-
-        private final long length;
-
-        SniffedResource(InputStream inputStream, long length) {
-            super(inputStream);
-            this.length = length;
-        }
-
-        @Override
-        public long contentLength() {
-            return length;
-        }
-
-        @Override
-        public String getFilename() {
-            return null;
-        }
     }
 }

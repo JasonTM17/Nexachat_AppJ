@@ -3,11 +3,14 @@ package com.nexachat.feed;
 import com.nexachat.common.ReactionEmoji;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.feed.dto.AuthorProfileResponse;
 import com.nexachat.feed.dto.AuthorResponse;
 import com.nexachat.feed.dto.CommentPageResponse;
 import com.nexachat.feed.dto.CommentResponse;
 import com.nexachat.feed.dto.CreateCommentRequest;
 import com.nexachat.feed.dto.CreatePostRequest;
+import com.nexachat.feed.dto.EditCommentRequest;
+import com.nexachat.feed.dto.EditPostRequest;
 import com.nexachat.feed.dto.ImageResponse;
 import com.nexachat.feed.dto.PostPageResponse;
 import com.nexachat.feed.dto.PostResponse;
@@ -56,6 +59,7 @@ public class FeedService {
 
     static final int MAX_BODY = 1000;
     static final int MAX_COMMENT = 500;
+    static final int MAX_SEARCH_QUERY = 100;
     static final int DEFAULT_PAGE = 20;
     static final int MAX_PAGE = 50;
     static final int DEFAULT_COMMENT_PAGE = 30;
@@ -66,6 +70,7 @@ public class FeedService {
     static final int COMMENTS_PER_MINUTE = 10;
     static final int COMMENTS_PER_DAY = 200;
     static final int REACTIONS_PER_MINUTE = 60;
+    static final int EDITS_PER_MINUTE = 30;
     /** Distinct emojis one user may leave on a post; re-adding one is free. */
     static final int MAX_DISTINCT_REACTIONS_PER_USER = 8;
 
@@ -109,11 +114,19 @@ public class FeedService {
     /** Newest-first keyset page of the public feed. */
     @Transactional(readOnly = true)
     public PostPageResponse list(UUID viewerId, Integer limit, String cursorToken) {
+        return list(viewerId, limit, cursorToken, null, null);
+    }
+
+    /** Newest-first keyset page of the public feed, optionally filtered by author and query. */
+    @Transactional(readOnly = true)
+    public PostPageResponse list(UUID viewerId, Integer limit, String cursorToken,
+                                 UUID authorId, String rawQuery) {
         int pageSize = normalizeLimit(limit, DEFAULT_PAGE, MAX_PAGE);
+        String query = normalizeSearchQuery(rawQuery);
         FeedCursor.Position cursor = cursorToken == null ? null : FeedCursor.decode(cursorToken);
-        List<FeedStore.PostRow> rows = cursor == null
-                ? store.listPostsFirst(viewerId, pageSize + 1)
-                : store.listPostsAfter(viewerId, cursor, pageSize + 1);
+        String likePattern = query == null ? null : "%" + escapeLike(query) + "%";
+        List<FeedStore.PostRow> rows = store.listPosts(
+                viewerId, authorId, likePattern, cursor, pageSize + 1);
         boolean hasMore = rows.size() > pageSize;
         List<FeedStore.PostRow> page = hasMore ? rows.subList(0, pageSize) : rows;
         Map<UUID, List<FeedStore.ReactionRow>> reactions = store.reactionsFor(
@@ -126,6 +139,15 @@ public class FeedService {
                 page.stream().map(row -> toResponse(row, viewerId,
                         reactions.getOrDefault(row.id(), List.of()))).toList(),
                 nextCursor);
+    }
+
+    /** Public profile for a visible author; missing, deleted, or blocked yields 404. */
+    @Transactional(readOnly = true)
+    public AuthorProfileResponse getAuthorProfile(UUID viewerId, UUID authorId) {
+        FeedStore.AuthorProfileRow row = store.findVisibleAuthorProfile(viewerId, authorId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        return new AuthorProfileResponse(row.userId(), row.displayName(),
+                row.avatarUrl(), row.postCount());
     }
 
     /** One visible post. */
@@ -152,6 +174,9 @@ public class FeedService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "A post needs text or an image");
         }
+        String alreadyAttachedError = video
+                ? "videoId is already attached to a post"
+                : "imageId is already attached to a post";
         if (assetId != null) {
             // One nondisclosing message per kind: missing rows, wrong owner,
             // and image/video type confusion must not reveal which one failed.
@@ -169,13 +194,18 @@ public class FeedService {
             if (assetIsVideo != video) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, assetError);
             }
+            // Check dead idempotent replay before checking boundAt or burning quota.
+            if (store.existsDeadPostByClientId(authorId, request.clientPostId())) {
+                throw ApiException.of(ApiErrorCode.POST_NOT_FOUND, "Post not found");
+            }
             // An already-bound image is rejected only on a fresh insert: a
             // clientPostId replay returns the post it was bound to.
             if (image.boundAt() != null
                     && store.findOwnPostByClientId(authorId, request.clientPostId()).isEmpty()) {
-                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                        "imageId is already attached to a post");
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, alreadyAttachedError);
             }
+        } else if (store.existsDeadPostByClientId(authorId, request.clientPostId())) {
+            throw ApiException.of(ApiErrorCode.POST_NOT_FOUND, "Post not found");
         }
         // Quota is consumed only once the request passed validation; a replay
         // of an already-stored clientPostId still counts.
@@ -197,8 +227,7 @@ public class FeedService {
         if (assetId != null && store.bindImage(assetId, authorId) == 0) {
             // The image was bound to another post between the check and the
             // bind; rollback keeps the one-image/one-post invariant.
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                    "imageId is already attached to a post");
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, alreadyAttachedError);
         }
         FeedStore.PostRow created = store.findOwnPostByClientId(authorId, request.clientPostId())
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.INTERNAL_ERROR,
@@ -206,6 +235,28 @@ public class FeedService {
         recordSent(authorId, now);
         log.info("Feed post {} created by {}", created.id(), authorId);
         return new Result(toResponse(created, authorId, List.of()), true);
+    }
+
+    /** Edits the caller's own visible post body and stamps {@code editedAt}. */
+    @Transactional
+    public PostResponse editPost(UUID editorId, UUID postId, EditPostRequest request) {
+        String body = normalizeBody(request.body(), MAX_BODY, "body");
+        if (body == null) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "body is required");
+        }
+        FeedStore.PostRow existing = requireVisiblePost(editorId, postId);
+        if (!existing.authorId().equals(editorId)) {
+            throw ApiException.of(ApiErrorCode.FORBIDDEN, "Not the author of this post");
+        }
+        consume("feed:edit:minute:" + editorId, EDITS_PER_MINUTE, Duration.ofMinutes(1),
+                "Too many edits");
+        Instant now = clock.instant();
+        if (store.updatePostBody(postId, editorId, body, now) == 0) {
+            throw ApiException.of(ApiErrorCode.POST_NOT_FOUND, "Post not found");
+        }
+        FeedStore.PostRow updated = requireVisiblePost(editorId, postId);
+        log.info("Feed post {} edited by its author", postId);
+        return toResponse(updated, editorId, store.reactionsFor(postId, editorId));
     }
 
     /** Soft-deletes the caller's own post; a post they cannot see is a 404. */
@@ -253,6 +304,10 @@ public class FeedService {
         if (body == null) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "body is required");
         }
+        if (store.existsDeadOrCrossPostCommentByClientId(
+                authorId, postId, request.clientCommentId())) {
+            throw ApiException.of(ApiErrorCode.COMMENT_NOT_FOUND, "Comment not found");
+        }
         // Quota is consumed only once the target and body passed validation.
         consume("feed:comment:minute:" + authorId, COMMENTS_PER_MINUTE, Duration.ofMinutes(1),
                 "Too many comments");
@@ -264,7 +319,7 @@ public class FeedService {
                 request.clientCommentId(), body, now);
         if (inserted == 0) {
             FeedStore.CommentRow existing = store.findOwnCommentByClientId(
-                            authorId, request.clientCommentId())
+                            authorId, postId, request.clientCommentId())
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.COMMENT_NOT_FOUND,
                             "Comment not found"));
             return new CommentResult(toResponse(existing, authorId), false);
@@ -272,11 +327,37 @@ public class FeedService {
         store.incrementCommentCount(postId);
         recordSent(authorId, now);
         FeedStore.CommentRow created = store.findOwnCommentByClientId(
-                        authorId, request.clientCommentId())
+                        authorId, postId, request.clientCommentId())
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.INTERNAL_ERROR,
                         "Comment insert/read-back inconsistency"));
         log.info("Feed comment {} created on post {} by {}", created.id(), postId, authorId);
         return new CommentResult(toResponse(created, authorId), true);
+    }
+
+    /** Edits the caller's own visible comment body (parent post must also be visible). */
+    @Transactional
+    public CommentResponse editComment(UUID editorId, UUID commentId, EditCommentRequest request) {
+        String body = normalizeBody(request.body(), MAX_COMMENT, "body");
+        if (body == null) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "body is required");
+        }
+        FeedStore.CommentRow existing = store.findVisibleComment(editorId, commentId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.COMMENT_NOT_FOUND,
+                        "Comment not found"));
+        if (!existing.authorId().equals(editorId)) {
+            throw ApiException.of(ApiErrorCode.FORBIDDEN, "Not the author of this comment");
+        }
+        consume("feed:edit:minute:" + editorId, EDITS_PER_MINUTE, Duration.ofMinutes(1),
+                "Too many edits");
+        Instant now = clock.instant();
+        if (store.updateCommentBody(commentId, editorId, body, now) == 0) {
+            throw ApiException.of(ApiErrorCode.COMMENT_NOT_FOUND, "Comment not found");
+        }
+        FeedStore.CommentRow updated = store.findVisibleComment(editorId, commentId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.COMMENT_NOT_FOUND,
+                        "Comment not found"));
+        log.info("Feed comment {} edited by its author", commentId);
+        return toResponse(updated, editorId);
     }
 
     /** Soft-deletes the caller's own comment. */
@@ -366,6 +447,27 @@ public class FeedService {
         return body;
     }
 
+    private static String normalizeSearchQuery(String rawQuery) {
+        if (rawQuery == null) {
+            return null;
+        }
+        String trimmed = rawQuery.strip();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > MAX_SEARCH_QUERY) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "q must be at most " + MAX_SEARCH_QUERY + " characters");
+        }
+        return trimmed;
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+    }
+
     private static PostResponse toResponse(FeedStore.PostRow row, UUID viewerId,
                                            List<FeedStore.ReactionRow> reactions) {
         boolean video = row.imageId() != null
@@ -383,13 +485,13 @@ public class FeedService {
         }
         return new PostResponse(row.id(),
                 new AuthorResponse(row.authorId(), row.authorName(), row.avatarUrl()),
-                row.body(), image, row.createdAt(), row.commentCount(), summaries,
+                row.body(), image, row.createdAt(), row.editedAt(), row.commentCount(), summaries,
                 row.authorId().equals(viewerId), videoDto);
     }
 
     private static CommentResponse toResponse(FeedStore.CommentRow row, UUID viewerId) {
         return new CommentResponse(row.id(), row.postId(),
                 new AuthorResponse(row.authorId(), row.authorName(), row.avatarUrl()),
-                row.body(), row.createdAt(), row.authorId().equals(viewerId));
+                row.body(), row.createdAt(), row.editedAt(), row.authorId().equals(viewerId));
     }
 }

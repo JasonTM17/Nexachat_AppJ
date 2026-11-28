@@ -32,7 +32,11 @@ public class FeedImageAccess {
      */
     public void assertStorageKeyReadable(String storageKey, UUID viewerId) {
         store.findImageByStorageKey(storageKey).ifPresent(image -> {
-            if (!image.ownerId().equals(viewerId) && !store.isImageVisibleTo(image.id(), viewerId)) {
+            boolean readable = image.storageKey().equals(storageKey)
+                    && (image.boundAt() == null
+                            ? image.ownerId().equals(viewerId)
+                            : store.isImageVisibleTo(image.id(), viewerId));
+            if (!readable) {
                 throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
             }
         });

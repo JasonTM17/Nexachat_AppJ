@@ -417,4 +417,68 @@ class FeedAdminFlowIT extends FeatureItSupport {
                 .andExpect(status().is5xxServerError());
         assertThat(auditRows("FEED_REPORT_VIDEO_VIEW", reportId)).isZero();
     }
+
+    @Test
+    void hidingPostDeniesOwnerMediaReadAndCommentLeakWhileStaffVideoPreviewWorks() throws Exception {
+        Actor author = newUser("Mod Media Author");
+        Actor commenter = newUser("Mod Commenter");
+        Actor bystander = newUser("Mod Bystander");
+        Actor reporter = newUser("Mod Reporter");
+        Actor moderator = withRole(newUser("Mod Staff"), "MODERATOR");
+
+        UUID imageId = UUID.fromString(json(mockMvc.perform(multipart("/api/v1/feed/images")
+                        .file(new MockMultipartFile("file", "photo.png", "image/png",
+                                new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                                        0, 0, 0, 0x0D, 0x49, 0x48, 0x44, 0x52,
+                                        0, 0, 0, 16, 0, 0, 0, 16, 8, 6, 0, 0, 0}))
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isCreated())).get("imageId").asText());
+        UUID imagePostId = UUID.fromString(json(postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "hidden image post", "imageId", imageId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+
+        UUID videoId = uploadVideo(author);
+        UUID videoPostId = UUID.fromString(json(postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "hidden video post", "videoId", videoId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        UUID commentId = createComment(commenter, videoPostId, "comment under hidden post");
+        UUID reportId = report(reporter, "POST", videoPostId);
+
+        String imageKey = jdbcTemplate.queryForObject(
+                "SELECT storage_key FROM public_images WHERE id = ?", String.class, imageId);
+        String videoKey = jdbcTemplate.queryForObject(
+                "SELECT storage_key FROM public_images WHERE id = ?", String.class, videoId);
+
+        postAs(moderator, "/api/v1/admin/feed/posts/" + imagePostId + "/hide",
+                Map.of("reason", "policy"))
+                .andExpect(status().isNoContent());
+        postAs(moderator, "/api/v1/admin/feed/posts/" + videoPostId + "/hide",
+                Map.of("reason", "policy"))
+                .andExpect(status().isNoContent());
+
+        // Owner read of bound media on hidden posts must be 404 across all public endpoints.
+        getAs(author, "/api/v1/feed/images/" + imageId).andExpect(status().isNotFound());
+        getAs(author, "/api/social/v1/images/" + imageId).andExpect(status().isNotFound());
+        getAs(author, "/api/v1/files/" + imageKey).andExpect(status().isNotFound());
+        getAs(author, "/api/v1/feed/videos/" + videoId).andExpect(status().isNotFound());
+        getAs(author, "/api/social/v1/videos/" + videoId).andExpect(status().isNotFound());
+        getAs(author, "/api/v1/files/" + videoKey).andExpect(status().isNotFound());
+
+        // Staff preview on the hidden reported video still works.
+        postAs(moderator, "/api/v1/admin/feed/reports/" + reportId + "/video", null)
+                .andExpect(status().isOk());
+
+        // Comment delete/edit under the hidden post yields 404 (never 403).
+        deleteAs(bystander, "/api/v1/feed/comments/" + commentId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+        deleteAs(commenter, "/api/v1/feed/comments/" + commentId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+        patchAs(commenter, "/api/v1/feed/comments/" + commentId, Map.of("body", "edit hidden"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+    }
 }

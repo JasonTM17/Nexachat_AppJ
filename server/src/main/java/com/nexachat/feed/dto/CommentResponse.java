@@ -10,6 +10,7 @@ public record CommentResponse(
         AuthorResponse author,
         String body,
         Instant createdAt,
+        Instant editedAt,
         boolean mine
 ) {
 }

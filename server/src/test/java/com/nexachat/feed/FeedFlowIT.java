@@ -10,9 +10,11 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -999,6 +1003,496 @@ class FeedFlowIT extends FeatureItSupport {
 
         // Rejections never burned the upload quota: a valid video still passes.
         uploadVideo(author).andExpect(status().isCreated());
+    }
+
+    // ------------------------------------------- hardening & new social APIs
+
+    @Test
+    void deletingOrEditingCommentOnBlockedOrDeletedParentPostIsNotFound() throws Exception {
+        Actor postAuthor = newUser("Parent Host");
+        Actor commenter = newUser("Thread Commenter");
+        Actor blockedReader = newUser("Blocked Comment Deleter");
+
+        UUID blockedPostId = createPostId(postAuthor, "post before block");
+        UUID commentOnBlockedPost = UUID.fromString(json(postAs(commenter,
+                "/api/v1/feed/posts/" + blockedPostId + "/comments",
+                Map.of("body", "visible comment", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        postAs(postAuthor, "/api/v1/users/" + blockedReader.id() + "/block", null)
+                .andExpect(status().isNoContent());
+
+        // Parent post is invisible to blockedReader: must be 404, never 403.
+        deleteAs(blockedReader, "/api/v1/feed/comments/" + commentOnBlockedPost)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+
+        // Deleting the parent post makes the comment 404 for both others and its author.
+        UUID doomedPostId = createPostId(postAuthor, "post to delete");
+        UUID commentOnDeletedPost = UUID.fromString(json(postAs(commenter,
+                "/api/v1/feed/posts/" + doomedPostId + "/comments",
+                Map.of("body", "orphaned", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        deleteAs(postAuthor, "/api/v1/feed/posts/" + doomedPostId).andExpect(status().isNoContent());
+
+        deleteAs(blockedReader, "/api/v1/feed/comments/" + commentOnDeletedPost)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+        deleteAs(commenter, "/api/v1/feed/comments/" + commentOnDeletedPost)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+        patchAs(commenter, "/api/v1/feed/comments/" + commentOnDeletedPost, Map.of("body", "edit"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+
+        // Soft-deleting the post author also hides comments from delete/edit probes.
+        Actor doomedAuthor = newUser("Soon Deleted Post Author");
+        UUID authoredPostId = createPostId(doomedAuthor, "vanishing author post");
+        UUID commentOnDeletedAuthorPost = UUID.fromString(json(postAs(commenter,
+                "/api/v1/feed/posts/" + authoredPostId + "/comments",
+                Map.of("body", "still here?", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        jdbcTemplate.update("UPDATE users SET deleted_at = now() WHERE id = ?", doomedAuthor.id());
+
+        deleteAs(blockedReader, "/api/v1/feed/comments/" + commentOnDeletedAuthorPost)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+    }
+
+    @Test
+    void ownerCannotReadBoundMediaAfterPostIsDeleted() throws Exception {
+        Actor author = newUser("Bound Media Owner");
+
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                .andExpect(status().isCreated())).get("imageId").asText());
+        UUID videoId = uploadVideoId(author);
+        String imageKey = jdbcTemplate.queryForObject(
+                "SELECT storage_key FROM public_images WHERE id = ?", String.class, imageId);
+        String videoKey = jdbcTemplate.queryForObject(
+                "SELECT storage_key FROM public_images WHERE id = ?", String.class, videoId);
+
+        // Unbound assets stay readable by the owner.
+        getAs(author, "/api/v1/feed/images/" + imageId).andExpect(status().isOk());
+        getAs(author, "/api/social/v1/videos/" + videoId).andExpect(status().isOk());
+
+        UUID imagePostId = UUID.fromString(json(postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "photo", "imageId", imageId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        UUID videoPostId = UUID.fromString(json(postAs(author, "/api/social/v1/posts", Map.of(
+                "body", "clip", "videoId", videoId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+
+        deleteAs(author, "/api/v1/feed/posts/" + imagePostId).andExpect(status().isNoContent());
+        deleteAs(author, "/api/v1/feed/posts/" + videoPostId).andExpect(status().isNoContent());
+
+        // Bound media of a deleted post is 404 even to the owner across all endpoints.
+        getAs(author, "/api/v1/feed/images/" + imageId).andExpect(status().isNotFound());
+        getAs(author, "/api/social/v1/images/" + imageId).andExpect(status().isNotFound());
+        getAs(author, "/api/v1/files/" + imageKey).andExpect(status().isNotFound());
+        getAs(author, "/api/v1/feed/videos/" + videoId).andExpect(status().isNotFound());
+        getAs(author, "/api/social/v1/videos/" + videoId).andExpect(status().isNotFound());
+        getAs(author, "/api/v1/files/" + videoKey).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deadPostReplayDoesNotBurnQuotaAndBoundVideoReportsVideoId() throws Exception {
+        Actor author = newUser("Dead Post Replay Author");
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                .andExpect(status().isCreated())).get("imageId").asText());
+        UUID imageClientPostId = UUID.randomUUID();
+        Map<String, String> imagePayload = Map.of(
+                "body", "deleted image post",
+                "imageId", imageId.toString(),
+                "clientPostId", imageClientPostId.toString());
+        UUID imagePostId = UUID.fromString(json(postAs(author, "/api/v1/feed/posts", imagePayload)
+                .andExpect(status().isCreated())).get("id").asText());
+        deleteAs(author, "/api/v1/feed/posts/" + imagePostId).andExpect(status().isNoContent());
+
+        // Replaying the deleted image post returns 404 (not "already attached") and burns 0 quota.
+        for (int i = 0; i < 4; i++) {
+            postAs(author, "/api/v1/feed/posts", imagePayload)
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+        }
+
+        // Reusing an already-bound videoId with a fresh clientPostId says videoId, not imageId.
+        UUID videoId = uploadVideoId(author);
+        postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "first video", "videoId", videoId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated());
+        postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "second video", "videoId", videoId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.error.message").value("videoId is already attached to a post"));
+
+        // Exactly 2 posts were created; the 4 dead replays and 1 validation rejection burned 0 tokens.
+        String bucket = "feed:post:minute:" + author.id();
+        int remaining = 0;
+        while (rateLimitService.tryConsume(bucket, FeedService.POSTS_PER_MINUTE,
+                Duration.ofMinutes(1)).allowed()) {
+            remaining++;
+        }
+        assertThat(remaining).isEqualTo(FeedService.POSTS_PER_MINUTE - 2);
+    }
+
+    @Test
+    void deadOrCrossPostCommentReplayDoesNotBurnQuotaOrLeak() throws Exception {
+        Actor author = newUser("Comment Dead Replay Author");
+        UUID post1 = createPostId(author, "post one");
+        UUID post2 = createPostId(author, "post two");
+
+        UUID deletedClientCommentId = UUID.randomUUID();
+        Map<String, String> deletedPayload = Map.of(
+                "body", "ephemeral", "clientCommentId", deletedClientCommentId.toString());
+        UUID deletedCommentId = UUID.fromString(json(postAs(author,
+                "/api/v1/feed/posts/" + post1 + "/comments", deletedPayload)
+                .andExpect(status().isCreated())).get("id").asText());
+        deleteAs(author, "/api/v1/feed/comments/" + deletedCommentId).andExpect(status().isNoContent());
+
+        for (int i = 0; i < 11; i++) {
+            postAs(author, "/api/v1/feed/posts/" + post1 + "/comments", deletedPayload)
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+        }
+
+        UUID liveClientCommentId = UUID.randomUUID();
+        postAs(author, "/api/v1/feed/posts/" + post1 + "/comments", Map.of(
+                "body", "post1 comment", "clientCommentId", liveClientCommentId.toString()))
+                .andExpect(status().isCreated());
+
+        // Reusing post1's clientCommentId on post2 must not return post1's comment or burn quota.
+        postAs(author, "/api/v1/feed/posts/" + post2 + "/comments", Map.of(
+                "body", "cross post", "clientCommentId", liveClientCommentId.toString()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+
+        String bucket = "feed:comment:minute:" + author.id();
+        int remaining = 0;
+        while (rateLimitService.tryConsume(bucket, FeedService.COMMENTS_PER_MINUTE,
+                Duration.ofMinutes(1)).allowed()) {
+            remaining++;
+        }
+        assertThat(remaining).isEqualTo(FeedService.COMMENTS_PER_MINUTE - 2);
+    }
+
+    @Test
+    void duplicateAndMissingFilePartsAreRejectedOnFeedUploads() throws Exception {
+        Actor author = newUser("Multipart Feed Author");
+
+        for (String path : List.of("/api/v1/feed/images", "/api/social/v1/images")) {
+            mockMvc.perform(multipart(path)
+                            .file(new MockMultipartFile("file", "a.png", "image/png", PNG_BYTES))
+                            .file(new MockMultipartFile("file", "b.png", "image/png", PNG_BYTES))
+                            .header("Authorization", bearer(author)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+            mockMvc.perform(multipart(path).header("Authorization", bearer(author)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        }
+
+        byte[] mp4 = videoBytes();
+        for (String path : List.of("/api/v1/feed/videos", "/api/social/v1/videos")) {
+            mockMvc.perform(multipart(path)
+                            .file(new MockMultipartFile("file", "a.mp4", "video/mp4", mp4))
+                            .file(new MockMultipartFile("file", "b.mp4", "video/mp4", mp4))
+                            .header("Authorization", bearer(author)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+            mockMvc.perform(multipart(path).header("Authorization", bearer(author)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        }
+    }
+
+    @Test
+    void videoEndpointSupportsHttpRangeAndHeadRequests() throws Exception {
+        Actor author = newUser("Range Video Author");
+        Actor reader = newUser("Range Video Reader");
+        UUID videoId = uploadVideoId(author);
+        UUID postId = UUID.fromString(json(postAs(author, "/api/social/v1/posts", Map.of(
+                "body", "range clip", "videoId", videoId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        byte[] all = videoBytes();
+
+        for (String path : List.of(
+                "/api/v1/feed/videos/" + videoId,
+                "/api/social/v1/videos/" + videoId)) {
+            mockMvc.perform(get(path).header("Authorization", bearer(reader)))
+                    .andExpect(status().isOk())
+                    .andExpect(result -> {
+                        assertThat(result.getResponse().getHeader("Accept-Ranges")).isEqualTo("bytes");
+                        assertThat(result.getResponse().getContentLength()).isEqualTo(all.length);
+                        assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(all);
+                    });
+
+            mockMvc.perform(head(path).header("Authorization", bearer(reader)))
+                    .andExpect(status().isOk())
+                    .andExpect(result -> {
+                        assertThat(result.getResponse().getHeader("Accept-Ranges")).isEqualTo("bytes");
+                        assertThat(result.getResponse().getContentLength()).isEqualTo(all.length);
+                    });
+
+            mockMvc.perform(get(path)
+                            .header("Authorization", bearer(reader))
+                            .header("Range", "bytes=0-63"))
+                    .andExpect(status().isPartialContent())
+                    .andExpect(result -> {
+                        assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
+                        assertThat(result.getResponse().getHeader("Accept-Ranges")).isEqualTo("bytes");
+                        assertThat(result.getResponse().getHeader("Content-Range"))
+                                .isEqualTo("bytes 0-63/" + all.length);
+                        assertThat(result.getResponse().getContentLength()).isEqualTo(64);
+                        assertThat(result.getResponse().getHeader("Cache-Control"))
+                                .contains("no-store");
+                        assertThat(result.getResponse().getHeader("X-Content-Type-Options"))
+                                .isEqualTo("nosniff");
+                        assertThat(result.getResponse().getContentAsByteArray())
+                                .isEqualTo(Arrays.copyOfRange(all, 0, 64));
+                    });
+
+            mockMvc.perform(get(path)
+                            .header("Authorization", bearer(reader))
+                            .header("Range", "bytes=-32"))
+                    .andExpect(status().isPartialContent())
+                    .andExpect(result -> {
+                        int start = all.length - 32;
+                        assertThat(result.getResponse().getHeader("Content-Range"))
+                                .isEqualTo("bytes " + start + "-" + (all.length - 1) + "/" + all.length);
+                        assertThat(result.getResponse().getContentLength()).isEqualTo(32);
+                        assertThat(result.getResponse().getContentAsByteArray())
+                                .isEqualTo(Arrays.copyOfRange(all, start, all.length));
+                    });
+
+            for (String badRange : List.of(
+                    "bytes=" + all.length + "-",
+                    "bytes=-0",
+                    "bytes=20-10",
+                    "bytes=abc-def")) {
+                mockMvc.perform(get(path)
+                                .header("Authorization", bearer(reader))
+                                .header("Range", badRange))
+                        .andExpect(status().isRequestedRangeNotSatisfiable())
+                        .andExpect(jsonPath("$.error.code").value("RANGE_NOT_SATISFIABLE"))
+                        .andExpect(result -> {
+                            assertThat(result.getResponse().getHeader("Accept-Ranges"))
+                                    .isEqualTo("bytes");
+                            assertThat(result.getResponse().getHeader("Content-Range"))
+                                    .isEqualTo("bytes */" + all.length);
+                        });
+            }
+        }
+
+        // Deleted post's video still answers 404 (not 416) even with a Range header.
+        deleteAs(author, "/api/v1/feed/posts/" + postId).andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/social/v1/videos/" + videoId)
+                        .header("Authorization", bearer(reader))
+                        .header("Range", "bytes=999999-"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("FILE_NOT_FOUND"));
+    }
+
+    @Test
+    void editingPostsAndCommentsEnforcesOwnershipVisibilityValidationAndEditedAt() throws Exception {
+        Actor author = newUser("Edit Author");
+        Actor other = newUser("Edit Bystander");
+
+        JsonNode createdPost = createPost(author, "initial post");
+        assertThat(createdPost.get("editedAt").isNull()).isTrue();
+        UUID postId = UUID.fromString(createdPost.get("id").asText());
+
+        // Blank & over-limit rejected.
+        patchAs(author, "/api/v1/feed/posts/" + postId, Map.of("body", "   "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        patchAs(author, "/api/v1/feed/posts/" + postId, Map.of("body", "x".repeat(1001)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        // Non-author gets 403 on visible post.
+        patchAs(other, "/api/v1/feed/posts/" + postId, Map.of("body", "hijack"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+        // Valid edit via legacy and canonical alias stamps editedAt and updates body.
+        JsonNode editedPost = json(patchAs(author, "/api/social/v1/posts/" + postId,
+                Map.of("body", "  edited post body  "))
+                .andExpect(status().isOk()));
+        assertThat(editedPost.get("body").asText()).isEqualTo("edited post body");
+        assertThat(editedPost.get("editedAt").asText()).isNotBlank();
+        assertThat(editedPost.get("createdAt").asText())
+                .isEqualTo(createdPost.get("createdAt").asText());
+
+        JsonNode fetchedPost = json(getAs(other, "/api/v1/feed/posts/" + postId)
+                .andExpect(status().isOk()));
+        assertThat(fetchedPost.get("body").asText()).isEqualTo("edited post body");
+        assertThat(fetchedPost.get("editedAt").asText())
+                .isEqualTo(editedPost.get("editedAt").asText());
+
+        // Comment edit lifecycle.
+        JsonNode createdComment = json(postAs(other,
+                "/api/v1/feed/posts/" + postId + "/comments",
+                Map.of("body", "initial comment", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated()));
+        assertThat(createdComment.get("editedAt").isNull()).isTrue();
+        UUID commentId = UUID.fromString(createdComment.get("id").asText());
+
+        patchAs(other, "/api/v1/feed/comments/" + commentId, Map.of("body", "   "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        patchAs(other, "/api/v1/feed/comments/" + commentId, Map.of("body", "y".repeat(501)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        patchAs(author, "/api/v1/feed/comments/" + commentId, Map.of("body", "not mine"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+        JsonNode editedComment = json(patchAs(other, "/api/v1/feed/comments/" + commentId,
+                Map.of("body", "  edited comment  "))
+                .andExpect(status().isOk()));
+        assertThat(editedComment.get("body").asText()).isEqualTo("edited comment");
+        assertThat(editedComment.get("editedAt").asText()).isNotBlank();
+
+        JsonNode editedCommentCanonical = json(patchAs(other, "/api/social/v1/comments/" + commentId,
+                Map.of("body", "edited again"))
+                .andExpect(status().isOk()));
+        assertThat(editedCommentCanonical.get("body").asText()).isEqualTo("edited again");
+
+        // Block hides parent post -> comment edit returns 404 COMMENT_NOT_FOUND, post edit 404.
+        postAs(author, "/api/v1/users/" + other.id() + "/block", null)
+                .andExpect(status().isNoContent());
+        patchAs(other, "/api/v1/feed/comments/" + commentId, Map.of("body", "after block"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+        patchAs(other, "/api/v1/feed/posts/" + postId, Map.of("body", "after block"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+
+        // Deleting post returns 404 on subsequent edit.
+        deleteAs(author, "/api/v1/feed/posts/" + postId).andExpect(status().isNoContent());
+        patchAs(author, "/api/v1/feed/posts/" + postId, Map.of("body", "after delete"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+    }
+
+    @Test
+    void authorProfileCountsLivePostsAndRespectsBlocksAndDeletes() throws Exception {
+        Actor author = newUser("Profile Author");
+        Actor viewer = newUser("Profile Viewer");
+        createPostId(author, "live one");
+        createPostId(author, "live two");
+        UUID deletedPostId = createPostId(author, "deleted three");
+        deleteAs(author, "/api/v1/feed/posts/" + deletedPostId).andExpect(status().isNoContent());
+
+        for (String path : List.of(
+                "/api/v1/feed/authors/" + author.id(),
+                "/api/social/v1/authors/" + author.id())) {
+            JsonNode profile = json(getAs(viewer, path).andExpect(status().isOk()));
+            assertThat(profile.get("userId").asText()).isEqualTo(author.id().toString());
+            assertThat(profile.get("displayName").asText()).isEqualTo("Profile Author");
+            assertThat(profile.get("postCount").asLong()).isEqualTo(2L);
+        }
+
+        getAs(viewer, "/api/v1/feed/authors/" + UUID.randomUUID())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+
+        // Bidirectional block: author blocks viewer -> 404 USER_NOT_FOUND.
+        postAs(author, "/api/v1/users/" + viewer.id() + "/block", null)
+                .andExpect(status().isNoContent());
+        getAs(viewer, "/api/social/v1/authors/" + author.id())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+
+        // Deleted user -> 404 USER_NOT_FOUND.
+        Actor deletedUser = newUser("Deleted Profile");
+        jdbcTemplate.update("UPDATE users SET deleted_at = now() WHERE id = ?", deletedUser.id());
+        getAs(viewer, "/api/v1/feed/authors/" + deletedUser.id())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+    }
+
+    @Test
+    void feedSupportsAuthorFilterAndAccentInsensitiveKeywordSearch() throws Exception {
+        Actor alice = newUser("Search Alice");
+        Actor bob = newUser("Search Bob");
+        Actor blocked = newUser("Search Blocked");
+        Actor viewer = newUser("Search Viewer");
+
+        UUID imageId = UUID.fromString(json(uploadImage(alice)
+                .andExpect(status().isCreated())).get("imageId").asText());
+        UUID aliceImageOnly = UUID.fromString(json(postAs(alice, "/api/v1/feed/posts", Map.of(
+                "imageId", imageId.toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated())).get("id").asText());
+        UUID aliceCoffee = createPostId(alice, "Cà phê sáng ở Hà Nội");
+        UUID aliceLiteral = createPostId(alice, "100% real_test\\path here");
+        UUID bobCoffee = createPostId(bob, "Cà phê chiều Sài Gòn");
+        createPostId(bob, "1000 false_positive path");
+        createPostId(blocked, "Cà phê blocked");
+
+        postAs(viewer, "/api/v1/users/" + blocked.id() + "/block", null)
+                .andExpect(status().isNoContent());
+
+        // Author filter isolates Alice's posts (including image-only).
+        assertThat(ids(feed(viewer, "?authorId=" + alice.id())))
+                .containsExactlyInAnyOrder(
+                        aliceImageOnly.toString(), aliceCoffee.toString(), aliceLiteral.toString());
+
+        // Blocked or unknown authorId returns an empty page (no 404 existence leak).
+        for (UUID hiddenAuthor : List.of(blocked.id(), UUID.randomUUID())) {
+            JsonNode emptyPage = feed(viewer, "?authorId=" + hiddenAuthor);
+            assertThat(emptyPage.get("items")).isEmpty();
+            assertThat(emptyPage.get("nextCursor").isNull()).isTrue();
+        }
+
+        // Accent- & case-insensitive search matches Alice and Bob, excludes blocked & image-only.
+        JsonNode coffeeResults = json(mockMvc.perform(get("/api/social/v1/posts")
+                        .queryParam("q", "ca phe")
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk()));
+        assertThat(ids(coffeeResults))
+                .containsExactlyInAnyOrder(aliceCoffee.toString(), bobCoffee.toString());
+
+        // Combined authorId + q + keyset pagination.
+        JsonNode combined = json(mockMvc.perform(get("/api/v1/feed/posts")
+                        .queryParam("authorId", alice.id().toString())
+                        .queryParam("q", "ha noi")
+                        .queryParam("limit", "1")
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk()));
+        assertThat(ids(combined)).containsExactly(aliceCoffee.toString());
+        assertThat(combined.get("nextCursor").isNull()).isTrue();
+
+        // LIKE wildcards (%, _, \) are escaped literally.
+        JsonNode percentMatch = json(mockMvc.perform(get("/api/v1/feed/posts")
+                        .queryParam("q", "100%")
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk()));
+        assertThat(ids(percentMatch)).containsExactly(aliceLiteral.toString());
+        JsonNode underscoreMatch = json(mockMvc.perform(get("/api/v1/feed/posts")
+                        .queryParam("q", "_test\\path")
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk()));
+        assertThat(ids(underscoreMatch)).containsExactly(aliceLiteral.toString());
+
+        // Blank q behaves as unfiltered; >100 chars returns 400 VALIDATION_FAILED.
+        JsonNode blankQuery = json(mockMvc.perform(get("/api/v1/feed/posts")
+                        .queryParam("authorId", bob.id().toString())
+                        .queryParam("q", "   ")
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk()));
+        assertThat(ids(blankQuery)).hasSize(2);
+        mockMvc.perform(get("/api/v1/feed/posts")
+                        .queryParam("q", "a".repeat(101))
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
     }
 
 }

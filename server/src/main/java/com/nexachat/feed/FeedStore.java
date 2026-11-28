@@ -35,12 +35,16 @@ class FeedStore {
     /** One post joined with its author and image. */
     record PostRow(UUID id, UUID authorId, String authorName, String avatarUrl, String body,
                    UUID imageId, String imageKey, String imageMime, Integer imageWidth,
-                   Integer imageHeight, int commentCount, Instant createdAt) {
+                   Integer imageHeight, int commentCount, Instant createdAt, Instant editedAt) {
     }
 
     /** One comment joined with its author. */
     record CommentRow(UUID id, UUID postId, UUID authorId, String authorName, String avatarUrl,
-                      String body, Instant createdAt) {
+                      String body, Instant createdAt, Instant editedAt) {
+    }
+
+    /** One author profile visible to the caller. */
+    record AuthorProfileRow(UUID userId, String displayName, String avatarUrl, long postCount) {
     }
 
     /** One uploaded feed image. */
@@ -56,7 +60,7 @@ class FeedStore {
             SELECT p.id, p.author_id, u.display_name, u.avatar_url, p.body, p.image_id,
                    i.storage_key AS image_key, i.mime_type AS image_mime,
                    i.width AS image_width, i.height AS image_height,
-                   p.comment_count, p.created_at
+                   p.comment_count, p.created_at, p.edited_at
             FROM public_posts p
             JOIN users u ON u.id = p.author_id
             LEFT JOIN public_images i ON i.id = p.image_id
@@ -71,7 +75,8 @@ class FeedStore {
             """;
 
     private static final String COMMENT_COLUMNS = """
-            SELECT c.id, c.post_id, c.author_id, u.display_name, u.avatar_url, c.body, c.created_at
+            SELECT c.id, c.post_id, c.author_id, u.display_name, u.avatar_url, c.body,
+                   c.created_at, c.edited_at
             FROM public_comments c
             JOIN users u ON u.id = c.author_id
             """;
@@ -84,6 +89,19 @@ class FeedStore {
                        OR (b.blocker_id = c.author_id AND b.blocked_id = :viewer))
             """;
 
+    private static final String PARENT_POST_VISIBLE = """
+              AND EXISTS (
+                    SELECT 1 FROM public_posts p
+                    JOIN users pu ON pu.id = p.author_id
+                    WHERE p.id = c.post_id
+                      AND p.deleted_at IS NULL AND p.hidden_at IS NULL
+                      AND pu.deleted_at IS NULL
+                      AND NOT EXISTS (
+                            SELECT 1 FROM user_blocks b
+                            WHERE (b.blocker_id = :viewer AND b.blocked_id = p.author_id)
+                               OR (b.blocker_id = p.author_id AND b.blocked_id = :viewer)))
+            """;
+
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
 
@@ -94,26 +112,29 @@ class FeedStore {
 
     // ------------------------------------------------------------------- posts
 
-    List<PostRow> listPostsFirst(UUID viewerId, int limit) {
-        return named.query(POST_COLUMNS + POST_VISIBLE + """
-                        ORDER BY p.created_at DESC, p.id DESC
-                        LIMIT :limit
-                        """,
-                new MapSqlParameterSource("viewer", viewerId).addValue("limit", limit),
-                postMapper());
-    }
-
-    List<PostRow> listPostsAfter(UUID viewerId, FeedCursor.Position cursor, int limit) {
-        return named.query(POST_COLUMNS + POST_VISIBLE + """
-                          AND (p.created_at, p.id) < (:cursorCreatedAt, :cursorId)
-                        ORDER BY p.created_at DESC, p.id DESC
-                        LIMIT :limit
-                        """,
-                new MapSqlParameterSource("viewer", viewerId)
-                        .addValue("cursorCreatedAt", timestamp(cursor.createdAt()))
-                        .addValue("cursorId", cursor.id())
-                        .addValue("limit", limit),
-                postMapper());
+    List<PostRow> listPosts(UUID viewerId, UUID authorId, String likePattern,
+                            FeedCursor.Position cursor, int limit) {
+        StringBuilder sql = new StringBuilder(POST_COLUMNS).append(POST_VISIBLE);
+        MapSqlParameterSource params = new MapSqlParameterSource("viewer", viewerId)
+                .addValue("limit", limit);
+        if (authorId != null) {
+            sql.append("  AND p.author_id = :authorId\n");
+            params.addValue("authorId", authorId);
+        }
+        if (likePattern != null) {
+            sql.append("  AND p.body IS NOT NULL AND public.f_unaccent(p.body) ILIKE public.f_unaccent(:pattern) ESCAPE chr(92)\n");
+            params.addValue("pattern", likePattern);
+        }
+        if (cursor != null) {
+            sql.append("  AND (p.created_at, p.id) < (:cursorCreatedAt, :cursorId)\n");
+            params.addValue("cursorCreatedAt", timestamp(cursor.createdAt()))
+                    .addValue("cursorId", cursor.id());
+        }
+        sql.append("""
+                ORDER BY p.created_at DESC, p.id DESC
+                LIMIT :limit
+                """);
+        return named.query(sql.toString(), params, postMapper());
     }
 
     Optional<PostRow> findVisiblePost(UUID viewerId, UUID postId) {
@@ -131,6 +152,18 @@ class FeedStore {
                         .addValue("authorId", authorId)
                         .addValue("clientPostId", clientPostId),
                 single(postMapper())));
+    }
+
+    boolean existsDeadPostByClientId(UUID authorId, UUID clientPostId) {
+        Boolean found = jdbc.query("""
+                        SELECT TRUE FROM public_posts
+                        WHERE author_id = ? AND client_post_id = ?
+                          AND (deleted_at IS NOT NULL OR hidden_at IS NOT NULL)
+                        LIMIT 1
+                        """,
+                rs -> rs.next() ? Boolean.TRUE : Boolean.FALSE,
+                authorId, clientPostId);
+        return Boolean.TRUE.equals(found);
     }
 
     int insertPost(UUID id, UUID authorId, UUID clientPostId, String body, UUID imageId,
@@ -151,16 +184,20 @@ class FeedStore {
 
     /** The visible author of a post, or empty when it is gone, hidden or blocked. */
     Optional<UUID> findVisiblePostAuthor(UUID viewerId, UUID postId) {
-        return jdbc.query("""
+        return Optional.ofNullable(named.query("""
                         SELECT p.author_id FROM public_posts p
-                        WHERE p.id = ? AND p.deleted_at IS NULL AND p.hidden_at IS NULL
-                          AND NOT EXISTS (
-                                SELECT 1 FROM user_blocks b
-                                WHERE (b.blocker_id = ? AND b.blocked_id = p.author_id)
-                                   OR (b.blocker_id = p.author_id AND b.blocked_id = ?))
+                        JOIN users u ON u.id = p.author_id
+                        """ + POST_VISIBLE + " AND p.id = :postId",
+                new MapSqlParameterSource("viewer", viewerId).addValue("postId", postId),
+                rs -> rs.next() ? rs.getObject("author_id", UUID.class) : null));
+    }
+
+    int updatePostBody(UUID postId, UUID authorId, String body, Instant editedAt) {
+        return jdbc.update("""
+                        UPDATE public_posts SET body = ?, edited_at = ?
+                        WHERE id = ? AND author_id = ? AND deleted_at IS NULL AND hidden_at IS NULL
                         """,
-                rs -> rs.next() ? Optional.of(rs.getObject("author_id", UUID.class))
-                        : Optional.empty(), postId, viewerId, viewerId);
+                body, timestamp(editedAt), postId, authorId);
     }
 
     int softDeletePost(UUID postId, UUID authorId, Instant now) {
@@ -169,6 +206,29 @@ class FeedStore {
                         WHERE id = ? AND author_id = ? AND deleted_at IS NULL AND hidden_at IS NULL
                         """,
                 timestamp(now), postId, authorId);
+    }
+
+    Optional<AuthorProfileRow> findVisibleAuthorProfile(UUID viewerId, UUID authorId) {
+        return Optional.ofNullable(named.query("""
+                        SELECT u.id, u.display_name, u.avatar_url,
+                               (SELECT count(*) FROM public_posts p
+                                WHERE p.author_id = u.id
+                                  AND p.deleted_at IS NULL
+                                  AND p.hidden_at IS NULL) AS post_count
+                        FROM users u
+                        WHERE u.id = :authorId
+                          AND u.deleted_at IS NULL
+                          AND NOT EXISTS (
+                                SELECT 1 FROM user_blocks b
+                                WHERE (b.blocker_id = :viewer AND b.blocked_id = u.id)
+                                   OR (b.blocker_id = u.id AND b.blocked_id = :viewer))
+                        """,
+                new MapSqlParameterSource("viewer", viewerId).addValue("authorId", authorId),
+                single((rs, rowNum) -> new AuthorProfileRow(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("display_name"),
+                        rs.getString("avatar_url"),
+                        rs.getLong("post_count")))));
     }
 
     // ---------------------------------------------------------------- comments
@@ -202,20 +262,34 @@ class FeedStore {
     }
 
     Optional<CommentRow> findVisibleComment(UUID viewerId, UUID commentId) {
-        return Optional.ofNullable(named.query(COMMENT_COLUMNS + COMMENT_VISIBLE
-                        + " AND c.id = :commentId",
+        return Optional.ofNullable(named.query(
+                COMMENT_COLUMNS + COMMENT_VISIBLE + PARENT_POST_VISIBLE + " AND c.id = :commentId",
                 new MapSqlParameterSource("viewer", viewerId).addValue("commentId", commentId),
                 single(commentMapper())));
     }
 
-    Optional<CommentRow> findOwnCommentByClientId(UUID authorId, UUID clientCommentId) {
-        return Optional.ofNullable(named.query(COMMENT_COLUMNS + COMMENT_VISIBLE + """
-                          AND c.author_id = :authorId AND c.client_comment_id = :clientCommentId
+    Optional<CommentRow> findOwnCommentByClientId(UUID authorId, UUID postId, UUID clientCommentId) {
+        return Optional.ofNullable(named.query(COMMENT_COLUMNS + COMMENT_VISIBLE + PARENT_POST_VISIBLE + """
+                          AND c.author_id = :authorId AND c.post_id = :postId
+                          AND c.client_comment_id = :clientCommentId
                         """,
                 new MapSqlParameterSource("viewer", authorId)
                         .addValue("authorId", authorId)
+                        .addValue("postId", postId)
                         .addValue("clientCommentId", clientCommentId),
                 single(commentMapper())));
+    }
+
+    boolean existsDeadOrCrossPostCommentByClientId(UUID authorId, UUID postId, UUID clientCommentId) {
+        Boolean found = jdbc.query("""
+                        SELECT TRUE FROM public_comments
+                        WHERE author_id = ? AND client_comment_id = ?
+                          AND (deleted_at IS NOT NULL OR hidden_at IS NOT NULL OR post_id <> ?)
+                        LIMIT 1
+                        """,
+                rs -> rs.next() ? Boolean.TRUE : Boolean.FALSE,
+                authorId, clientCommentId, postId);
+        return Boolean.TRUE.equals(found);
     }
 
     int insertComment(UUID id, UUID postId, UUID authorId, UUID clientCommentId, String body,
@@ -245,16 +319,12 @@ class FeedStore {
     }
 
     Optional<UUID> findVisibleCommentAuthor(UUID viewerId, UUID commentId) {
-        return jdbc.query("""
+        return Optional.ofNullable(named.query("""
                         SELECT c.author_id FROM public_comments c
-                        WHERE c.id = ? AND c.deleted_at IS NULL AND c.hidden_at IS NULL
-                          AND NOT EXISTS (
-                                SELECT 1 FROM user_blocks b
-                                WHERE (b.blocker_id = ? AND b.blocked_id = c.author_id)
-                                   OR (b.blocker_id = c.author_id AND b.blocked_id = ?))
-                        """,
-                rs -> rs.next() ? Optional.of(rs.getObject("author_id", UUID.class))
-                        : Optional.empty(), commentId, viewerId, viewerId);
+                        JOIN users u ON u.id = c.author_id
+                        """ + COMMENT_VISIBLE + PARENT_POST_VISIBLE + " AND c.id = :commentId",
+                new MapSqlParameterSource("viewer", viewerId).addValue("commentId", commentId),
+                rs -> rs.next() ? rs.getObject("author_id", UUID.class) : null));
     }
 
     Optional<UUID> findCommentPostId(UUID commentId) {
@@ -263,12 +333,29 @@ class FeedStore {
                         : Optional.empty(), commentId);
     }
 
+    int updateCommentBody(UUID commentId, UUID authorId, String body, Instant editedAt) {
+        return named.update("""
+                        UPDATE public_comments c SET body = :body, edited_at = :editedAt
+                        WHERE c.id = :commentId AND c.author_id = :authorId
+                          AND c.deleted_at IS NULL AND c.hidden_at IS NULL
+                        """ + PARENT_POST_VISIBLE,
+                new MapSqlParameterSource("body", body)
+                        .addValue("editedAt", timestamp(editedAt))
+                        .addValue("commentId", commentId)
+                        .addValue("authorId", authorId)
+                        .addValue("viewer", authorId));
+    }
+
     int softDeleteComment(UUID commentId, UUID authorId, Instant now) {
-        return jdbc.update("""
-                        UPDATE public_comments SET deleted_at = ?
-                        WHERE id = ? AND author_id = ? AND deleted_at IS NULL AND hidden_at IS NULL
-                        """,
-                timestamp(now), commentId, authorId);
+        return named.update("""
+                        UPDATE public_comments c SET deleted_at = :now
+                        WHERE c.id = :commentId AND c.author_id = :authorId
+                          AND c.deleted_at IS NULL AND c.hidden_at IS NULL
+                        """ + PARENT_POST_VISIBLE,
+                new MapSqlParameterSource("now", timestamp(now))
+                        .addValue("commentId", commentId)
+                        .addValue("authorId", authorId)
+                        .addValue("viewer", authorId));
     }
 
     // --------------------------------------------------------------- reactions
@@ -407,19 +494,8 @@ class FeedStore {
      * shows.
      */
     Optional<String> visibleCommentBody(UUID viewerId, UUID commentId) {
-        return Optional.ofNullable(named.query(COMMENT_COLUMNS + COMMENT_VISIBLE + """
-                          AND c.id = :commentId
-                          AND EXISTS (
-                                SELECT 1 FROM public_posts p
-                                JOIN users pu ON pu.id = p.author_id
-                                WHERE p.id = c.post_id
-                                  AND p.deleted_at IS NULL AND p.hidden_at IS NULL
-                                  AND pu.deleted_at IS NULL
-                                  AND NOT EXISTS (
-                                        SELECT 1 FROM user_blocks b
-                                        WHERE (b.blocker_id = :viewer AND b.blocked_id = p.author_id)
-                                           OR (b.blocker_id = p.author_id AND b.blocked_id = :viewer)))
-                        """,
+        return Optional.ofNullable(named.query(
+                COMMENT_COLUMNS + COMMENT_VISIBLE + PARENT_POST_VISIBLE + " AND c.id = :commentId",
                 new MapSqlParameterSource("viewer", viewerId).addValue("commentId", commentId),
                 single(commentMapper()))).map(CommentRow::body);
     }
@@ -439,7 +515,8 @@ class FeedStore {
                 rs.getObject("image_width", Integer.class),
                 rs.getObject("image_height", Integer.class),
                 rs.getInt("comment_count"),
-                instant(rs, "created_at"));
+                instant(rs, "created_at"),
+                instant(rs, "edited_at"));
     }
 
     private static RowMapper<CommentRow> commentMapper() {
@@ -450,7 +527,8 @@ class FeedStore {
                 rs.getString("display_name"),
                 rs.getString("avatar_url"),
                 rs.getString("body"),
-                instant(rs, "created_at"));
+                instant(rs, "created_at"),
+                instant(rs, "edited_at"));
     }
 
     private static RowMapper<ImageRow> imageMapper() {
